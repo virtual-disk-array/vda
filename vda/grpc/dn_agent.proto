@@ -1,0 +1,70 @@
+syntax = "proto3";
+
+service DnAgent {
+  rpc SyncupDn(SyncupDnRequest) returns(SyncupDnReply) {}
+  rpc DnHeartbeat(DnHeartbeatRequest) returns (DnHeartbeatReply) {}
+}
+
+message DnAgentReplyInfo {
+  uint64 reply_code = 1;
+  string reply_msg = 2;
+}
+
+message VdBackendCfg {
+  string vd_id = 1;
+  uint64 vd_clusters = 2;
+  string cntlr_id = 3;
+}
+
+message PdCfg {
+  string pd_id = 1;
+  string pd_conf = 2;
+  repeated VdBackendCfg vd_cfg_list = 3;
+}
+
+message DnCfg {
+  string dn_id = 1;
+  uint64 version = 2;
+  repeated PdCfg pd_cfg_list = 4;
+}
+
+message SyncupDnRequest {
+  string req_id = 1;
+  DnCfg dn_cfg = 2;
+}
+
+message VdBackendInfo {
+  string vd_id = 1;
+  bool error = 2;
+  string error_msg = 3;
+}
+
+message PdInfo {
+  string pd_id = 1;
+  uint64 total_clusters = 2;
+  uint64 free_clusters = 3;
+  bool error = 4;
+  string error_msg = 5;
+  repeated VdBackendInfo vd_info_list = 6;
+}
+
+message DnInfo {
+  string dn_id = 1;
+  bool error = 2;
+  string error_msg = 3;
+  repeated PdInfo pd_info_list = 4;
+}
+
+message SyncupDnReply {
+  DnAgentReplyInfo reply_info = 1;
+  DnInfo dn_info = 2;
+}
+
+message DnHeartbeatRequest {
+  string req_id = 1;
+  string dn_id = 2;
+}
+
+message DnHeartbeatReply {
+  DnAgentReplyInfo reply_info = 1;
+}

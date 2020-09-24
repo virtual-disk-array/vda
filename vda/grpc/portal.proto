@@ -1,0 +1,455 @@
+syntax = "proto3";
+
+service Portal {
+  rpc CreateDn(CreateDnRequest) returns(CreateDnReply) {}
+  rpc DeleteDn(DeleteDnRequest) returns(DeleteDnReply) {}
+  rpc ModifyDn(ModifyDnRequest) returns(ModifyDnReply) {}
+  rpc ListDn(ListDnRequest) returns(ListDnReply) {}
+  rpc GetDn(GetDnRequest) returns(GetDnReply) {}
+  rpc CreatePd(CreatePdRequest) returns(CreatePdReply) {}
+  rpc DeletePd(DeletePdRequest) returns(DeletePdReply) {}
+  rpc ModifyPd(ModifyPdRequest) returns(ModifyPdReply) {}
+  rpc ListPd(ListPdRequest) returns(ListPdReply) {}
+  rpc GetPd(GetPdRequest) returns(GetPdReply) {}
+  rpc CreateCn(CreateCnRequest) returns(CreateCnReply) {}
+  rpc DeleteCn(DeleteCnRequest) returns(DeleteCnReply) {}
+  rpc ModifyCn(ModifyCnRequest) returns(ModifyCnReply) {}
+  rpc ListCn(ListCnRequest) returns (ListCnReply) {}
+  rpc GetCn(GetCnRequest) returns (GetCnReply) {}
+  rpc CreateDa(CreateDaRequest) returns (CreateDaReply) {}
+  rpc DeleteDa(DeleteDaRequest) returns (DeleteDaReply) {}
+  rpc ModifyDa(ModifyDaRequest) returns (ModifyDaReply) {}
+  rpc ListDa(ListDaRequest) returns (ListDaReply) {}
+  rpc GetDa(GetDaRequest) returns (GetDaReply) {}
+  rpc CreateExp(CreateExpRequest) returns (CreateExpReply) {}
+  rpc DeleteExp(DeleteExpRequest) returns (DeleteExpReply) {}
+  rpc ModifyExp(ModifyExpRequest) returns (ModifyExpReply) {}
+  rpc ListExp(ListExpRequest) returns (ListExpReply) {}
+  rpc GetExp(GetExpRequest) returns (GetExpReply) {}
+  rpc ManualSyncupDn(ManualSyncupDnRequest) returns(ManualSyncupDnReply) {}
+  rpc ManualSyncupCn(ManualSyncupCnRequest) returns(ManualSyncupCnReply) {}
+  rpc ManualSyncupDa(ManualSyncupDaRequest) returns(ManualSyncupDaReply) {}
+}
+
+message PortalReplyInfo {
+  string req_id = 1;
+  uint64 reply_code = 2;
+  string reply_msg = 3;
+}
+
+message DnMsg {
+  string dn_id = 1;
+  string dn_name = 2;
+  string dn_listener_conf = 3;
+  bool online = 4;
+  string location = 5;
+  uint32 hash_code = 6;
+  uint64 version = 7;
+  bool error = 8;
+  string error_msg = 9;
+}
+
+message PdMsg {
+  string pd_id = 1;
+  string dn_name = 2;
+  string pd_name = 3;
+  uint64 total_size = 4;
+  uint64 free_size = 5;
+  string pd_conf = 6;
+  bool online = 7;
+  bool error = 8;
+  string error_msg = 9;
+}
+
+message VdMsg {
+  string vd_id = 1;
+  string da_name = 2;
+  uint32 grp_idx = 3;
+  uint32 vd_idx = 4;
+  string dn_name = 5;
+  string pd_name = 6;
+  uint64 vd_size = 7;
+}
+
+message CnMsg {
+  string cn_id = 1;
+  string cn_name = 2;
+  string cn_listener_conf = 3;
+  bool online = 4;
+  string location = 5;
+  uint32 hash_code = 6;
+  uint64 version = 7;
+  bool error = 8;
+  string error_msg = 9;
+}
+
+message CntlrMsg {
+  string cntlr_id = 1;
+  string da_name = 2;
+  uint32 cntlr_idx = 3;
+  string cn_name = 4;
+  bool primary = 5;
+  bool error = 6;
+  string error_msg = 7;
+}
+
+message EsMsg {
+  string es_id = 1;
+  uint32 cntlr_idx = 2;
+  string cn_name = 3;
+  string cn_listener_conf = 4;
+  bool error = 5;
+  string error_msg = 6;
+}
+
+message ExpMsg {
+  string exp_id = 1;
+  string exp_name = 2;
+  string da_name = 3;
+  string exp_nqn = 4;
+  string initiator_nqn = 5;
+  string snap_name = 6;
+  repeated EsMsg es_msg_list = 7;
+}
+
+message GrpMsg {
+  string grp_id = 1;
+  string da_name = 2;
+  uint32 grp_idx = 3;
+  uint64 grp_size = 4;
+  repeated VdMsg vd_msg_list = 5;
+}
+
+message DaMsg {
+  string da_id = 1;
+  string da_name = 2;
+  uint32 cntlr_cnt = 3;
+  uint64 da_size = 4;
+  string da_conf = 5;
+  string da_details = 6;
+  uint32 hash_code = 7;
+  bool error = 8;
+}
+
+message SnapMsg {
+  string da_name = 1;
+  string snap_name = 2;
+  uint64 snap_size = 3;
+  bool snapshot = 4;
+  bool clone = 5;
+  string base_snapshot = 6;
+  repeated string clone_list = 7;
+}
+
+message CreateDnRequest {
+  string dn_name = 1;
+  string dn_listener_conf = 2;
+  bool online = 3;
+  string location = 4;
+  uint32 hash_code = 5;
+}
+
+message CreateDnReply {
+  PortalReplyInfo reply_info = 1;
+}
+
+message DeleteDnRequest {
+  string dn_name = 1;
+}
+
+message DeleteDnReply {
+  PortalReplyInfo reply_info = 1;
+}
+
+message ModifyDnRequest {
+  string dn_name = 1;
+  oneof attr {
+    bool new_online = 3;
+    uint32 new_hash_code = 4;
+  }
+}
+
+message ModifyDnReply {
+  PortalReplyInfo reply_info = 1;
+}
+
+message ListDnRequest {
+  uint64 offset = 1;
+  uint64 limit = 2;
+  bool online = 3;
+  bool set_online = 4;
+  string location = 5;
+  bool set_location = 6;
+  uint32 hash_code = 7;
+  bool set_hash_code = 8;
+  bool error = 9;
+  bool set_error = 10;
+}
+
+message ListDnReply {
+  PortalReplyInfo reply_info = 1;
+  repeated DnMsg dn_msg_list = 2;
+}
+
+message GetDnRequest {
+  string dn_name = 1;
+}
+
+message GetDnReply {
+  PortalReplyInfo reply_info = 1;
+  DnMsg dn_msg = 2;
+  repeated string pd_name_list = 3;
+}
+
+message CreatePdRequest {
+  string dn_name = 1;
+  string pd_name = 2;
+  string pd_conf = 3;
+  bool online = 4;
+}
+
+message CreatePdReply {
+  PortalReplyInfo reply_info = 1;
+}
+
+message DeletePdRequest {
+  string dn_name = 1;
+  string pd_name = 2;
+}
+
+message DeletePdReply {
+  PortalReplyInfo reply_info = 1;
+}
+
+message ModifyPdRequest {
+  string dn_name = 1;
+  string pd_name = 2;
+  oneof attr {
+    string new_pd_name = 3;
+    bool new_online = 4;
+  }
+}
+
+message ModifyPdReply {
+  PortalReplyInfo reply_info = 1;
+}
+
+message ListPdRequest {
+  uint64 offset = 1;
+  uint64 limit = 2;
+  string dn_name = 3;
+  bool online = 4;
+  bool set_online = 5;
+  bool error = 6;
+  bool set_error = 7;
+}
+
+message ListPdReply {
+  PortalReplyInfo reply_info = 1;
+  repeated PdMsg pd_msg_list = 2;
+}
+
+message GetPdRequest {
+  string dn_name = 1;
+  string pd_name = 2;
+}
+
+message GetPdReply {
+  PortalReplyInfo reply_info = 1;
+  PdMsg pd_msg = 2;
+  repeated VdMsg vd_msg_list = 3;
+}
+
+message CreateCnRequest {
+  string cn_name = 1;
+  string cn_listener_conf = 2;
+  bool online = 3;
+  string location = 4;
+  uint32 hash_code = 5;
+}
+
+message CreateCnReply {
+  PortalReplyInfo reply_info = 1;
+}
+
+message DeleteCnRequest {
+  string cn_name = 1;
+}
+
+message DeleteCnReply {
+  PortalReplyInfo reply_info = 1;
+}
+
+message ModifyCnRequest {
+  string cn_name = 1;
+  oneof attr {
+    bool new_online = 3;
+    uint32 new_hash_code = 4;
+  }
+}
+
+message ModifyCnReply {
+  PortalReplyInfo reply_info = 1;
+}
+
+message ListCnRequest {
+  uint64 offset = 1;
+  uint64 limit = 2;
+  bool online = 3;
+  bool set_online = 4;
+  string location = 5;
+  bool set_location = 6;
+  uint32 hash_code = 7;
+  bool set_hash_code = 8;
+  bool error = 9;
+  bool set_error = 10;
+}
+
+message ListCnReply {
+  PortalReplyInfo reply_info = 1;
+  repeated CnMsg cn_msg_list = 2;
+}
+
+message GetCnRequest {
+  string cn_name = 1;
+}
+
+message GetCnReply {
+  PortalReplyInfo reply_info = 1;
+  CnMsg cn_msg = 2;
+  repeated CntlrMsg cntlr_msg_list = 3;
+}
+
+message CreateDaRequest {
+  string da_name = 1;
+  uint32 cntlr_cnt = 2;
+  uint64 da_size = 3;
+  uint64 physical_size = 4;
+  string da_conf = 5;
+  uint32 hash_code = 6;
+}
+
+message CreateDaReply {
+  PortalReplyInfo reply_info = 1;
+}
+
+message DeleteDaRequest {
+  string da_name = 1;
+}
+
+message DeleteDaReply {
+  PortalReplyInfo reply_info = 1;
+}
+
+message ModifyDaRequest {
+  string da_name = 1;
+  oneof attr {
+    uint32 new_hash_code = 2;
+  }
+}
+
+message ModifyDaReply {
+  PortalReplyInfo reply_info = 1;
+}
+
+message ListDaRequest {
+  uint64 offset = 1;
+  uint64 limit = 2;
+  string hash_code = 3;
+  bool set_hash_code = 4;
+}
+
+message ListDaReply {
+  PortalReplyInfo reply_info = 1;
+  repeated DaMsg da_msg_list = 2;
+}
+
+message GetDaRequest {
+  string da_name = 1;
+}
+
+message GetDaReply {
+  PortalReplyInfo reply_info = 1;
+  DaMsg da_msg = 2;
+  repeated GrpMsg grp_msg_list = 3;
+  repeated CntlrMsg cntlr_msg_list = 4;
+}
+
+message CreateExpRequest {
+  string da_name = 1;
+  string exp_name = 2;
+  string initiator_nqn = 3;
+  string snap_name = 4;
+}
+
+message CreateExpReply {
+  PortalReplyInfo reply_info = 1;
+}
+
+message DeleteExpRequest {
+  string da_name = 1;
+  string exp_name = 2;
+}
+
+message DeleteExpReply {
+  PortalReplyInfo reply_info = 1;
+}
+
+message ModifyExpRequest {
+  string da_name = 1;
+  string exp_name = 2;
+  oneof attr {
+    string new_exp_name = 3;
+  }
+}
+
+message ModifyExpReply {
+  PortalReplyInfo reply_info = 1;
+}
+
+message ListExpRequest {
+  uint64 offset = 1;
+  uint64 limit = 2;
+  string da_name = 3;
+  string initiator_nqn = 4;
+  bool set_initiator_nqn = 5;
+}
+
+message ListExpReply {
+  PortalReplyInfo reply_info = 1;
+  repeated ExpMsg exp_msg_list = 2;
+}
+
+message GetExpRequest {
+  string da_name = 1;
+  string exp_name = 2;
+}
+
+message GetExpReply {
+  PortalReplyInfo reply_info = 1;
+  ExpMsg exp_msg = 2;
+}
+
+message ManualSyncupDnRequest {
+  string dn_name = 1;
+}
+
+message ManualSyncupDnReply {
+  PortalReplyInfo reply_info = 1;
+}
+
+message ManualSyncupCnRequest {
+  string cn_name = 1;
+}
+
+message ManualSyncupCnReply {
+  PortalReplyInfo reply_info = 1;
+}
+
+message ManualSyncupDaRequest {
+  string da_name = 1;
+}
+
+message ManualSyncupDaReply {
+  PortalReplyInfo reply_info = 1;
+}
