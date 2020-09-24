@@ -80,10 +80,10 @@ class Grpc(Command):
 
 setup(
     name="vda",
-    version="0.0.4",
+    version="0.0.5",
     description="virtual disk array",
     long_description=long_description,
-    url="https://github.com/yupeng0921/vda",
+    url="https://virtual-disk-array.readthedocs.io/en/latest/index.html",
     author="peng yu",
     author_email="yupeng0921@gmail.com",
     license="MIT",
