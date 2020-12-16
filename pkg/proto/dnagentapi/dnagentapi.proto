@@ -1,0 +1,147 @@
+syntax = "proto3";
+
+option go_package = "github.com/virtual-disk-array/vda/pkg/proto/dnagentapi";
+
+package dnagentapi;
+
+service DnAgent {
+  rpc SyncupDn(SyncupDnRequest) returns(SyncupDnReply) {}
+  rpc DnHeartbeat (DnHeartbeatRequest) returns (DnHeartbeatReply) {}
+}
+
+message ReplyInfo {
+  uint64 reply_code = 1;
+  string reply_msg = 2;
+}
+
+message ErrInfo {
+  bool is_err = 1;
+  string err_msg = 2;
+  string timestamp = 3;
+}
+
+message BdevMalloc {
+  uint64 size = 1;
+}
+
+message BdevAio {
+  string file_name = 1;
+}
+
+message BdevNvme {
+  string tr_addr = 1;
+}
+
+message BdevIostat {
+  uint64 tick_rate = 1;
+  uint64 bytes_read = 2;
+  uint64 num_read_ops = 3;
+  uint64 bytes_written = 4;
+  uint64 num_write_ops = 5;
+  uint64 bytes_unmapped = 6;
+  uint64 num_unmap_ops = 7;
+  uint64 read_latency_ticks = 8;
+  uint64 write_latency_ticks = 9;
+  uint64 unmap_latency_ticks = 10;
+  uint64 queue_depth_polling_period = 11;
+  uint64 queue_depth = 12;
+  uint64 io_time = 13;
+  uint64 weighted_io_time = 14;
+}
+
+message BdevHistgram {
+  string histogram = 1;
+  uint64 tsc_rate = 2;
+  uint32 bucket_shift = 3;
+}
+
+message BdevQos {
+  uint64 rw_ios_per_sec = 1;
+  uint64 rw_mbytes_per_sec = 2;
+  uint64 r_mbytes_per_sec = 3;
+  uint64 w_mbytes_per_sec = 4;
+}
+
+message VdBeConf {
+  uint64 size = 1;
+  BdevQos qos = 2;
+  string cntlr_id = 3;
+}
+
+message VdBeInfo {
+  ErrInfo err_info = 1;
+}
+
+message PdConf {
+  oneof bdev_type {
+    BdevMalloc bdev_malloc = 1;
+    BdevAio bdev_aio = 2;
+    BdevNvme bdev_nvme = 3;
+  }
+}
+
+message PdInfo {
+  ErrInfo err_info = 1;
+}
+
+message PdCapacity {
+  uint64 total_size = 1;
+  uint64 free_size = 2;
+}
+
+message DnInfo {
+  ErrInfo err_info = 1;
+}
+
+message VdBeReq {
+  string vd_id = 1;
+  VdBeConf vd_be_conf = 2;
+}
+
+message PdReq {
+  string pd_id = 1;
+  PdConf pd_conf = 2;
+  repeated VdBeReq vd_be_req_list = 3;
+}
+
+message DnReq {
+  string dn_id = 1;
+  repeated PdReq pd_req_list = 2;
+}
+
+message SyncupDnRequest {
+  string req_id = 1;
+  int64 revision = 2;
+  DnReq dn_req = 3;
+}
+
+message VdBeRsp {
+  string vd_id = 1;
+  VdBeInfo vd_be_info = 2;
+}
+
+message PdRsp {
+  string pd_id = 1;
+  PdInfo pd_info = 2;
+  PdCapacity pd_capacity = 3;
+  repeated VdBeRsp vd_be_rsp_list = 4;
+}
+
+message DnRsp {
+  string dn_id = 1;
+  DnInfo dn_info = 2;
+  repeated PdRsp pd_rsp_list = 3;
+}
+
+message SyncupDnReply {
+  ReplyInfo reply_info = 1;
+  DnRsp dn_rsp = 2;
+}
+
+message DnHeartbeatRequest {
+  string req_id = 1;
+}
+
+message DnHeartbeatReply {
+  ReplyInfo reply_info = 1;
+}

@@ -1,0 +1,31 @@
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: vdacsi-pvc
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 128Mi
+  storageClassName: vdacsi-sc
+
+---
+kind: Pod
+apiVersion: v1
+metadata:
+  name: vdacsi-test
+spec:
+  containers:
+  - name: alpine
+    image: alpine:3
+    imagePullPolicy: "IfNotPresent"
+    command: ["sleep", "365d"]
+    volumeMounts:
+    - mountPath: "/vdavol"
+      name: vda-volume
+  volumes:
+  - name: vda-volume
+    persistentVolumeClaim:
+      claimName: vdacsi-pvc

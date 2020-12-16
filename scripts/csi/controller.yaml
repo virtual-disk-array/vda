@@ -1,0 +1,61 @@
+---
+kind: StatefulSet
+apiVersion: apps/v1
+metadata:
+  name: vdacsi-controller
+spec:
+  serviceName: vdacsi-controller
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vdacsi-controller
+  template:
+    metadata:
+      labels:
+        app: vdacsi-controller
+    spec:
+      serviceAccount: vdacsi-controller-sa
+      hostNetwork: true
+      containers:
+      - name: vdacsi-provisioner
+        image: quay.io/k8scsi/csi-provisioner:v1.4.0
+        imagePullPolicy: "IfNotPresent"
+        args:
+        - "--v=5"
+        - "--csi-address=unix:///csi/csi.sock"
+        - "--timeout=30s"
+        - "--retry-interval-start=500ms"
+        - "--enable-leader-election=false"
+        volumeMounts:
+        - name: socket-dir
+          mountPath: /csi
+      - name: vdacsi-attacher
+        image: quay.io/k8scsi/csi-attacher:v2.1.1
+        imagePullPolicy: "IfNotPresent"
+        args:
+        - "--v=5"
+        - "--csi-address=unix:///csi/csi.sock"
+        - "--leader-election=false"
+        volumeMounts:
+        - name: socket-dir
+          mountPath: /csi
+      - name: vdacsi-controller
+        image: vda/vdacsi:v0.0.1
+        imagePullPolicy: "IfNotPresent"
+        args:
+        - "--endpoint=unix:///csi/csi.sock"
+        - "--enable-cs"
+        - "--node-id=$(NODE_ID)"
+        - "--vda-endpoint=127.0.0.1:9520"
+        env:
+        - name: NODE_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        volumeMounts:
+        - name: socket-dir
+          mountPath: /csi
+      volumes:
+      - name: socket-dir
+        emptyDir:
+          medium: "Memory"

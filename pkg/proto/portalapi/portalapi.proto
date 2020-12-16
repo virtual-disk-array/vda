@@ -1,0 +1,565 @@
+syntax = "proto3";
+
+option go_package = "github.com/virtual-disk-array/vda/pkg/proto/portalapi";
+
+package portalapi;
+
+service Portal {
+  rpc CreateDn(CreateDnRequest) returns(CreateDnReply) {}
+  rpc DeleteDn(DeleteDnRequest) returns(DeleteDnReply) {}
+  rpc ModifyDn(ModifyDnRequest) returns(ModifyDnReply) {}
+  rpc ListDn(ListDnRequest) returns(ListDnReply) {}
+  rpc GetDn(GetDnRequest) returns(GetDnReply) {}
+  rpc CreatePd(CreatePdRequest) returns(CreatePdReply) {}
+  rpc DeletePd(DeletePdRequest) returns(DeletePdReply) {}
+  rpc ModifyPd(ModifyPdRequest) returns(ModifyPdReply) {}
+  rpc ListPd(ListPdRequest) returns(ListPdReply) {}
+  rpc GetPd(GetPdRequest) returns(GetPdReply) {}
+  rpc CreateCn(CreateCnRequest) returns(CreateCnReply) {}
+  rpc DeleteCn(DeleteCnRequest) returns(DeleteCnReply) {}
+  rpc ModifyCn(ModifyCnRequest) returns(ModifyCnReply) {}
+  rpc ListCn(ListCnRequest) returns (ListCnReply) {}
+  rpc GetCn(GetCnRequest) returns (GetCnReply) {}
+  rpc CreateDa(CreateDaRequest) returns (CreateDaReply) {}
+  rpc DeleteDa(DeleteDaRequest) returns (DeleteDaReply) {}
+  rpc ModifyDa(ModifyDaRequest) returns (ModifyDaReply) {}
+  rpc ListDa(ListDaRequest) returns (ListDaReply) {}
+  rpc GetDa(GetDaRequest) returns (GetDaReply) {}
+  rpc CreateExp(CreateExpRequest) returns (CreateExpReply) {}
+  rpc DeleteExp(DeleteExpRequest) returns (DeleteExpReply) {}
+  rpc ModifyExp(ModifyExpRequest) returns (ModifyExpReply) {}
+  rpc ListExp(ListExpRequest) returns (ListExpReply) {}
+  rpc GetExp(GetExpRequest) returns (GetExpReply) {}
+}
+
+message ReplyInfo {
+  string req_id = 1;
+  uint32 reply_code = 2;
+  string reply_msg = 3;
+}
+
+message ErrInfo {
+  bool is_err = 1;
+  string err_msg = 2;
+  string timestamp = 3;
+}
+
+message NvmfListener {
+  string tr_type = 1;
+  string adr_fam = 2;
+  string tr_addr = 3;
+  string tr_svc_id = 4;
+}
+
+message BdevMalloc {
+  uint64 size = 1;
+}
+
+message BdevAio {
+  string file_name = 1;
+}
+
+message BdevNvme {
+  string tr_addr = 1;
+}
+
+message BdevIostat {
+  uint64 tick_rate = 1;
+  uint64 bytes_read = 2;
+  uint64 num_read_ops = 3;
+  uint64 bytes_written = 4;
+  uint64 num_write_ops = 5;
+  uint64 bytes_unmapped = 6;
+  uint64 num_unmap_ops = 7;
+  uint64 read_latency_ticks = 8;
+  uint64 write_latency_ticks = 9;
+  uint64 unmap_latency_ticks = 10;
+  uint64 queue_depth_polling_period = 11;
+  uint64 queue_depth = 12;
+  uint64 io_time = 13;
+  uint64 weighted_io_time = 14;
+}
+
+message BdevHistgram {
+  string histogram = 1;
+  uint64 tsc_rate = 2;
+  uint32 bucket_shift = 3;
+}
+
+message Lvstore {
+  uint64 free_clusters = 1;
+  uint64 total_data_clusters = 2;
+  uint64 cluster_size = 3;
+  uint64 block_size = 4;
+}
+
+message BdevQos {
+  uint64 rw_ios_per_sec = 1;
+  uint64 rw_mbytes_per_sec = 2;
+  uint64 r_mbytes_per_sec = 3;
+  uint64 w_mbytes_per_sec = 4;
+}
+
+message SnapAttr {
+  bool snapshot = 1;
+  bool clone = 2;
+  string base_snapshot = 3;
+  repeated string clones = 4;
+}
+
+message DiskNode {
+  string dn_id = 1;
+  string sock_addr = 2;
+  string description = 3;
+  NvmfListener nvmf_listener = 4;
+  string location = 5;
+  bool is_offline = 6;
+  uint32 hash_code = 7;
+  ErrInfo err_info = 8;
+}
+
+message DnSummary {
+  string sock_addr = 1;
+  string description = 2;
+}
+
+message VdBackend {
+  string vd_id = 1;
+  string da_name = 2;
+  uint32 grp_idx = 3;
+  uint32 vd_idx = 4;
+  uint64 size = 5;
+  BdevQos qos = 6;
+  ErrInfo err_info = 7;
+  BdevIostat bdev_iostat = 8;
+  BdevHistgram bdev_histgram = 9;
+}
+
+message PhysicalDisk {
+  string pd_id = 1;
+  string pd_name = 2;
+  string description = 3;
+  bool is_offline = 4;
+  uint64 total_size = 5;
+  uint64 free_size = 6;
+  BdevQos total_qos = 7;
+  BdevQos free_qos = 8;
+  oneof bdev_type {
+    BdevMalloc bdev_malloc = 9;
+    BdevAio bdev_aio = 10;
+    BdevNvme bdev_nvme = 11;
+  }
+  ErrInfo err_info = 12;
+  BdevIostat bdev_iostat = 13;
+  BdevHistgram bdev_histgram = 14;
+  repeated VdBackend vd_be_list = 15;
+}
+
+message PdSummary {
+  string pd_name = 1;
+  string description = 2;
+}
+
+message ControllerNode {
+  string cn_id = 1;
+  string sock_addr = 2;
+  string description = 3;
+  NvmfListener nvmf_listener = 4;
+  string location = 5;
+  bool is_offline = 6;
+  uint32 hash_code = 7;
+  ErrInfo err_info = 8;
+  repeated CntlrFrontend cntlr_fe_list = 9;
+}
+
+message CnSummary {
+  string sock_addr = 1;
+  string description = 2;
+}
+
+message VdFrontend {
+  string vd_id = 1;
+  uint32 vd_idx = 2;
+  uint64 size = 3;
+  ErrInfo err_info = 4;
+}
+
+message GrpFrontend {
+  string grp_id = 1;
+  uint32 grp_idx = 2;
+  uint64 size = 3;
+  ErrInfo err_info = 4;
+  repeated VdFrontend vd_fe_list = 5;
+}
+
+message SnapFrontend {
+  string snap_id = 1;
+  string snap_name = 2;
+  string description = 3;
+  string ori_name = 4;
+  uint64 size = 5;
+  ErrInfo err_info = 6;
+  SnapAttr snap_attr = 7;
+}
+
+message ExpFrontend {
+  string exp_id = 1;
+  string exp_name = 2;
+  string description = 3;
+  string initiator_nqn = 4;
+  string snap_name = 5;
+  ErrInfo err_info = 6;
+  BdevIostat bdev_iostat = 7;
+  BdevHistgram bdev_histgram = 8;
+}
+
+message CntlrFrontend {
+  string cntlr_id = 1;
+  string da_name = 2;
+  uint32 cntlr_idx = 3;
+  bool is_primary = 4;
+  ErrInfo err_info = 5;
+  Lvstore lvstore = 6;
+  repeated GrpFrontend grp_fe_list = 7;
+  repeated SnapFrontend snap_fe_list= 8;
+  repeated ExpFrontend exp_fe_list = 9;
+}
+
+message Controller {
+  string cntlr_id = 1;
+  string sock_addr = 2;
+  uint32 cntlr_idx = 3;
+  bool is_primary = 4;
+}
+
+message VirtualDisk {
+  string vd_id = 1;
+  uint32 vd_idx = 2;
+  string sock_addr = 3;
+  string pd_name = 4;
+  uint64 size = 5;
+  BdevQos be_qos = 6;
+  ErrInfo be_err_info = 7;
+  BdevIostat be_bdev_iostat = 8;
+  BdevHistgram be_bdev_histgram = 9;
+  ErrInfo fe_err_info = 10;
+}
+
+message Group {
+  string grp_id = 1;
+  uint32 grp_idx = 2;
+  uint64 size = 3;
+  repeated VirtualDisk vd_list = 4;
+}
+
+message Snap {
+  string snap_id = 1;
+  string snap_name = 2;
+  string description = 3;
+  string ori_name = 4;
+  uint64 size = 5;
+  ErrInfo err_info = 6;
+  SnapAttr snap_attr = 7;
+}
+
+message SnapSummary {
+  string snap_name = 1;
+  string description = 2;
+}
+
+message Exporter {
+  string exp_id = 1;
+  string exp_name = 2;
+  string description = 3;
+  string initiator_nqn = 4;
+  string snap_name = 5;
+  ErrInfo err_info = 6;
+  BdevIostat bdev_iostat = 7;
+  BdevHistgram bdev_histgram = 8;
+}
+
+message ExpSummary {
+  string exp_name = 1;
+  string description = 2;
+}
+
+message DiskArray {
+  string da_id = 1;
+  string da_name = 2;
+  string description = 3;
+  uint32 stripe_cnt = 4;
+  repeated Controller cntlr_list = 5;
+  repeated Group grp_list = 6;
+}
+
+message DaSummary {
+  string da_name = 1;
+  string description = 2;
+}
+
+message CreateDnRequest {
+  string sock_addr = 1;
+  string description = 2;
+  NvmfListener nvmf_listener = 3;
+  string location = 4;
+  bool is_offline = 5;
+}
+
+message CreateDnReply {
+  ReplyInfo reply_info = 1;
+}
+
+message DeleteDnRequest {
+  string sock_addr = 1;
+}
+
+message DeleteDnReply {
+  ReplyInfo reply_info = 1;
+}
+
+message ModifyDnRequest {
+  string sock_addr = 1;
+  oneof attr {
+    string description = 2;
+    bool is_offline = 3;
+    uint32 hash_code = 4;
+  }
+}
+
+message ModifyDnReply {
+  ReplyInfo reply_info = 1;
+}
+
+message ListDnRequest {
+  uint64 limit = 1;
+  string token = 2;
+}
+
+message ListDnReply {
+  ReplyInfo reply_info = 1;
+  string token = 2;
+  repeated DnSummary dn_summary_list = 3;
+}
+
+message GetDnRequest {
+  string sock_addr = 1;
+}
+
+message GetDnReply {
+  ReplyInfo reply_info = 1;
+  DiskNode disk_node = 2;
+}
+
+message CreatePdRequest {
+  string sock_addr = 1;
+  string pd_name = 2;
+  string description = 3;
+  bool is_offline = 4;
+  BdevQos bdev_qos = 5;
+  oneof bdev_type {
+    BdevMalloc bdev_malloc = 6;
+    BdevAio bdev_aio = 7;
+    BdevNvme bdev_nvme = 8;
+  }
+}
+
+message CreatePdReply {
+  ReplyInfo reply_info = 1;
+}
+
+message DeletePdRequest {
+  string sock_addr = 1;
+  string pd_name = 2;
+}
+
+message DeletePdReply {
+  ReplyInfo reply_info = 1;
+}
+
+message ModifyPdRequest {
+  string sock_addr = 1;
+  string pd_name = 2;
+  oneof attr {
+    bool description = 3;
+    bool is_offline = 4;
+  }
+}
+
+message ModifyPdReply {
+  ReplyInfo reply_info = 1;
+}
+
+message ListPdRequest {
+  string sock_addr = 1;
+}
+
+message ListPdReply {
+  ReplyInfo reply_info = 1;
+  repeated PdSummary pd_summary_list = 2;
+}
+
+message GetPdRequest {
+  string sock_addr = 1;
+  string pd_name = 2;
+}
+
+message GetPdReply {
+  ReplyInfo reply_info = 1;
+  PhysicalDisk physical_disk = 2;
+}
+
+message CreateCnRequest {
+  string sock_addr = 1;
+  string description = 2;
+  NvmfListener nvmf_listener = 3;
+  bool is_offline = 4;
+}
+
+message CreateCnReply {
+  ReplyInfo reply_info = 1;
+}
+
+message DeleteCnRequest {
+  string sock_addr = 1;
+}
+
+message DeleteCnReply {
+  ReplyInfo reply_info = 1;
+}
+
+message ModifyCnRequest {
+  string sock_addr = 1;
+  oneof attr {
+    string description = 2;
+    bool is_offline = 3;
+    uint32 hash_code = 4;
+  }
+}
+
+message ModifyCnReply {
+  ReplyInfo reply_info = 1;
+}
+
+message ListCnRequest {
+  uint64 limit = 1;
+  string token = 2;
+}
+
+message ListCnReply {
+  ReplyInfo reply_info = 1;
+  string token = 2;
+  repeated CnSummary cn_summary_list = 3;
+}
+
+message GetCnRequest {
+  string sock_addr = 1;
+}
+
+message GetCnReply {
+  ReplyInfo reply_info = 1;
+  ControllerNode controller_node = 2;
+}
+
+message CreateDaRequest {
+  string da_name = 1;
+  string description = 2;
+  uint64 size = 3;
+  uint64 physical_size = 4;
+  uint32 cntlr_cnt = 5;
+  uint32 stripe_cnt = 6;
+}
+
+message CreateDaReply {
+  ReplyInfo reply_info = 1;
+}
+
+message DeleteDaRequest {
+  string da_name = 1;
+}
+
+message DeleteDaReply {
+  ReplyInfo reply_info = 1;
+}
+
+message ModifyDaRequest {
+  string da_name = 1;
+  oneof attr {
+    string description = 2;
+  }
+}
+
+message ModifyDaReply {
+  ReplyInfo reply_info = 1;
+}
+
+message ListDaRequest {
+  uint64 limit = 1;
+  string token = 2;
+}
+
+message ListDaReply {
+  ReplyInfo reply_info = 1;
+  string token = 2;
+  repeated DaSummary da_summary_list = 3;
+}
+
+message GetDaRequest {
+  string da_name = 1;
+}
+
+message GetDaReply {
+  ReplyInfo reply_info = 1;
+  DiskArray disk_array = 2;
+}
+
+message CreateExpRequest {
+  string da_name = 1;
+  string exp_name = 2;
+  string description = 3;
+  string initiator_nqn = 4;
+  string snap_name = 5;
+}
+
+message CreateExpReply {
+  ReplyInfo reply_info = 1;
+}
+
+message DeleteExpRequest {
+  string da_name = 1;
+  string exp_name = 2;
+}
+
+message DeleteExpReply {
+  ReplyInfo reply_info = 1;
+}
+
+message ModifyExpRequest {
+  string da_name = 1;
+  string exp_name = 2;
+  oneof attr {
+    string description = 3;
+  }
+}
+
+message ModifyExpReply {
+  ReplyInfo reply_info = 1;
+}
+
+message ListExpRequest {
+  string da_name = 1;
+}
+
+message ListExpReply {
+  ReplyInfo reply_info = 1;
+  repeated ExpSummary exp_summary_list = 2;
+}
+
+message GetExpRequest {
+  string da_name = 1;
+  string exp_name = 2;
+}
+
+message GetExpReply {
+  ReplyInfo reply_info = 1;
+  Exporter exporter = 2;
+}
