@@ -73,7 +73,8 @@ message Controller {
 message VdFeConf {
   NvmfListener dn_nvmf_listener = 1;
   string dn_sock_addr = 2;
-  uint64 size = 3;
+  uint32 vd_idx = 3;
+  uint64 size = 4;
 }
 
 message VdFeInfo {
@@ -81,8 +82,9 @@ message VdFeInfo {
 }
 
 message GrpFeConf {
-  uint64 size = 1;
-  repeated VdFeConf vd_fe_conf_list = 2;
+  uint32 grp_idx = 1;
+  uint64 size = 2;
+  repeated VdFeConf vd_fe_conf_list = 3;
 }
 
 message GrpFeInfo {
@@ -111,14 +113,14 @@ message ExpFeInfo {
 }
 
 message CntlrFeConf {
-  bool is_primary = 1;
-  uint32 stripe_cnt = 2;
-  repeated Controller cntlr_list = 5;
+  string da_id = 1;
+  bool is_primary = 2;
+  uint32 stripe_cnt = 3;
+  repeated Controller cntlr_list = 4;
 }
 
 message CntlrFeInfo {
   ErrInfo err_info = 1;
-  Lvstore lvstore = 2;
 }
 
 message CnInfo {
@@ -150,8 +152,8 @@ message CntlrFeReq {
   string cntlr_id = 1;
   CntlrFeConf cntlr_fe_conf = 2;
   repeated GrpFeReq grp_fe_req_list = 3;
-  repeated SnapFeReq snap_fe_req = 4;
-  repeated ExpFeReq exp_fe_req = 5;
+  repeated SnapFeReq snap_fe_req_list = 4;
+  repeated ExpFeReq exp_fe_req_list = 5;
 }
 
 message CnReq {

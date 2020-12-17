@@ -21,6 +21,11 @@ type LisConf struct {
 	TrSvcId string `json:"trsvcid"`
 }
 
+type BdevSeq struct {
+	Name string
+	Idx  uint32
+}
+
 type Iostat struct {
 	TickRate                uint64
 	BytesRead               uint64
