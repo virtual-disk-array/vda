@@ -16,7 +16,6 @@ const (
 	totalDataCluster = 200
 	blockSize        = 4096
 	reqId            = "427a4eb5-bd7c-418f-944d-ad675f946d72"
-	revision         = int64(1)
 	dnId             = "072267fa39c74c52af2d11b53627e93a"
 	pdId             = "baee605455c8418e89674af4b5e792e3"
 	nvmeTrAddr       = "00:0d.0"
@@ -62,7 +61,7 @@ var (
 	}
 )
 
-func TestSyncup(t *testing.T) {
+func TestNormalSyncup(t *testing.T) {
 	sockPath := "/tmp/vdatest.sock"
 	sockTimeout := 10
 	lisConf := &lib.LisConf{
@@ -87,7 +86,7 @@ func TestSyncup(t *testing.T) {
 	ctx := context.Background()
 	req := &pbdn.SyncupDnRequest{
 		ReqId:    reqId,
-		Revision: revision,
+		Revision: int64(1),
 		DnReq: &pbdn.DnReq{
 			DnId: dnId,
 			PdReqList: []*pbdn.PdReq{
@@ -162,5 +161,74 @@ func TestSyncup(t *testing.T) {
 	}
 	if vdBeRsp.VdBeInfo.ErrInfo.IsErr {
 		t.Errorf("VdBeRsp has err: %v", vdBeRsp.VdBeInfo.ErrInfo)
+	}
+}
+
+func TestOldSyncup(t *testing.T) {
+	sockPath := "/tmp/vdatest.sock"
+	sockTimeout := 10
+	lisConf := &lib.LisConf{
+		TrType:  "tcp",
+		TrAddr:  "127.0.0.1",
+		AdrFam:  "ipv4",
+		TrSvcId: "4420",
+	}
+	trConf := map[string]interface{}{
+		"trtype": "TCP",
+	}
+
+	s, err := mockspdk.NewMockSpdkServer("unix", sockPath, t)
+	if err != nil {
+		return
+	}
+	for k, v := range simpalSpdk {
+		s.AddMethod(k, v)
+	}
+	go s.Run()
+	time.Sleep(time.Second)
+
+	dnAgent := newDnAgentServer(sockPath, sockTimeout, lisConf, trConf)
+	ctx := context.Background()
+	revOld := int64(1)
+	revNew := int64(2)
+
+	req := &pbdn.SyncupDnRequest{
+		ReqId:    reqId,
+		Revision: revNew,
+		DnReq: &pbdn.DnReq{
+			DnId:      dnId,
+			PdReqList: []*pbdn.PdReq{},
+		},
+	}
+	reply, err := dnAgent.SyncupDn(ctx, req)
+	if err != nil {
+		t.Errorf("SyncupDn failed: %v", err)
+	}
+	replyInfo := reply.ReplyInfo
+	if replyInfo.ReplyCode != lib.DnSucceedCode {
+		t.Errorf("SyncupDn ReplyCode error: %v", replyInfo.ReplyCode)
+	}
+	if replyInfo.ReplyMsg != lib.DnSucceedMsg {
+		t.Errorf("SyncupDn ReplyMsg error: %v", replyInfo.ReplyMsg)
+	}
+
+	req = &pbdn.SyncupDnRequest{
+		ReqId:    reqId,
+		Revision: revOld,
+		DnReq: &pbdn.DnReq{
+			DnId:      dnId,
+			PdReqList: []*pbdn.PdReq{},
+		},
+	}
+	reply, err = dnAgent.SyncupDn(ctx, req)
+	if err != nil {
+		t.Errorf("SyncupDn failed: %v", err)
+	}
+	replyInfo = reply.ReplyInfo
+	if replyInfo.ReplyCode != lib.DnOldRevErrCode {
+		t.Errorf("SyncupDn ReplyCode error: %v", replyInfo.ReplyCode)
+	}
+	if replyInfo.ReplyMsg != lib.DnOldRevErrMsg {
+		t.Errorf("SyncupDn ReplyMsg error: %v", replyInfo.ReplyMsg)
 	}
 }
