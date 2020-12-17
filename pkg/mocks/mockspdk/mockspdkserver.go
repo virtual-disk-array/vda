@@ -68,7 +68,7 @@ func (s *MockSpdkServer) handleConn(conn net.Conn) {
 			if err == io.EOF {
 				return
 			} else {
-				s.t.Error("MockSpdkServer conn decode err: %v", err)
+				s.t.Errorf("MockSpdkServer conn decode err: %v", err)
 				s.stop = true
 				return
 			}
@@ -78,7 +78,7 @@ func (s *MockSpdkServer) handleConn(conn net.Conn) {
 			if err == io.EOF {
 				return
 			} else {
-				s.t.Error("MockSpdkServer conn encode err: %v", err)
+				s.t.Errorf("MockSpdkServer conn encode err: %v", err)
 			}
 		}
 	}
@@ -92,7 +92,7 @@ func (s *MockSpdkServer) Run() {
 		}
 		conn, err := s.lis.Accept()
 		if err != nil {
-			s.t.Error("MockSpdkServer accept failed: %v", err)
+			s.t.Errorf("MockSpdkServer accept failed: %v", err)
 			return
 		}
 		s.handleConn(conn)
@@ -103,7 +103,7 @@ func NewMockSpdkServer(network, address string, t *testing.T) (*MockSpdkServer, 
 	os.Remove(address)
 	lis, err := net.Listen(network, address)
 	if err != nil {
-		t.Error("MockSpdkServer listen failed: %v", err)
+		t.Errorf("MockSpdkServer listen failed: %v", err)
 		return nil, err
 	}
 	s := &MockSpdkServer{
