@@ -194,7 +194,7 @@ message CntlrFeRsp {
   repeated ExpFeRsp exp_fe_rsp_list = 5;
 }
 
-message CnResp {
+message CnRsp {
   string cn_id = 1;
   CnInfo cn_info = 2;
   repeated CntlrFeRsp cntlr_fe_rsp_list = 3;
@@ -202,7 +202,7 @@ message CnResp {
 
 message SyncupCnReply {
   ReplyInfo reply_info = 1;
-  CnResp cn_resp = 2;
+  CnRsp cn_rsp = 2;
 }
 
 message CnHeartbeatRequest {

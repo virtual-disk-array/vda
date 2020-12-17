@@ -32,13 +32,13 @@ func newErrInfo(err error) *pbdn.ErrInfo {
 }
 
 type syncupHelper struct {
+	lisConf   *lib.LisConf
+	nf        *lib.NameFmt
+	oc        *lib.OperationClient
 	pdBdevMap map[string]bool
 	pdLvsMap  map[string]bool
 	beLvolMap map[string]bool
 	beNqnMap  map[string]bool
-	lisConf   *lib.LisConf
-	nf        *lib.NameFmt
-	oc        *lib.OperationClient
 }
 
 func (sh *syncupHelper) syncupVdBe(vdBeReq *pbdn.VdBeReq,
@@ -224,13 +224,13 @@ func (sh *syncupHelper) syncupDn(dnReq *pbdn.DnReq) *pbdn.DnRsp {
 
 func newSyncupHelper(lisConf *lib.LisConf, nf *lib.NameFmt, sc *lib.SpdkClient) *syncupHelper {
 	return &syncupHelper{
+		lisConf:   lisConf,
+		nf:        nf,
+		oc:        lib.NewOperationClient(sc),
 		pdBdevMap: make(map[string]bool),
 		pdLvsMap:  make(map[string]bool),
 		beNqnMap:  make(map[string]bool),
 		beLvolMap: make(map[string]bool),
-		lisConf:   lisConf,
-		nf:        nf,
-		oc:        lib.NewOperationClient(sc),
 	}
 }
 
