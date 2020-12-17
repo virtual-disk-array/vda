@@ -865,7 +865,7 @@ func (oc *OperationClient) CreatePdNvme(name, realName, trAddr string) error {
 		return err
 	}
 	if rsp.Error != nil {
-		logger.Error("bdev_nvme_attach_controller rsp err: %d", *rsp.Error)
+		logger.Error("bdev_nvme_attach_controller rsp err: %v", *rsp.Error)
 		return fmt.Errorf("bdev_nvme_attach_controller rsp err: %d %s",
 			rsp.Error.Code, rsp.Error.Message)
 	}

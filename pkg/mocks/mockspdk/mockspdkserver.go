@@ -38,19 +38,26 @@ type MockSpdkServer struct {
 	stop      bool
 }
 
-func (s *MockSpdkServer) addMethod(name string,
+func defaultMethod(params interface{}) (*SpdkErr, interface{}) {
+	return nil, true
+}
+
+func (s *MockSpdkServer) AddMethod(name string,
 	api func(params interface{}) (*SpdkErr, interface{})) {
 	s.nameToApi[name] = api
 }
 
 func (s *MockSpdkServer) handleApi(req *spdkReq) *spdkRsp {
-	if req.Method == STOP_SERVER {
-		s.stop = true
+	api, ok := s.nameToApi[req.Method]
+	if !ok {
+		api = defaultMethod
 	}
+	spdkErr, result := api(req.Params)
 	rsp := &spdkRsp{
 		JsonRpc: req.JsonRpc,
 		Id:      req.Id,
-		Result:  true,
+		Error:   spdkErr,
+		Result:  result,
 	}
 	return rsp
 }
@@ -112,5 +119,8 @@ func NewMockSpdkServer(network, address string, t *testing.T) (*MockSpdkServer, 
 		lis:       lis,
 		stop:      false,
 	}
+	s.AddMethod(STOP_SERVER, func(params interface{}) (*SpdkErr, interface{}) {
+		return nil, true
+	})
 	return s, nil
 }
