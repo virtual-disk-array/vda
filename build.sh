@@ -28,6 +28,10 @@ function build_dn_agent() {
     go build -o $output_dir/vda_dn_agent ./cmd/dnagent
 }
 
+function build_cn_agent() {
+    go build -o $output_dir/vda_cn_agent ./cmd/cnagent
+}
+
 function clean_portal() {
     rm -f $output_dir/vda_portal
 }
@@ -52,6 +56,7 @@ case $action in
         build_pb
         build_portal
         build_dn_agent
+        build_cn_agent
         build_cli
         ;;
     clean)
