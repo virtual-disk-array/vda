@@ -9,6 +9,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/virtual-disk-array/vda/pkg/logger"
+	pbcn "github.com/virtual-disk-array/vda/pkg/proto/cnagentapi"
 	pbds "github.com/virtual-disk-array/vda/pkg/proto/dataschema"
 	pbdn "github.com/virtual-disk-array/vda/pkg/proto/dnagentapi"
 )
@@ -23,6 +24,15 @@ type dnIdToRes struct {
 	idToDn   map[string]*pbdn.DnRsp
 	idToPd   map[string]*pbdn.PdRsp
 	idToVdBe map[string]*pbdn.VdBeRsp
+}
+
+type cnIdToRes struct {
+	idToCn      map[string]*pbcn.CnRsp
+	idToCntlrFe map[string]*pbcn.CntlrFeRsp
+	idToGrpFe   map[string]*pbcn.GrpFeRsp
+	idToVdFe    map[string]*pbcn.VdFeRsp
+	idToSnapFe  map[string]*pbcn.SnapFeRsp
+	idToExpFe   map[string]*pbcn.ExpFeRsp
 }
 
 type capDiff struct {
@@ -322,4 +332,68 @@ func NewSyncupManager(kf *KeyFmt, sw *StmWrapper,
 		sw:         sw,
 		createConn: createConn,
 	}
+}
+
+func (sm *SyncupManager) SyncupCn(sockAddr string, ctx context.Context) {
+	revision, controllerNode, err := sm.getControllerNode(sockAddr, ctx)
+	if err != nil {
+		return
+	}
+	req, err := sm.buildSyncupCnRequest(revision, controllerNode, ctx)
+	if err != nil {
+		return
+	}
+
+	idToRes := &cnIdToRes{
+		idToCn:      make(map[string]*pbcn.CnRsp),
+		idToCntlrFe: make(map[string]*pbcn.CntlrFeRsp),
+		idToGrpFe:   make(map[string]*pbcn.GrpFeRsp),
+		idToVdFe:    make(map[string]*pbcn.VdFeRsp),
+		idToSnapFe:  make(map[string]*pbcn.SnapFeRsp),
+		idToExpFe:   make(map[string]*pbcn.ExpFeRsp),
+	}
+
+	reply, err := sm.syncupCn(sockAddr, ctx, req)
+	if err == nil {
+		if reply.ReplyInfo.ReplyCode == CnSucceedCode {
+			sm.getCnRsp(reply, idToRes)
+			capDiffList := sm.setCnInfo(controllerNode, idToRes)
+			sm.writeCnInfo(controllerNode, capDiffList, revision, ctx)
+		} else {
+			logger.Warning("SyncupCn reply error: %v", reply.ReplyInfo)
+		}
+	} else {
+		logger.Warning("SyncupCn grpc error: %v", err)
+		capDiffList := sm.setCnInfo(controllerNode, idToRes)
+		sm.writeCnInfo(controllerNode, capDiffList, revision, ctx)
+	}
+}
+
+func (sm *SyncupManager) getControllerNode(sockAddr string, ctx context.Context) (
+	int64, *pbds.ControllerNode, error) {
+	return int64(0), nil, nil
+}
+
+func (sm *SyncupManager) buildSyncupCnRequest(
+	revision int64, controllerNode *pbds.ControllerNode, ctx context.Context) (
+	*pbcn.SyncupCnRequest, error) {
+	return nil, nil
+}
+
+func (sm *SyncupManager) syncupCn(sockAddr string, ctx context.Context,
+	req *pbcn.SyncupCnRequest) (*pbcn.SyncupCnReply, error) {
+	return nil, nil
+}
+
+func (sm *SyncupManager) getCnRsp(reply *pbcn.SyncupCnReply, idToRes *cnIdToRes) {
+}
+
+func (sm *SyncupManager) setCnInfo(controllerNode *pbds.ControllerNode,
+	idToRes *cnIdToRes) []*capDiff {
+	capDiffList := make([]*capDiff, 0)
+	return capDiffList
+}
+
+func (sm *SyncupManager) writeCnInfo(controllerNode *pbds.ControllerNode,
+	capDiffList []*capDiff, revision int64, ctx context.Context) {
 }
