@@ -500,6 +500,7 @@ func newSyncupHelper(lisConf *lib.LisConf, nf *lib.NameFmt, sc *lib.SpdkClient) 
 		feNvmeMap:    make(map[string]bool),
 		aggBdevMap:   make(map[string]bool),
 		daLvsMap:     make(map[string]bool),
+		snapMap:      make(map[string]bool),
 		expNqnMap:    make(map[string]bool),
 		secNvmeMap:   make(map[string]bool),
 		grpBdevMap:   make(map[string]bool),

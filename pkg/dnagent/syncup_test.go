@@ -62,7 +62,7 @@ var (
 )
 
 func TestNormalSyncup(t *testing.T) {
-	sockPath := "/tmp/vdatest.sock"
+	sockPath := "/tmp/vdadntest.sock"
 	sockTimeout := 10
 	lisConf := &lib.LisConf{
 		TrType:  "tcp",

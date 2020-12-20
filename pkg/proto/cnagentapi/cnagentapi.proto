@@ -162,7 +162,7 @@ message CnReq {
 
 message SyncupCnRequest {
   string req_id = 1;
-  uint64 revision = 2;
+  int64 revision = 2;
   CnReq cn_req = 3;
 }
 
