@@ -7,8 +7,8 @@ import (
 const (
 	pdBdevType    = "000"
 	pdLvsType     = "001"
-	beBdevType    = "002"
-	feNvmeType    = "003"
+	vdBeBdevType  = "002"
+	vdFeNvmeType  = "003"
 	aggBdevType   = "004"
 	daLvsType     = "005"
 	secNvmeType   = "006"
@@ -47,7 +47,7 @@ func (nf *NameFmt) FeNqnPrefix() string {
 }
 
 func (nf *NameFmt) FeNvmePrefix() string {
-	return fmt.Sprintf("%s:%s", nf.vdaPrefix, feNvmeType)
+	return fmt.Sprintf("%s:%s", nf.vdaPrefix, vdFeNvmeType)
 }
 
 func (nf *NameFmt) AggBdevPrefix() string {
@@ -56,6 +56,10 @@ func (nf *NameFmt) AggBdevPrefix() string {
 
 func (nf *NameFmt) DaLvsPrefix() string {
 	return fmt.Sprintf("%s-%s", nf.vdaPrefix, daLvsType)
+}
+
+func (nf *NameFmt) SnapFullNamePrefix() string {
+	return nf.DaLvsPrefix()
 }
 
 func (nf *NameFmt) SecNvmePrefix() string {
@@ -108,6 +112,10 @@ func (nf *NameFmt) FeNvmeName(vdId string) string {
 	return fmt.Sprintf("%s-%s", nf.FeNvmePrefix(), vdId)
 }
 
+func (nf *NameFmt) FeBdevName(vdId string) string {
+	return fmt.Sprintf("%sn1", nf.FeNvmeName(vdId))
+}
+
 func (nf *NameFmt) AggBdevName(daId string) string {
 	return fmt.Sprintf("%s-%s", nf.AggBdevPrefix(), daId)
 }
@@ -122,6 +130,30 @@ func (nf *NameFmt) Raid0BdevName(grpId string) string {
 
 func (nf *NameFmt) GrpBdevName(grpId string) string {
 	return fmt.Sprintf("%s-%s", nf.GrpBdevPrefix(), grpId)
+}
+
+func (nf *NameFmt) SnapName(snapId string) string {
+	return fmt.Sprintf("%s", snapId)
+}
+
+func (nf *NameFmt) SnapFullName(daId, snapId string) string {
+	return fmt.Sprintf("%s/%s", nf.DaLvsName(daId), nf.SnapName(snapId))
+}
+
+func (nf *NameFmt) ExpNqnName(expId string) string {
+	return fmt.Sprintf("%s-%s", nf.ExpNqnPrefix(), expId)
+}
+
+func (nf *NameFmt) SecNqnName(cntlrId string) string {
+	return fmt.Sprintf("%s-%s", nf.SecNqnPrefix(), cntlrId)
+}
+
+func (nf *NameFmt) SecNvmeName(primCntlrId string) string {
+	return fmt.Sprintf("%s-%s", nf.SecNvmePrefix(), primCntlrId)
+}
+
+func (nf *NameFmt) SecBdevName(primCntlrId string) string {
+	return fmt.Sprintf("%sn1", nf.SecNvmeName(primCntlrId))
 }
 
 func NewNameFmt(vdaPrefix, nqnPrefix string) *NameFmt {

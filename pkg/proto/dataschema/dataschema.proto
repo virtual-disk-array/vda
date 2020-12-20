@@ -77,6 +77,8 @@ message Controller {
   string cntlr_id = 1;
   string cn_sock_addr = 2;
   uint32 cntlr_idx = 3;
+  bool is_primary = 4;
+  NvmfListener cn_nvmf_listener = 5;
 }
 
 message VdBeConf {
@@ -180,13 +182,14 @@ message GrpFrontend {
 }
 
 message SnapFeConf {
-  string ori_name = 2;
-  uint64 size = 3;
+  string ori_id = 1;
+  bool is_clone = 2;
+  uint64 idx = 3;
+  uint64 size = 4;
 }
 
 message SnapFeInfo {
   ErrInfo err_info = 1;
-  SnapAttr snap_attr = 2;
 }
 
 message SnapFrontend {
@@ -197,13 +200,11 @@ message SnapFrontend {
 
 message ExpFeConf {
   string initiator_nqn = 1;
-  string snap_name = 2;
+  string snap_id = 2;
 }
 
 message ExpFeInfo {
   ErrInfo err_info = 1;
-  BdevIostat bdev_iostat = 2;
-  BdevHistgram bdev_histgram = 3;
 }
 
 message ExpFrontend {
@@ -214,10 +215,9 @@ message ExpFrontend {
 
 message CntlrFeConf {
   string da_id = 1;
-  uint32 cntlr_idx = 2;
-  bool is_primary = 3;
-  uint32 stripe_cnt = 4;
-  repeated Controller cntlr_list = 5;
+  uint32 stripe_cnt = 2;
+  uint32 stripe_size_kb = 3;
+  repeated Controller cntlr_list = 4;
 }
 
 message CntlrFeInfo {
@@ -280,7 +280,9 @@ message Snap {
   string snap_name = 2;
   string description = 3;
   string ori_name = 4;
-  uint64 size = 5;
+  bool is_clone = 5;
+  uint64 idx = 6;
+  uint64 size = 7;
 }
 
 message Exporter {
@@ -297,10 +299,11 @@ message DiskArray {
   string da_name = 2;
   string description = 3;
   uint32 stripe_cnt = 4;
-  repeated Controller cntlr_list = 5;
-  repeated Group grp_list = 6;
-  repeated Snap snap_list = 7;
-  repeated Exporter exp_list = 8;
+  uint32 stripe_size_kb = 5;
+  repeated Controller cntlr_list = 6;
+  repeated Group grp_list = 7;
+  repeated Snap snap_list = 8;
+  repeated Exporter exp_list = 9;
 }
 
 // /{vda_prefix}/capacity/dn/{free_size@sock_addr@pd_name}

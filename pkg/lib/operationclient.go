@@ -21,11 +21,6 @@ type LisConf struct {
 	TrSvcId string `json:"trsvcid"`
 }
 
-type BdevSeq struct {
-	Name string
-	Idx  uint32
-}
-
 type Iostat struct {
 	TickRate                uint64
 	BytesRead               uint64
@@ -247,13 +242,17 @@ func (oc *OperationClient) getBdevByPrefix(prefix string) ([]string, error) {
 }
 
 func (oc *OperationClient) GetBeNqnList(prefix string) ([]string, error) {
-	beNqnList := make([]string, 0)
+	return oc.getNqnList(prefix)
+}
+
+func (oc *OperationClient) getNqnList(prefix string) ([]string, error) {
+	nqnList := make([]string, 0)
 	for nqn, _ := range oc.nqnToNvmf {
 		if strings.HasPrefix(nqn, prefix) {
-			beNqnList = append(beNqnList, nqn)
+			nqnList = append(nqnList, nqn)
 		}
 	}
-	return beNqnList, nil
+	return nqnList, nil
 }
 
 func (oc *OperationClient) createNvmfSubsystem(nqn string) error {
@@ -449,6 +448,8 @@ func (oc *OperationClient) CreateBeNvmf(beNqnName, beLvolFullName, feNqnName str
 			return err
 		}
 		nvmf = nil
+	} else {
+		nvmf = nil
 	}
 	if nvmf == nil {
 		if err := oc.createNvmfSubsystem(beNqnName); err != nil {
@@ -517,12 +518,12 @@ func (oc *OperationClient) CreateBeLvol(lvsName, lvolName string, size uint64,
 		}{}
 		err = oc.sc.Invoke("bdev_lvol_create", params, rsp)
 		if err != nil {
-			logger.Error("bdev_lvol_delete failed: %v", err)
+			logger.Error("bdev_lvol_create failed: %v", err)
 			return err
 		}
 		if rsp.Error != nil {
-			logger.Error("bdev_lvol_delete rsp err: %v", *rsp.Error)
-			return fmt.Errorf("bdev_lvol_delete rsp err: %d %s",
+			logger.Error("bdev_lvol_create rsp err: %v", *rsp.Error)
+			return fmt.Errorf("bdev_lvol_create rsp err: %d %s",
 				rsp.Error.Code, rsp.Error.Message)
 		}
 	}
@@ -551,7 +552,7 @@ func (oc *OperationClient) DeleteBeLvol(name string) error {
 	return nil
 }
 
-func (oc *OperationClient) GetPdLvsList(prefix string) ([]string, error) {
+func (oc *OperationClient) getLvsByPrefix(prefix string) ([]string, error) {
 	rsp := &struct {
 		Error  *spdkErr `json:"error"`
 		Result *[]*struct {
@@ -572,13 +573,16 @@ func (oc *OperationClient) GetPdLvsList(prefix string) ([]string, error) {
 		logger.Error("bdev_lvol_get_lvstores result is nil")
 		return nil, fmt.Errorf("bdev_lvol_get_lvstores result is nil")
 	}
-	pdLvsList := make([]string, 0)
+	lvsList := make([]string, 0)
 	for _, lvs := range *rsp.Result {
 		if strings.HasPrefix(lvs.Name, prefix) {
-			pdLvsList = append(pdLvsList, lvs.Name)
+			lvsList = append(lvsList, lvs.Name)
 		}
 	}
-	return pdLvsList, nil
+	return lvsList, nil
+}
+func (oc *OperationClient) GetPdLvsList(prefix string) ([]string, error) {
+	return oc.getLvsByPrefix(prefix)
 }
 
 func (oc *OperationClient) GetLvsInfo(lvsName string) (*LvsInfo, error) {
@@ -681,7 +685,7 @@ func (oc *OperationClient) CreatePdLvs(pdLvsName, bdevName string) error {
 	return nil
 }
 
-func (oc *OperationClient) DeletePdLvs(lvsName string) error {
+func (oc *OperationClient) deleteLvs(lvsName string) error {
 	params := &struct {
 		LvsName string `json:"lvs_name"`
 	}{
@@ -701,6 +705,9 @@ func (oc *OperationClient) DeletePdLvs(lvsName string) error {
 			rsp.Error.Code, rsp.Error.Message)
 	}
 	return nil
+}
+func (oc *OperationClient) DeletePdLvs(lvsName string) error {
+	return oc.deleteLvs(lvsName)
 }
 
 func (oc *OperationClient) GetPdBdevList(prefix string) ([]string, error) {
@@ -877,15 +884,11 @@ func (oc *OperationClient) CreatePdNvme(name, realName, trAddr string) error {
 	return nil
 }
 
-func (oc *OperationClient) deletePdNvme(bdevName string) error {
-	if !strings.HasSuffix(bdevName, "n1") {
-		logger.Error("invalid nvme bdev name: %s", bdevName)
-		return fmt.Errorf("invalid nvme bdev name: %s", bdevName)
-	}
+func (oc *OperationClient) bdevNvmeDetachController(name string) error {
 	params := &struct {
 		Name string `json:"name"`
 	}{
-		Name: bdevName[:len(bdevName)-2],
+		Name: name,
 	}
 	rsp := &struct {
 		Error *spdkErr `json:"error"`
@@ -903,6 +906,15 @@ func (oc *OperationClient) deletePdNvme(bdevName string) error {
 	return nil
 }
 
+func (oc *OperationClient) deletePdNvme(bdevName string) error {
+	if !strings.HasSuffix(bdevName, "n1") {
+		logger.Error("invalid nvme bdev name: %s", bdevName)
+		return fmt.Errorf("invalid nvme bdev name: %s", bdevName)
+	}
+	name := bdevName[:len(bdevName)-2]
+	return oc.bdevNvmeDetachController(name)
+}
+
 func (oc *OperationClient) DeletePdBdev(bdevName string) error {
 	bdev, ok := oc.nameToBdev[bdevName]
 	if !ok {
@@ -918,6 +930,599 @@ func (oc *OperationClient) DeletePdBdev(bdevName string) error {
 	default:
 		return fmt.Errorf("unknow productName: %s", productName)
 	}
+}
+
+func (oc *OperationClient) CreateExpPrimaryNvmf(expNqnName, snapFullName, initiatorNqn string,
+	secNqnList []string, lisConf *LisConf) error {
+	nvmf, ok := oc.nqnToNvmf[expNqnName]
+	if ok {
+		if len(nvmf.Namespaces) == 0 {
+			if err := oc.createNvmfNs(expNqnName, snapFullName); err != nil {
+				return err
+			}
+		}
+		if len(nvmf.ListenAddresses) == 0 {
+			if err := oc.createNvmfListener(expNqnName, lisConf); err != nil {
+				return err
+			}
+		}
+		hostNqnMap1 := make(map[string]bool)
+		for _, host := range nvmf.Hosts {
+			hostNqnMap1[host.Nqn] = true
+		}
+		hostNqnMap2 := make(map[string]bool)
+		hostNqnMap2[initiatorNqn] = true
+		for _, secNqn := range secNqnList {
+			hostNqnMap2[secNqn] = true
+		}
+		for nqn, _ := range hostNqnMap1 {
+			_, ok := hostNqnMap2[nqn]
+			if !ok {
+				err := oc.deleteNvmfHost(expNqnName, nqn)
+				if err != nil {
+					return err
+				}
+			}
+		}
+		for nqn, _ := range hostNqnMap2 {
+			_, ok := hostNqnMap1[nqn]
+			if !ok {
+				err := oc.createNvmfHost(expNqnName, nqn)
+				if err != nil {
+					return err
+				}
+			}
+		}
+	} else {
+		if err := oc.createNvmfSubsystem(expNqnName); err != nil {
+			return err
+		}
+		if err := oc.createNvmfNs(expNqnName, snapFullName); err != nil {
+			return err
+		}
+		if err := oc.createNvmfListener(expNqnName, lisConf); err != nil {
+			return err
+		}
+		if err := oc.createNvmfHost(expNqnName, initiatorNqn); err != nil {
+			return err
+		}
+		for _, secNqn := range secNqnList {
+			err := oc.createNvmfHost(expNqnName, secNqn)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (oc *OperationClient) CreateExpSecNvmf(expNqnName, secBdevName, initiatorNqn string,
+	lisConf *LisConf) error {
+	nvmf, ok := oc.nqnToNvmf[expNqnName]
+	if ok && (len(nvmf.Namespaces) > 0) && nvmf.Namespaces[0].name != secBdevName {
+		err := oc.deleteNvmf(expNqnName)
+		if err != nil {
+			return err
+		}
+		nvmf = nil
+	} else {
+		nvmf = nil
+	}
+	if nvmf == nil {
+		if err := oc.createNvmfSubsystem(expNqnName); err != nil {
+			return err
+		}
+		if err := oc.createNvmfNs(expNqnName, secBdevName); err != nil {
+			return err
+		}
+		if err := oc.createNvmfListener(expNqnName, lisConf); err != nil {
+			return err
+		}
+		if err := oc.createNvmfHost(expNqnName, initiatorNqn); err != nil {
+			return err
+		}
+	} else {
+		// We have checked the namespace
+		// so do not check it again
+		if len(nvmf.ListenAddresses) == 0 {
+			if err := oc.createNvmfListener(expNqnName, lisConf); err != nil {
+				return err
+			}
+		}
+		find := false
+		for _, host := range nvmf.Hosts {
+			if host.Nqn != initiatorNqn {
+				err := oc.deleteNvmfHost(expNqnName, host.Nqn)
+				if err != nil {
+					return err
+				}
+			} else {
+				find = true
+			}
+		}
+		if !find {
+			err := oc.createNvmfHost(expNqnName, initiatorNqn)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (oc *OperationClient) GetExpNqnList(prefix string) ([]string, error) {
+	return oc.getNqnList(prefix)
+}
+
+func (oc *OperationClient) DeleteExpNvmf(nqn string) error {
+	return oc.deleteNvmf(nqn)
+}
+
+func (oc *OperationClient) getNvmeByPrefix(prefix string) ([]string, error) {
+	rsp := &struct {
+		Error  *spdkErr `json:"error"`
+		Result *[]*struct {
+			Name string `json:"name"`
+		} `json:"result"`
+	}{}
+	err := oc.sc.Invoke("bdev_nvme_get_controllers", nil, rsp)
+	if err != nil {
+		logger.Error("bdev_nvme_get_controllers failed: %v", err)
+		return nil, err
+	}
+	if rsp.Error != nil {
+		logger.Error("bdev_nvme_get_controllers rsp err: %v", *rsp.Error)
+		return nil, fmt.Errorf("bdev_nvme_get_controllers rsp err: %d %s",
+			rsp.Error.Code, rsp.Error.Message)
+	}
+	if rsp.Result == nil {
+		logger.Error("bdev_nvme_get_controllers result is nil")
+		return nil, fmt.Errorf("bdev_nvme_get_controllers result is nil")
+	}
+	nvmeList := make([]string, 0)
+	for _, nvme := range *rsp.Result {
+		if strings.HasPrefix(nvme.Name, prefix) {
+			nvmeList = append(nvmeList, nvme.Name)
+		}
+	}
+	return nvmeList, nil
+}
+
+func (oc *OperationClient) GetSecNvmeList(prefix string) ([]string, error) {
+	return oc.getNvmeByPrefix(prefix)
+}
+
+func (oc *OperationClient) DeleteSecNvme(secNvmeName string) error {
+	return oc.bdevNvmeDetachController(secNvmeName)
+}
+
+func (oc *OperationClient) nvmeExist(name string) (bool, error) {
+	params := &struct {
+		Name string `json:"name"`
+	}{
+		Name: name,
+	}
+	rsp := &struct {
+		Error *spdkErr `json:"error"`
+	}{}
+	err := oc.sc.Invoke("bdev_nvme_get_controllers", params, rsp)
+	if err != nil {
+		logger.Error("bdev_nvme_get_controllers failed: %v", err)
+		return false, err
+	}
+	if rsp.Error == nil {
+		return true, nil
+	} else {
+		return false, nil
+	}
+}
+
+func (oc *OperationClient) CreateSecNvme(secNvmeName, expNqnName, secNqnName string,
+	lisConf *LisConf) error {
+	exist, err := oc.nvmeExist(secNvmeName)
+	if err != nil {
+		return err
+	}
+	if exist {
+		return nil
+	}
+
+	params := &struct {
+		Name    string `json:"name"`
+		TrType  string `json:"trtype"`
+		TrAddr  string `json:"traddr"`
+		AdrFam  string `json:"adrfam"`
+		TrSvcId string `json:"trsvcid"`
+		SubNqn  string `json:"subnqn"`
+		HostNqn string `json:"hostnqn"`
+	}{
+		Name:    secNvmeName,
+		TrType:  lisConf.TrType,
+		TrAddr:  lisConf.TrAddr,
+		AdrFam:  lisConf.AdrFam,
+		TrSvcId: lisConf.TrSvcId,
+		SubNqn:  expNqnName,
+		HostNqn: secNqnName,
+	}
+	rsp := &struct {
+		Error *spdkErr `json:"error"`
+	}{}
+	err = oc.sc.Invoke("bdev_nvme_attach_controller", params, rsp)
+	if err != nil {
+		logger.Error("bdev_nvme_attach_controller failed: %v", err)
+		return err
+	}
+	if rsp.Error != nil {
+		logger.Error("bdev_nvme_attach_controller rsp err: %v", *rsp.Error)
+		return fmt.Errorf("bdev_nvme_attach_controller rsp err: %d %s",
+			rsp.Error.Code, rsp.Error.Message)
+	}
+	return nil
+}
+
+func (oc *OperationClient) GetSnapList(prefix string) ([]string, error) {
+	return oc.getBdevByPrefix(prefix)
+}
+
+func (oc *OperationClient) DeleteSnap(name string) error {
+	params := &struct {
+		Name string `json:"name"`
+	}{
+		Name: name,
+	}
+	rsp := &struct {
+		Error *spdkErr `json:"error"`
+	}{}
+	err := oc.sc.Invoke("bdev_lvol_delete", params, rsp)
+	if err != nil {
+		logger.Error("bdev_lvol_delete failed: %v", err)
+		return err
+	}
+	if rsp.Error != nil {
+		logger.Error("bdev_lvol_delete rsp err: %v", *rsp.Error)
+		return fmt.Errorf("bdev_lvol_delete rsp err: %d %s",
+			rsp.Error.Code, rsp.Error.Message)
+	}
+	return nil
+}
+
+func (oc *OperationClient) createMainSnap(daLvsName, snapName string,
+	snapSize uint64) error {
+	params := &struct {
+		LvolName      string `json:"lvol_name"`
+		Size          uint64 `json:"size"`
+		LvsName       string `json:"lvs_name"`
+		ClearMethod   string `json:"clear_method"`
+		ThinProvision bool   `json:"thin_provision"`
+	}{
+		LvolName:      snapName,
+		Size:          snapSize,
+		LvsName:       daLvsName,
+		ClearMethod:   "unmap",
+		ThinProvision: true,
+	}
+	rsp := &struct {
+		Error *spdkErr `json:"error"`
+	}{}
+	err := oc.sc.Invoke("bdev_lvol_create", params, rsp)
+	if err != nil {
+		logger.Error("bdev_lvol_create failed: %v", err)
+		return err
+	}
+	if rsp.Error != nil {
+		logger.Error("bdev_lvol_create rsp err: %v", *rsp.Error)
+		return fmt.Errorf("bdev_lvol_create rsp err: %d %s",
+			rsp.Error.Code, rsp.Error.Message)
+	}
+	return nil
+}
+
+func (oc *OperationClient) createClone(daLvsName, snapName, oriName string) error {
+	fullName := "daLvsName" + "/" + oriName
+	params := &struct {
+		SnapshotName string `json:"snapshot_name"`
+		CloneName    string `json:"clone_name"`
+	}{
+		SnapshotName: fullName,
+		CloneName:    snapName,
+	}
+	rsp := &struct {
+		Error *spdkErr `json:"error"`
+	}{}
+	err := oc.sc.Invoke("bdev_lvol_clone", params, rsp)
+	if err != nil {
+		logger.Error("bdev_lvol_clone failed: %v", err)
+		return err
+	}
+	if rsp.Error != nil {
+		logger.Error("bdev_lvol_clone rsp err: %v", *rsp.Error)
+		return fmt.Errorf("bdev_lvol_clone rsp err: %d %s",
+			rsp.Error.Code, rsp.Error.Message)
+	}
+	return nil
+}
+
+func (oc *OperationClient) createSnapshot(daLvsName, snapName, oriName string) error {
+	fullName := "daLvsName" + "/" + oriName
+	params := &struct {
+		LvolName     string `json:"lvol_name"`
+		SnapshotName string `json:"snapshot_name"`
+	}{
+		LvolName:     fullName,
+		SnapshotName: snapName,
+	}
+	rsp := &struct {
+		Error *spdkErr `json:"error"`
+	}{}
+	err := oc.sc.Invoke("bdev_lvol_snapshot", params, rsp)
+	if err != nil {
+		logger.Error("bdev_lvol_snapshot failed: %v", err)
+		return err
+	}
+	if rsp.Error != nil {
+		logger.Error("bdev_lvol_snapshot rsp err: %v", *rsp.Error)
+		return fmt.Errorf("bdev_lvol_snapshot rsp err: %d %s",
+			rsp.Error.Code, rsp.Error.Message)
+	}
+	return nil
+}
+
+func (oc *OperationClient) CreateSnap(daLvsName, snapName, oriName string,
+	isClone bool, snapSize uint64) error {
+	fullName := "daLvsName" + "/" + snapName
+	exist, err := oc.bdevExist(fullName)
+	if err != nil {
+		return err
+	}
+	if exist {
+		return nil
+	}
+	if oriName == "" {
+		return oc.createMainSnap(daLvsName, snapName, snapSize)
+	} else if isClone {
+		return oc.createClone(daLvsName, snapName, oriName)
+	} else {
+		return oc.createSnapshot(daLvsName, snapName, oriName)
+	}
+}
+
+func (oc *OperationClient) GetDaLvsList(prefix string) ([]string, error) {
+	return oc.getLvsByPrefix(prefix)
+}
+
+func (oc *OperationClient) DeleteDaLvs(daLvsName string) error {
+	return oc.deleteLvs(daLvsName)
+}
+
+func (oc *OperationClient) CreateDaLvs(daLvsName, aggBdevName string) error {
+	exist, err := oc.lvsExist(daLvsName)
+	if err != nil {
+		return err
+	}
+	if exist {
+		return nil
+	}
+
+	params := &struct {
+		LvsName     string `json:"lvs_name"`
+		BdevName    string `json:"bdev_name"`
+		ClearMethod string `json:"clear_method"`
+		ClusterSz   uint64 `json:"cluster_sz"`
+	}{
+		LvsName:     daLvsName,
+		BdevName:    aggBdevName,
+		ClearMethod: "unmap",
+		ClusterSz:   CLUSTER_SIZE,
+	}
+	rsp := &struct {
+		Error *spdkErr `json:"error"`
+	}{}
+	err = oc.sc.Invoke("bdev_lvol_create_lvstore", params, rsp)
+	if err != nil {
+		logger.Error("bdev_lvol_create_lvstore failed: %v", err)
+		return err
+	}
+	if rsp.Error != nil {
+		logger.Error("bdev_lvol_create_lvstore rsp err: %v", *rsp.Error)
+		return fmt.Errorf("bdev_lvol_create_lvstore rsp err: %d %s",
+			rsp.Error.Code, rsp.Error.Message)
+	}
+	return nil
+}
+
+func (oc *OperationClient) GetAggBdevList(prefix string) ([]string, error) {
+	return oc.getBdevByPrefix(prefix)
+}
+
+func (oc *OperationClient) bdevPassthruCreate(name, baseBdevName string) error {
+	exist, err := oc.bdevExist(name)
+	if err != nil {
+		return err
+	}
+	if exist {
+		return nil
+	}
+	params := &struct {
+		Name         string `json:"Name"`
+		BaseBdevName string `json:"base_bdev_name"`
+	}{
+		Name:         name,
+		BaseBdevName: baseBdevName,
+	}
+	rsp := &struct {
+		Error *spdkErr `json:"error"`
+	}{}
+	err = oc.sc.Invoke("bdev_passthru_create", params, rsp)
+	if err != nil {
+		logger.Error("bdev_passthru_create failed: %v", err)
+		return err
+	}
+	if rsp.Error != nil {
+		logger.Error("bdev_passthru_create rsp err: %v", *rsp.Error)
+		return fmt.Errorf("bdev_passthru_create rsp err: %d %s",
+			rsp.Error.Code, rsp.Error.Message)
+	}
+	return nil
+}
+
+func (oc *OperationClient) bdevPassthruDelete(name string) error {
+	params := &struct {
+		Name string `json:"name"`
+	}{
+		Name: name,
+	}
+	rsp := &struct {
+		Error *spdkErr `json:"error"`
+	}{}
+	err := oc.sc.Invoke("bdev_passthru_delete", params, rsp)
+	if err != nil {
+		logger.Error("bdev_passthru_delete failed: %v", err)
+		return err
+	}
+	if rsp.Error != nil {
+		logger.Error("bdev_passthru_delete rsp err: %v", *rsp.Error)
+		return fmt.Errorf("bdev_passthru_delete rsp err: %d %s",
+			rsp.Error.Code, rsp.Error.Message)
+	}
+	return nil
+}
+
+func (oc *OperationClient) DeleteAggBdev(name string) error {
+	return oc.bdevPassthruDelete(name)
+}
+
+func (oc *OperationClient) CreateAggBdev(aggBdevName string, grpBdevList []string) error {
+	if len(grpBdevList) != 1 {
+		logger.Error("Unsupport grp cnt: %v", grpBdevList)
+		return fmt.Errorf("Unsupport grp cnt: %v", grpBdevList)
+	}
+	return oc.bdevPassthruCreate(aggBdevName, grpBdevList[0])
+}
+
+func (oc *OperationClient) GetGrpBdevList(prefix string) ([]string, error) {
+	return oc.getBdevByPrefix(prefix)
+}
+
+func (oc *OperationClient) DeleteGrpBdev(name string) error {
+	return oc.bdevPassthruDelete(name)
+}
+
+func (oc *OperationClient) CreateGrpBdev(grpBdevName, raid0BdevName string) error {
+	return oc.bdevPassthruCreate(grpBdevName, raid0BdevName)
+}
+
+func (oc *OperationClient) GetRaid0BdevList(prefix string) ([]string, error) {
+	return oc.getBdevByPrefix(prefix)
+}
+
+func (oc *OperationClient) DeleteRaid0Bdev(name string) error {
+	params := &struct {
+		Name string `json:"name"`
+	}{
+		Name: name,
+	}
+	rsp := &struct {
+		Error *spdkErr `json:"error"`
+	}{}
+	err := oc.sc.Invoke("bdev_raid_delete", params, rsp)
+	if err != nil {
+		logger.Error("bdev_raid_delete failed: %v", err)
+		return err
+	}
+	if rsp.Error != nil {
+		logger.Error("bdev_raid_delete rsp err: %v", *rsp.Error)
+		return fmt.Errorf("bdev_raid_delete rsp err: %d %s",
+			rsp.Error.Code, rsp.Error.Message)
+	}
+	return nil
+}
+
+func (oc *OperationClient) CreateRaid0Bdev(raid0BdevName string,
+	stripSizeKb uint32, feBdevList []string) error {
+	exist, err := oc.bdevExist(raid0BdevName)
+	if err != nil {
+		return err
+	}
+	if exist {
+		return nil
+	}
+
+	params := &struct {
+		Name        string   `json:"name"`
+		RaidLevel   string   `json:"raid_level"`
+		BaseBdevs   []string `json:"base_bdevs"`
+		StripSizeKb uint32   `json:"strip_size_kb"`
+	}{
+		Name:        raid0BdevName,
+		RaidLevel:   "raid0",
+		BaseBdevs:   feBdevList,
+		StripSizeKb: stripSizeKb,
+	}
+	rsp := &struct {
+		Error *spdkErr `json:"error"`
+	}{}
+	err = oc.sc.Invoke("bdev_raid_create", params, rsp)
+	if err != nil {
+		logger.Error("bdev_raid_create failed: %v", err)
+		return err
+	}
+	if rsp.Error != nil {
+		logger.Error("bdev_raid_create rsp err: %v", *rsp.Error)
+		return fmt.Errorf("bdev_raid_create rsp err: %d %s",
+			rsp.Error.Code, rsp.Error.Message)
+	}
+	return nil
+}
+
+func (oc *OperationClient) GetFeNvmeList(prefix string) ([]string, error) {
+	return oc.getNvmeByPrefix(prefix)
+}
+
+func (oc *OperationClient) DeleteFeNvme(feNvmeName string) error {
+	return oc.bdevNvmeDetachController(feNvmeName)
+}
+
+func (oc *OperationClient) CreateFeNvme(feNvmeName, beNqnName, feNqnName string,
+	lisConf *LisConf) error {
+	exist, err := oc.nvmeExist(feNvmeName)
+	if err != nil {
+		return err
+	}
+	if exist {
+		return nil
+	}
+
+	params := &struct {
+		Name    string `json:"name"`
+		TrType  string `json:"trtype"`
+		TrAddr  string `json:"traddr"`
+		AdrFam  string `json:"adrfam"`
+		TrSvcId string `json:"trsvcid"`
+		SubNqn  string `json:"subnqn"`
+		HostNqn string `json:"hostnqn"`
+	}{
+		Name:    feNvmeName,
+		TrType:  lisConf.TrType,
+		TrAddr:  lisConf.TrAddr,
+		AdrFam:  lisConf.AdrFam,
+		TrSvcId: lisConf.TrSvcId,
+		SubNqn:  beNqnName,
+		HostNqn: feNqnName,
+	}
+	rsp := &struct {
+		Error *spdkErr `json:"error"`
+	}{}
+	err = oc.sc.Invoke("bdev_nvme_attach_controller", params, rsp)
+	if err != nil {
+		logger.Error("bdev_nvme_attach_controller failed: %v", err)
+		return err
+	}
+	if rsp.Error != nil {
+		logger.Error("bdev_nvme_attach_controller rsp err: %v", *rsp.Error)
+		return fmt.Errorf("bdev_nvme_attach_controller rsp err: %d %s",
+			rsp.Error.Code, rsp.Error.Message)
+	}
+	return nil
 }
 
 func (oc *OperationClient) ExamineBdev(bdevName string) error {
