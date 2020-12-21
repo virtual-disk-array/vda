@@ -215,14 +215,12 @@ message ExpFrontend {
 
 message CntlrFeConf {
   string da_id = 1;
-  uint32 stripe_cnt = 2;
-  uint32 stripe_size_kb = 3;
-  repeated Controller cntlr_list = 4;
+  uint32 strip_size_kb = 2;
+  repeated Controller cntlr_list = 3;
 }
 
 message CntlrFeInfo {
   ErrInfo err_info = 1;
-  Lvstore lvstore = 2;
 }
 
 message CntlrFrontend {
@@ -298,8 +296,8 @@ message DiskArray {
   string da_id = 1;
   string da_name = 2;
   string description = 3;
-  uint32 stripe_cnt = 4;
-  uint32 stripe_size_kb = 5;
+  uint32 strip_cnt = 4;
+  uint32 strip_size_kb = 5;
   repeated Controller cntlr_list = 6;
   repeated Group grp_list = 7;
   repeated Snap snap_list = 8;

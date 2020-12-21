@@ -41,6 +41,30 @@ type capDiff struct {
 	val string
 }
 
+func setDnErrInfo(from *pbdn.ErrInfo, to *pbds.ErrInfo) {
+	if from == nil {
+		to.IsErr = true
+		to.ErrMsg = ResNoInfoMsg
+		to.Timestamp = ResTimestamp()
+	} else {
+		to.IsErr = from.IsErr
+		to.ErrMsg = from.ErrMsg
+		to.Timestamp = from.Timestamp
+	}
+}
+
+func setCnErrInfo(from *pbcn.ErrInfo, to *pbds.ErrInfo) {
+	if from == nil {
+		to.IsErr = true
+		to.ErrMsg = ResNoInfoMsg
+		to.Timestamp = ResTimestamp()
+	} else {
+		to.IsErr = from.IsErr
+		to.ErrMsg = from.ErrMsg
+		to.Timestamp = from.Timestamp
+	}
+}
+
 func (sm *SyncupManager) SyncupDn(sockAddr string, ctx context.Context) {
 	revision, diskNode, err := sm.getDiskNode(sockAddr, ctx)
 	if err != nil {
@@ -82,12 +106,12 @@ func (sm *SyncupManager) getDiskNode(sockAddr string, ctx context.Context) (
 	apply := func(stm concurrency.STM) error {
 		dnEntityVal := []byte(stm.Get(dnEntityKey))
 		if len(dnEntityVal) == 0 {
-			logger.Warning("can not find diskNode %s", sockAddr)
-			return fmt.Errorf("can not find diskNode")
+			logger.Warning("Can not find diskNode %s", sockAddr)
+			return fmt.Errorf("Can not find diskNode %s", sockAddr)
 		}
 		err := proto.Unmarshal(dnEntityVal, diskNode)
 		if err != nil {
-			logger.Error("unmarshal diskNode failed %s %v", sockAddr, err)
+			logger.Error("Unmarshal diskNode failed %s %v", sockAddr, err)
 			return err
 		}
 		revision = stm.Rev(dnEntityKey)
@@ -102,7 +126,7 @@ func (sm *SyncupManager) buildSyncupDnRequest(
 	revision int64, diskNode *pbds.DiskNode, ctx context.Context) (
 	*pbdn.SyncupDnRequest, error) {
 
-	pdReqList := []*pbdn.PdReq{}
+	pdReqList := make([]*pbdn.PdReq, 0)
 	for _, physicalDisk := range diskNode.PdList {
 		pdId := physicalDisk.PdId
 		pdConf := &pbdn.PdConf{}
@@ -186,28 +210,20 @@ func (sm *SyncupManager) setDnInfo(diskNode *pbds.DiskNode, idToRes *dnIdToRes) 
 	capDiffList := make([]*capDiff, 0)
 	dnRsp, ok := idToRes.idToDn[diskNode.DnId]
 	if ok {
-		diskNode.DnInfo.ErrInfo.IsErr = dnRsp.DnInfo.ErrInfo.IsErr
-		diskNode.DnInfo.ErrInfo.ErrMsg = dnRsp.DnInfo.ErrInfo.ErrMsg
-		diskNode.DnInfo.ErrInfo.Timestamp = dnRsp.DnInfo.ErrInfo.Timestamp
+		setDnErrInfo(dnRsp.DnInfo.ErrInfo, diskNode.DnInfo.ErrInfo)
 	} else {
-		diskNode.DnInfo.ErrInfo.IsErr = true
-		diskNode.DnInfo.ErrInfo.ErrMsg = ResNoInfoMsg
-		diskNode.DnInfo.ErrInfo.Timestamp = ResTimestamp()
+		setDnErrInfo(nil, diskNode.DnInfo.ErrInfo)
 	}
 
 	for _, physicalDisk := range diskNode.PdList {
 		pdRsp, ok := idToRes.idToPd[physicalDisk.PdId]
 		oldFreeSize := physicalDisk.Capacity.FreeSize
 		if ok {
-			physicalDisk.PdInfo.ErrInfo.IsErr = pdRsp.PdInfo.ErrInfo.IsErr
-			physicalDisk.PdInfo.ErrInfo.ErrMsg = pdRsp.PdInfo.ErrInfo.ErrMsg
-			physicalDisk.PdInfo.ErrInfo.Timestamp = pdRsp.PdInfo.ErrInfo.Timestamp
+			setDnErrInfo(pdRsp.PdInfo.ErrInfo, physicalDisk.PdInfo.ErrInfo)
 			physicalDisk.Capacity.TotalSize = pdRsp.PdCapacity.TotalSize
 			physicalDisk.Capacity.FreeSize = pdRsp.PdCapacity.FreeSize
 		} else {
-			physicalDisk.PdInfo.ErrInfo.IsErr = true
-			physicalDisk.PdInfo.ErrInfo.ErrMsg = ResNoInfoMsg
-			physicalDisk.PdInfo.ErrInfo.Timestamp = ResTimestamp()
+			setDnErrInfo(nil, physicalDisk.PdInfo.ErrInfo)
 			physicalDisk.Capacity.TotalSize = 0
 			physicalDisk.Capacity.FreeSize = 0
 		}
@@ -246,13 +262,9 @@ func (sm *SyncupManager) setDnInfo(diskNode *pbds.DiskNode, idToRes *dnIdToRes) 
 		for _, vdBackend := range physicalDisk.VdBeList {
 			vdBeRsp, ok := idToRes.idToVdBe[vdBackend.VdId]
 			if ok {
-				vdBackend.VdBeInfo.ErrInfo.IsErr = vdBeRsp.VdBeInfo.ErrInfo.IsErr
-				vdBackend.VdBeInfo.ErrInfo.ErrMsg = vdBeRsp.VdBeInfo.ErrInfo.ErrMsg
-				vdBackend.VdBeInfo.ErrInfo.Timestamp = vdBeRsp.VdBeInfo.ErrInfo.Timestamp
+				setDnErrInfo(vdBeRsp.VdBeInfo.ErrInfo, vdBackend.VdBeInfo.ErrInfo)
 			} else {
-				vdBackend.VdBeInfo.ErrInfo.IsErr = true
-				vdBackend.VdBeInfo.ErrInfo.ErrMsg = ResNoInfoMsg
-				vdBackend.VdBeInfo.ErrInfo.Timestamp = ResTimestamp()
+				setDnErrInfo(nil, vdBackend.VdBeInfo.ErrInfo)
 			}
 		}
 	}
@@ -371,29 +383,265 @@ func (sm *SyncupManager) SyncupCn(sockAddr string, ctx context.Context) {
 
 func (sm *SyncupManager) getControllerNode(sockAddr string, ctx context.Context) (
 	int64, *pbds.ControllerNode, error) {
-	return int64(0), nil, nil
+	var revision int64
+	controllerNode := &pbds.ControllerNode{}
+	cnEntityKey := sm.kf.CnEntityKey(sockAddr)
+
+	apply := func(stm concurrency.STM) error {
+		cnEntityVal := []byte(stm.Get(cnEntityKey))
+		if len(cnEntityVal) == 0 {
+			logger.Warning("Can not find controllerNode %s", sockAddr)
+			return fmt.Errorf("Can not find controllerNode %s", sockAddr)
+		}
+		err := proto.Unmarshal(cnEntityVal, controllerNode)
+		if err != nil {
+			logger.Error("Unmarshal1 controllerNode failed %s %v", sockAddr, err)
+			return err
+		}
+		revision = stm.Rev(cnEntityKey)
+		return nil
+	}
+
+	err := sm.sw.RunStm(apply, ctx, "SyncupCnGet: "+sockAddr)
+	return revision, controllerNode, err
 }
 
 func (sm *SyncupManager) buildSyncupCnRequest(
 	revision int64, controllerNode *pbds.ControllerNode, ctx context.Context) (
 	*pbcn.SyncupCnRequest, error) {
-	return nil, nil
+
+	cntlrFeReqList := make([]*pbcn.CntlrFeReq, 0)
+	for _, cntlrFe := range controllerNode.CntlrFeList {
+		grpFeReqList := make([]*pbcn.GrpFeReq, 0)
+		for _, grpFe := range cntlrFe.GrpFeList {
+			vdFeReqList := make([]*pbcn.VdFeReq, 0)
+			for _, vdFe := range grpFe.VdFeList {
+				vdFeReq := &pbcn.VdFeReq{
+					VdId: vdFe.VdId,
+					VdFeConf: &pbcn.VdFeConf{
+						DnNvmfListener: &pbcn.NvmfListener{
+							TrType:  vdFe.VdFeConf.DnNvmfListener.TrType,
+							AdrFam:  vdFe.VdFeConf.DnNvmfListener.AdrFam,
+							TrAddr:  vdFe.VdFeConf.DnNvmfListener.TrAddr,
+							TrSvcId: vdFe.VdFeConf.DnNvmfListener.TrSvcId,
+						},
+						DnSockAddr: vdFe.VdFeConf.DnSockAddr,
+						VdIdx:      vdFe.VdFeConf.VdIdx,
+						Size:       vdFe.VdFeConf.Size,
+					},
+				}
+				vdFeReqList = append(vdFeReqList, vdFeReq)
+			}
+			grpFeReq := &pbcn.GrpFeReq{
+				GrpId: grpFe.GrpId,
+				GrpFeConf: &pbcn.GrpFeConf{
+					GrpIdx: grpFe.GrpFeConf.GrpIdx,
+					Size:   grpFe.GrpFeConf.Size,
+				},
+				VdFeReqList: vdFeReqList,
+			}
+			grpFeReqList = append(grpFeReqList, grpFeReq)
+		}
+		snapFeReqList := make([]*pbcn.SnapFeReq, 0)
+		for _, snapFe := range cntlrFe.SnapFeList {
+			snapFeReq := &pbcn.SnapFeReq{
+				SnapId: snapFe.SnapId,
+				SnapFeConf: &pbcn.SnapFeConf{
+					OriId:   snapFe.SnapFeConf.OriId,
+					IsClone: snapFe.SnapFeConf.IsClone,
+					Idx:     snapFe.SnapFeConf.Idx,
+					Size:    snapFe.SnapFeConf.Size,
+				},
+			}
+			snapFeReqList = append(snapFeReqList, snapFeReq)
+		}
+		expFeReqList := make([]*pbcn.ExpFeReq, 0)
+		for _, expFe := range cntlrFe.ExpFeList {
+			expFeReq := &pbcn.ExpFeReq{
+				ExpId: expFe.ExpId,
+				ExpFeConf: &pbcn.ExpFeConf{
+					InitiatorNqn: expFe.ExpFeConf.InitiatorNqn,
+					SnapId:       expFe.ExpFeConf.SnapId,
+				},
+			}
+			expFeReqList = append(expFeReqList, expFeReq)
+		}
+		cntlrList := make([]*pbcn.Controller, 0)
+		for _, cntlr := range cntlrFe.CntlrFeConf.CntlrList {
+			cntlr1 := &pbcn.Controller{
+				CntlrId:    cntlr.CntlrId,
+				CnSockAddr: cntlr.CnSockAddr,
+				CntlrIdx:   cntlr.CntlrIdx,
+				IsPrimary:  cntlr.IsPrimary,
+				CnNvmfListener: &pbcn.NvmfListener{
+					TrType:  cntlr.CnNvmfListener.TrType,
+					AdrFam:  cntlr.CnNvmfListener.AdrFam,
+					TrAddr:  cntlr.CnNvmfListener.TrAddr,
+					TrSvcId: cntlr.CnNvmfListener.TrSvcId,
+				},
+			}
+			cntlrList = append(cntlrList, cntlr1)
+		}
+		cntlrFeReq := &pbcn.CntlrFeReq{
+			CntlrId: cntlrFe.CntlrId,
+			CntlrFeConf: &pbcn.CntlrFeConf{
+				DaId:        cntlrFe.CntlrFeConf.DaId,
+				StripSizeKb: cntlrFe.CntlrFeConf.StripSizeKb,
+				CntlrList:   cntlrList,
+			},
+			GrpFeReqList:  grpFeReqList,
+			SnapFeReqList: snapFeReqList,
+			ExpFeReqList:  expFeReqList,
+		}
+		cntlrFeReqList = append(cntlrFeReqList, cntlrFeReq)
+	}
+	cnReq := &pbcn.CnReq{
+		CnId:           controllerNode.CnId,
+		CntlrFeReqList: cntlrFeReqList,
+	}
+	req := &pbcn.SyncupCnRequest{
+		ReqId:    GetReqId(ctx),
+		Revision: revision,
+		CnReq:    cnReq,
+	}
+	return req, nil
 }
 
 func (sm *SyncupManager) syncupCn(sockAddr string, ctx context.Context,
 	req *pbcn.SyncupCnRequest) (*pbcn.SyncupCnReply, error) {
-	return nil, nil
+	conn, err := sm.createConn(sockAddr)
+	if err != nil {
+		logger.Warning("Create conn failed: %s %v", sockAddr, err)
+		return nil, err
+	}
+	c := pbcn.NewCnAgentClient(conn)
+	logger.Info("SyncupCn req: %s %v", sockAddr, req)
+	reply, err := c.SyncupCn(ctx, req)
+	if err != nil {
+		logger.Warning("SyncupCn failed: %v", err)
+	} else {
+		logger.Info("SyncupCn reply: %v", reply)
+	}
+	return reply, err
 }
 
 func (sm *SyncupManager) getCnRsp(reply *pbcn.SyncupCnReply, idToRes *cnIdToRes) {
+	cnRsp := reply.CnRsp
+	idToRes.idToCn[cnRsp.CnId] = cnRsp
+	for _, cntlrFeRsp := range cnRsp.CntlrFeRspList {
+		idToRes.idToCntlrFe[cntlrFeRsp.CntlrId] = cntlrFeRsp
+		for _, grpFeRsp := range cntlrFeRsp.GrpFeRspList {
+			idToRes.idToGrpFe[grpFeRsp.GrpId] = grpFeRsp
+			for _, vdFeRsp := range grpFeRsp.VdFeRspList {
+				idToRes.idToVdFe[vdFeRsp.VdId] = vdFeRsp
+			}
+		}
+		for _, snapFeRsp := range cntlrFeRsp.SnapFeRspList {
+			idToRes.idToSnapFe[snapFeRsp.SnapId] = snapFeRsp
+		}
+		for _, expFeRsp := range cntlrFeRsp.ExpFeRspList {
+			idToRes.idToExpFe[expFeRsp.ExpId] = expFeRsp
+		}
+	}
 }
 
 func (sm *SyncupManager) setCnInfo(controllerNode *pbds.ControllerNode,
 	idToRes *cnIdToRes) []*capDiff {
 	capDiffList := make([]*capDiff, 0)
+	cnRsp, ok := idToRes.idToCn[controllerNode.CnId]
+	if ok {
+		setCnErrInfo(cnRsp.CnInfo.ErrInfo, controllerNode.CnInfo.ErrInfo)
+	} else {
+		setCnErrInfo(nil, controllerNode.CnInfo.ErrInfo)
+	}
+
+	for _, cntlrFe := range controllerNode.CntlrFeList {
+		cntlrFeRsp, ok := idToRes.idToCntlrFe[cntlrFe.CntlrId]
+		if ok {
+			setCnErrInfo(cntlrFeRsp.CntlrFeInfo.ErrInfo, cntlrFe.CntlrFeInfo.ErrInfo)
+		} else {
+			setCnErrInfo(nil, cntlrFe.CntlrFeInfo.ErrInfo)
+		}
+		for _, grpFe := range cntlrFe.GrpFeList {
+			grpFeRsp, ok := idToRes.idToGrpFe[grpFe.GrpId]
+			if ok {
+				setCnErrInfo(grpFeRsp.GrpFeInfo.ErrInfo, grpFe.GrpFeInfo.ErrInfo)
+			} else {
+				setCnErrInfo(nil, grpFe.GrpFeInfo.ErrInfo)
+			}
+			for _, vdFe := range grpFe.VdFeList {
+				vdFeRsp, ok := idToRes.idToVdFe[vdFe.VdId]
+				if ok {
+					setCnErrInfo(vdFeRsp.VdFeInfo.ErrInfo, vdFe.VdFeInfo.ErrInfo)
+				} else {
+					setCnErrInfo(nil, vdFe.VdFeInfo.ErrInfo)
+				}
+			}
+		}
+		for _, snapFe := range cntlrFe.SnapFeList {
+			snapFeRsp, ok := idToRes.idToSnapFe[snapFe.SnapId]
+			if ok {
+				setCnErrInfo(snapFeRsp.SnapFeInfo.ErrInfo, snapFe.SnapFeInfo.ErrInfo)
+			} else {
+				setCnErrInfo(nil, snapFe.SnapFeInfo.ErrInfo)
+			}
+		}
+		for _, expFe := range cntlrFe.ExpFeList {
+			expFeRsp, ok := idToRes.idToExpFe[expFe.ExpId]
+			if ok {
+				setCnErrInfo(expFeRsp.ExpFeInfo.ErrInfo, expFe.ExpFeInfo.ErrInfo)
+			} else {
+				setCnErrInfo(nil, expFe.ExpFeInfo.ErrInfo)
+			}
+		}
+	}
 	return capDiffList
 }
 
 func (sm *SyncupManager) writeCnInfo(controllerNode *pbds.ControllerNode,
 	capDiffList []*capDiff, revision int64, ctx context.Context) {
+
+	cnEntityKey := sm.kf.CnEntityKey(controllerNode.SockAddr)
+	cnEntityVal, err := proto.Marshal(controllerNode)
+	if err != nil {
+		logger.Error("Marshal controllerNode failed: %v %v", controllerNode, err)
+		return
+	}
+	cnEntityValStr := string(cnEntityVal)
+
+	cnErrKey := sm.kf.CnErrKey(controllerNode.CnConf.HashCode, controllerNode.SockAddr)
+	cnSummary := &pbds.CnSummary{
+		Description: controllerNode.CnConf.Description,
+	}
+	cnErrVal, err := proto.Marshal(cnSummary)
+	if err != nil {
+		logger.Error("Marshal cnSummary failed: %v %v", cnSummary, err)
+		return
+	}
+	cnErrValStr := string(cnErrVal)
+
+	apply := func(stm concurrency.STM) error {
+		rev1 := stm.Rev(cnEntityKey)
+		if rev1 != revision {
+			logger.Warning("revision does not match, give up, old: %v new: %v",
+				revision, rev1)
+			return nil
+		}
+		stm.Put(cnEntityKey, cnEntityValStr)
+		if controllerNode.CnInfo.ErrInfo.IsErr {
+			stm.Put(cnErrKey, cnErrValStr)
+		} else {
+			stm.Del(cnErrKey)
+		}
+		for _, cd := range capDiffList {
+			stm.Del(cd.old)
+			stm.Put(cd.new, cd.val)
+		}
+		return nil
+	}
+
+	err = sm.sw.RunStm(apply, ctx, "SyncupCnPut: "+controllerNode.SockAddr)
+	if err != nil {
+		logger.Error("RunStm failed: %v", err)
+	}
 }

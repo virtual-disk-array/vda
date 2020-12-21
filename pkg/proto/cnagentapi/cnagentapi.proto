@@ -114,8 +114,8 @@ message ExpFeInfo {
 
 message CntlrFeConf {
   string da_id = 1;
-  uint32 strip_size_kb = 3;
-  repeated Controller cntlr_list = 4;
+  uint32 strip_size_kb = 2;
+  repeated Controller cntlr_list = 3;
 }
 
 message CntlrFeInfo {
