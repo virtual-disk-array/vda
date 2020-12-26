@@ -57,11 +57,7 @@ func launchPortal(cmd *cobra.Command, args []string) {
 	}
 	s := grpc.NewServer(opts...)
 
-	createConn := func(sockAddr string) (*grpc.ClientConn, error) {
-		conn, err := grpc.Dial(sockAddr, grpc.WithInsecure(), grpc.WithBlock())
-		return conn, err
-	}
-	ps := newPortalServer(etcdCli, createConn)
+	ps := newPortalServer(etcdCli)
 	pbpo.RegisterPortalServer(s, ps)
 	if err := s.Serve(lis); err != nil {
 		logger.Fatal("Launch portal server failed: %v", err)

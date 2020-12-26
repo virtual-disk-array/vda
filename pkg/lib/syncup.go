@@ -15,9 +15,8 @@ import (
 )
 
 type SyncupManager struct {
-	kf         *KeyFmt
-	sw         *StmWrapper
-	createConn func(sockAddr string) (*grpc.ClientConn, error)
+	kf *KeyFmt
+	sw *StmWrapper
 }
 
 type dnIdToRes struct {
@@ -321,7 +320,7 @@ func (sm *SyncupManager) writeDnInfo(diskNode *pbds.DiskNode, capDiffList []*cap
 
 func (sm *SyncupManager) syncupDn(sockAddr string, ctx context.Context,
 	req *pbdn.SyncupDnRequest) (*pbdn.SyncupDnReply, error) {
-	conn, err := sm.createConn(sockAddr)
+	conn, err := grpc.Dial(sockAddr, grpc.WithInsecure(), grpc.WithBlock())
 	if err != nil {
 		logger.Warning("Create conn failed: %s %v", sockAddr, err)
 		return nil, err
@@ -337,12 +336,10 @@ func (sm *SyncupManager) syncupDn(sockAddr string, ctx context.Context,
 	return reply, err
 }
 
-func NewSyncupManager(kf *KeyFmt, sw *StmWrapper,
-	createConn func(sockAddr string) (*grpc.ClientConn, error)) *SyncupManager {
+func NewSyncupManager(kf *KeyFmt, sw *StmWrapper) *SyncupManager {
 	return &SyncupManager{
-		kf:         kf,
-		sw:         sw,
-		createConn: createConn,
+		kf: kf,
+		sw: sw,
 	}
 }
 
@@ -509,7 +506,7 @@ func (sm *SyncupManager) buildSyncupCnRequest(
 
 func (sm *SyncupManager) syncupCn(sockAddr string, ctx context.Context,
 	req *pbcn.SyncupCnRequest) (*pbcn.SyncupCnReply, error) {
-	conn, err := sm.createConn(sockAddr)
+	conn, err := grpc.Dial(sockAddr, grpc.WithInsecure(), grpc.WithBlock())
 	if err != nil {
 		logger.Warning("Create conn failed: %s %v", sockAddr, err)
 		return nil, err

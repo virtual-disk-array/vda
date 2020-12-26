@@ -2,7 +2,6 @@ package portal
 
 import (
 	"github.com/coreos/etcd/clientv3"
-	"google.golang.org/grpc"
 
 	"github.com/virtual-disk-array/vda/pkg/lib"
 	pbpo "github.com/virtual-disk-array/vda/pkg/proto/portalapi"
@@ -10,23 +9,20 @@ import (
 
 type portalServer struct {
 	pbpo.UnimplementedPortalServer
-	etcdCli    *clientv3.Client
-	kf         *lib.KeyFmt
-	sw         *lib.StmWrapper
-	sm         *lib.SyncupManager
-	createConn func(sockAddr string) (*grpc.ClientConn, error)
+	etcdCli *clientv3.Client
+	kf      *lib.KeyFmt
+	sw      *lib.StmWrapper
+	sm      *lib.SyncupManager
 }
 
-func newPortalServer(etcdCli *clientv3.Client,
-	createConn func(sockAddr string) (*grpc.ClientConn, error)) *portalServer {
+func newPortalServer(etcdCli *clientv3.Client) *portalServer {
 	kf := lib.NewKeyFmt(lib.DefaultEtcdPrefix)
 	sw := lib.NewStmWrapper(etcdCli)
-	sm := lib.NewSyncupManager(kf, sw, createConn)
+	sm := lib.NewSyncupManager(kf, sw)
 	return &portalServer{
-		etcdCli:    etcdCli,
-		kf:         kf,
-		sw:         sw,
-		sm:         sm,
-		createConn: createConn,
+		etcdCli: etcdCli,
+		kf:      kf,
+		sw:      sw,
+		sm:      sm,
 	}
 }
