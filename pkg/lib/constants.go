@@ -3,6 +3,9 @@ package lib
 const (
 	DefaultEtcdPrefix = "vda"
 
+	PortalSucceedCode = 0
+	PortalSucceedMsg  = "succeed"
+
 	DnSucceedCode   = 0
 	DnSucceedMsg    = "succeed"
 	DnOldRevErrCode = 1

@@ -81,19 +81,20 @@ func (sm *SyncupManager) SyncupDn(sockAddr string, ctx context.Context) {
 	}
 
 	reply, err := sm.syncupDn(sockAddr, ctx, req)
-	if err == nil {
-		if reply.ReplyInfo.ReplyCode == DnSucceedCode {
-			sm.getDnRsp(reply, idToRes)
-			capDiffList := sm.setDnInfo(diskNode, idToRes)
-			sm.writeDnInfo(diskNode, capDiffList, revision, ctx)
-		} else {
-			logger.Warning("SyncupDn reply error: %v", reply.ReplyInfo)
-		}
-	} else {
-		logger.Warning("SyncupDn grpc error: %v", err)
-		capDiffList := sm.setDnInfo(diskNode, idToRes)
-		sm.writeDnInfo(diskNode, capDiffList, revision, ctx)
-	}
+	logger.Info("%v %v %v", reply, err, idToRes)
+	// if err == nil {
+	// 	if reply.ReplyInfo.ReplyCode == DnSucceedCode {
+	// 		sm.getDnRsp(reply, idToRes)
+	// 		capDiffList := sm.setDnInfo(diskNode, idToRes)
+	// 		sm.writeDnInfo(diskNode, capDiffList, revision, ctx)
+	// 	} else {
+	// 		logger.Warning("SyncupDn reply error: %v", reply.ReplyInfo)
+	// 	}
+	// } else {
+	// 	logger.Warning("SyncupDn grpc error: %v", err)
+	// 	capDiffList := sm.setDnInfo(diskNode, idToRes)
+	// 	sm.writeDnInfo(diskNode, capDiffList, revision, ctx)
+	// }
 }
 
 func (sm *SyncupManager) getDiskNode(sockAddr string, ctx context.Context) (
@@ -321,10 +322,12 @@ func (sm *SyncupManager) writeDnInfo(diskNode *pbds.DiskNode, capDiffList []*cap
 func (sm *SyncupManager) syncupDn(sockAddr string, ctx context.Context,
 	req *pbdn.SyncupDnRequest) (*pbdn.SyncupDnReply, error) {
 	conn, err := grpc.Dial(sockAddr, grpc.WithInsecure(), grpc.WithBlock())
+	logger.Info("syncupDn: %v %v", conn, err)
 	if err != nil {
 		logger.Warning("Create conn failed: %s %v", sockAddr, err)
 		return nil, err
 	}
+	defer conn.Close()
 	c := pbdn.NewDnAgentClient(conn)
 	logger.Info("SyncupDn req: %s %v", sockAddr, req)
 	reply, err := c.SyncupDn(ctx, req)
