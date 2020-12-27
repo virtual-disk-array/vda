@@ -59,18 +59,18 @@ func launchDnAgent(cmd *cobra.Command, args []string) {
 	var trConf map[string]interface{}
 	trConfB := []byte(dnAgentArgs.trConf)
 	if err := json.Unmarshal(trConfB, &trConf); err != nil {
-		logger.Fatal("Unmarshal trConf failed: %v", err)
+		logger.Fatal("Unmarshal trConf err: %v", err)
 	}
 
 	lisConf := &lib.LisConf{}
 	lisConfB := []byte(dnAgentArgs.lisConf)
 	if err := json.Unmarshal(lisConfB, lisConf); err != nil {
-		logger.Fatal("Unmarshal lisConf failed: %v", err)
+		logger.Fatal("Unmarshal lisConf err: %v", err)
 	}
 
 	lis, err := net.Listen(dnAgentArgs.network, dnAgentArgs.address)
 	if err != nil {
-		logger.Fatal("listen %v %v failed: %v",
+		logger.Fatal("listen %v %v err: %v",
 			dnAgentArgs.network, dnAgentArgs.address, err)
 	}
 
@@ -79,11 +79,15 @@ func launchDnAgent(cmd *cobra.Command, args []string) {
 	}
 	s := grpc.NewServer(opts...)
 
-	dnAgent := newDnAgentServer(dnAgentArgs.sockPath, dnAgentArgs.sockTimeout,
+	dnAgent, err := newDnAgentServer(dnAgentArgs.sockPath, dnAgentArgs.sockTimeout,
 		lisConf, trConf)
+	if err != nil {
+		logger.Fatal("Create dn agent server err: %v", err)
+	}
+	defer dnAgent.Stop()
 	pbdn.RegisterDnAgentServer(s, dnAgent)
 	if err := s.Serve(lis); err != nil {
-		logger.Fatal("Launch dn agent server failed: %v", err)
+		logger.Fatal("Launch dn agent server err: %v", err)
 	}
 }
 

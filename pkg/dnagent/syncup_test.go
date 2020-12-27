@@ -75,14 +75,21 @@ func TestNormalSyncup(t *testing.T) {
 	}
 	s, err := mockspdk.NewMockSpdkServer("unix", sockPath, t)
 	if err != nil {
+		t.Errorf("Create mock spdk err: %v", err)
 		return
 	}
+	defer s.Stop()
 	for k, v := range simpalSpdk {
 		s.AddMethod(k, v)
 	}
-	go s.Run()
+	s.Run()
 	time.Sleep(time.Second)
-	dnAgent := newDnAgentServer(sockPath, sockTimeout, lisConf, trConf)
+	dnAgent, err := newDnAgentServer(sockPath, sockTimeout, lisConf, trConf)
+	if err != nil {
+		t.Errorf("Create dn agent err: %v", err)
+		return
+	}
+	defer dnAgent.Stop()
 	ctx := context.Background()
 	req := &pbdn.SyncupDnRequest{
 		ReqId:    reqId,
@@ -120,47 +127,60 @@ func TestNormalSyncup(t *testing.T) {
 	}
 	reply, err := dnAgent.SyncupDn(ctx, req)
 	if err != nil {
-		t.Errorf("SyncupDn failed: %v", err)
+		t.Errorf("SyncupDn err: %v", err)
+		return
 	}
 	replyInfo := reply.ReplyInfo
 	if replyInfo.ReplyCode != lib.DnSucceedCode {
-		t.Errorf("SyncupDn ReplyCode error: %v", replyInfo.ReplyCode)
+		t.Errorf("SyncupDn ReplyCode wrong: %v", replyInfo.ReplyCode)
+		return
 	}
 	if replyInfo.ReplyMsg != lib.DnSucceedMsg {
-		t.Errorf("SyncupDn ReplyMsg error: %v", replyInfo.ReplyMsg)
+		t.Errorf("SyncupDn ReplyMsg wrong: %v", replyInfo.ReplyMsg)
+		return
 	}
 	dnRsp := reply.DnRsp
 	if dnRsp.DnId != dnId {
 		t.Errorf("DnId mismatch: %v", dnRsp.DnId)
+		return
 	}
 	if dnRsp.DnInfo.ErrInfo.IsErr {
 		t.Errorf("DnRsp has err: %v", dnRsp.DnInfo.ErrInfo)
+		return
 	}
 	if len(dnRsp.PdRspList) != 1 {
-		t.Errorf("PdRspList length is wrong: %v", len(dnRsp.PdRspList))
+		t.Errorf("PdRspList length wrong: %v", len(dnRsp.PdRspList))
+		return
 	}
 	pdRsp := dnRsp.PdRspList[0]
 	if pdRsp.PdId != pdId {
 		t.Errorf("PdId mismatch: %v", pdRsp.PdId)
+		return
 	}
 	if pdRsp.PdInfo.ErrInfo.IsErr {
 		t.Errorf("PdRsp has err: %v", pdRsp.PdInfo.ErrInfo)
+		return
 	}
 	if pdRsp.PdCapacity.TotalSize != totalDataCluster*clusterSize {
 		t.Errorf("Pd TotalSize mismatch: %d", pdRsp.PdCapacity.TotalSize)
+		return
 	}
 	if pdRsp.PdCapacity.FreeSize != freeCluster*clusterSize {
 		t.Errorf("Pd FreeSize mismatch: %d", pdRsp.PdCapacity.FreeSize)
+		return
 	}
 	if len(pdRsp.VdBeRspList) != 1 {
-		t.Errorf("VdBeRspList length is wrong: %v", len(pdRsp.VdBeRspList))
+		t.Errorf("VdBeRspList length wrong: %v", len(pdRsp.VdBeRspList))
+		return
 	}
 	vdBeRsp := pdRsp.VdBeRspList[0]
 	if vdBeRsp.VdId != vdId {
 		t.Errorf("VdId mismatch: %v", vdBeRsp.VdId)
+		return
 	}
 	if vdBeRsp.VdBeInfo.ErrInfo.IsErr {
 		t.Errorf("VdBeRsp has err: %v", vdBeRsp.VdBeInfo.ErrInfo)
+		return
 	}
 }
 
@@ -179,15 +199,22 @@ func TestOldSyncup(t *testing.T) {
 
 	s, err := mockspdk.NewMockSpdkServer("unix", sockPath, t)
 	if err != nil {
+		t.Errorf("Create mock spdk err: %v", err)
 		return
 	}
+	defer s.Stop()
 	for k, v := range simpalSpdk {
 		s.AddMethod(k, v)
 	}
-	go s.Run()
+	s.Run()
 	time.Sleep(time.Second)
 
-	dnAgent := newDnAgentServer(sockPath, sockTimeout, lisConf, trConf)
+	dnAgent, err := newDnAgentServer(sockPath, sockTimeout, lisConf, trConf)
+	if err != nil {
+		t.Errorf("Create dn agent err: %v", err)
+		return
+	}
+	defer dnAgent.Stop()
 	ctx := context.Background()
 	revOld := int64(1)
 	revNew := int64(2)
@@ -202,14 +229,17 @@ func TestOldSyncup(t *testing.T) {
 	}
 	reply, err := dnAgent.SyncupDn(ctx, req)
 	if err != nil {
-		t.Errorf("SyncupDn failed: %v", err)
+		t.Errorf("SyncupDn err: %v", err)
+		return
 	}
 	replyInfo := reply.ReplyInfo
 	if replyInfo.ReplyCode != lib.DnSucceedCode {
-		t.Errorf("SyncupDn ReplyCode error: %v", replyInfo.ReplyCode)
+		t.Errorf("SyncupDn ReplyCode wrong: %v", replyInfo.ReplyCode)
+		return
 	}
 	if replyInfo.ReplyMsg != lib.DnSucceedMsg {
-		t.Errorf("SyncupDn ReplyMsg error: %v", replyInfo.ReplyMsg)
+		t.Errorf("SyncupDn ReplyMsg wrong: %v", replyInfo.ReplyMsg)
+		return
 	}
 
 	req = &pbdn.SyncupDnRequest{
@@ -222,13 +252,16 @@ func TestOldSyncup(t *testing.T) {
 	}
 	reply, err = dnAgent.SyncupDn(ctx, req)
 	if err != nil {
-		t.Errorf("SyncupDn failed: %v", err)
+		t.Errorf("SyncupDn err: %v", err)
+		return
 	}
 	replyInfo = reply.ReplyInfo
 	if replyInfo.ReplyCode != lib.DnOldRevErrCode {
-		t.Errorf("SyncupDn ReplyCode error: %v", replyInfo.ReplyCode)
+		t.Errorf("SyncupDn ReplyCode wrong: %v", replyInfo.ReplyCode)
+		return
 	}
 	if replyInfo.ReplyMsg != lib.DnOldRevErrMsg {
-		t.Errorf("SyncupDn ReplyMsg error: %v", replyInfo.ReplyMsg)
+		t.Errorf("SyncupDn ReplyMsg wrong: %v", replyInfo.ReplyMsg)
+		return
 	}
 }

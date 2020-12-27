@@ -16,17 +16,22 @@ type cnAgentServer struct {
 }
 
 func newCnAgentServer(sockPath string, sockTimeout int,
-	lisConf *lib.LisConf, trConf map[string]interface{}) *cnAgentServer {
+	lisConf *lib.LisConf, trConf map[string]interface{}) (*cnAgentServer, error) {
 	nf := lib.NewNameFmt(lib.DefaultVdaPrefix, lib.DefaultNqnPrefix)
 	sc := lib.NewSpdkClient("unix", sockPath, time.Duration(sockTimeout)*time.Second)
 	var rsp interface{}
 	err := sc.Invoke("nvmf_create_transport", trConf, &rsp)
 	if err != nil {
-		logger.Fatal("Can not create nvmf transport: %v", err)
+		logger.Error("Can not create nvmf transport: %v", err)
+		return nil, err
 	}
 	return &cnAgentServer{
 		lisConf: lisConf,
 		nf:      nf,
 		sc:      sc,
-	}
+	}, nil
+}
+
+func (cnAgent *cnAgentServer) Stop() {
+	cnAgent.sc.Stop()
 }

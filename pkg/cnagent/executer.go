@@ -59,13 +59,13 @@ func launchCnAgent(cmd *cobra.Command, args []string) {
 	var trConf map[string]interface{}
 	trConfB := []byte(cnAgentArgs.trConf)
 	if err := json.Unmarshal(trConfB, &trConf); err != nil {
-		logger.Fatal("Unmarshal trConf failed: %v", err)
+		logger.Fatal("Unmarshal trConf err: %v", err)
 	}
 
 	lisConf := &lib.LisConf{}
 	lisConfB := []byte(cnAgentArgs.lisConf)
 	if err := json.Unmarshal(lisConfB, lisConf); err != nil {
-		logger.Fatal("Unmarshal lisConf failed: %v", err)
+		logger.Fatal("Unmarshal lisConf err: %v", err)
 	}
 
 	lis, err := net.Listen(cnAgentArgs.network, cnAgentArgs.address)
@@ -79,16 +79,20 @@ func launchCnAgent(cmd *cobra.Command, args []string) {
 	}
 	s := grpc.NewServer(opts...)
 
-	cnAgent := newCnAgentServer(cnAgentArgs.sockPath, cnAgentArgs.sockTimeout,
+	cnAgent, err := newCnAgentServer(cnAgentArgs.sockPath, cnAgentArgs.sockTimeout,
 		lisConf, trConf)
+	if err != nil {
+		logger.Fatal("Create cn agent server err: %v", err)
+	}
+	defer cnAgent.Stop()
 	pbcn.RegisterCnAgentServer(s, cnAgent)
 	if err := s.Serve(lis); err != nil {
-		logger.Fatal("Launch cn agent server failed: %v", err)
+		logger.Fatal("Launch cn agent server err: %v", err)
 	}
 }
 
 func Execute() {
 	if err := cnAgentCmd.Execute(); err != nil {
-		logger.Fatal("Cmd execute failed: %v", err)
+		logger.Fatal("Cmd execute err: %v", err)
 	}
 }

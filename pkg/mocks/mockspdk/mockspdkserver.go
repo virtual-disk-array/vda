@@ -2,14 +2,10 @@ package mockspdk
 
 import (
 	"encoding/json"
-	"io"
 	"net"
 	"os"
+	"sync"
 	"testing"
-)
-
-const (
-	STOP_SERVER = "stop_server"
 )
 
 type spdkReq struct {
@@ -35,7 +31,7 @@ type MockSpdkServer struct {
 	t         *testing.T
 	nameToApi map[string]func(params interface{}) (*SpdkErr, interface{})
 	lis       net.Listener
-	stop      bool
+	wg        sync.WaitGroup
 }
 
 func defaultMethod(params interface{}) (*SpdkErr, interface{}) {
@@ -67,43 +63,39 @@ func (s *MockSpdkServer) handleConn(conn net.Conn) {
 	enc := json.NewEncoder(conn)
 	dec := json.NewDecoder(conn)
 	for {
-		if s.stop {
-			return
-		}
 		req := &spdkReq{}
 		if err := dec.Decode(req); err != nil {
-			if err == io.EOF {
-				return
-			} else {
-				s.t.Errorf("MockSpdkServer conn decode err: %v", err)
-				s.stop = true
-				return
-			}
+			s.t.Logf("Decode err: %v", err)
+			return
 		}
 		rsp := s.handleApi(req)
 		if err := enc.Encode(rsp); err != nil {
-			if err == io.EOF {
-				return
-			} else {
-				s.t.Errorf("MockSpdkServer conn encode err: %v", err)
-			}
+			s.t.Logf("Encode err: %v", err)
+			return
 		}
 	}
 }
 
-func (s *MockSpdkServer) Run() {
-	defer s.lis.Close()
+func (s *MockSpdkServer) run() {
+	defer s.wg.Done()
 	for {
-		if s.stop {
-			return
-		}
 		conn, err := s.lis.Accept()
 		if err != nil {
-			s.t.Errorf("MockSpdkServer accept failed: %v", err)
+			s.t.Logf("MockSpdkServer accept err: %v", err)
 			return
 		}
 		s.handleConn(conn)
 	}
+}
+
+func (s *MockSpdkServer) Run() {
+	s.wg.Add(1)
+	go s.run()
+}
+
+func (s *MockSpdkServer) Stop() {
+	s.lis.Close()
+	s.wg.Wait()
 }
 
 func NewMockSpdkServer(network, address string, t *testing.T) (*MockSpdkServer, error) {
@@ -117,10 +109,6 @@ func NewMockSpdkServer(network, address string, t *testing.T) (*MockSpdkServer, 
 		t:         t,
 		nameToApi: make(map[string]func(params interface{}) (*SpdkErr, interface{})),
 		lis:       lis,
-		stop:      false,
 	}
-	s.AddMethod(STOP_SERVER, func(params interface{}) (*SpdkErr, interface{}) {
-		return nil, true
-	})
 	return s, nil
 }

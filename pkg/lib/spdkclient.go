@@ -102,6 +102,14 @@ func (sc *SpdkClient) invoke(method string, params interface{},
 	return nil
 }
 
+func (sc *SpdkClient) Stop() {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	if sc.connCtx != nil {
+		sc.closeConn()
+	}
+}
+
 func (sc *SpdkClient) Invoke(method string, params interface{},
 	rsp interface{}) error {
 	sc.mu.Lock()

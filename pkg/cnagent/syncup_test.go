@@ -81,14 +81,21 @@ func TestPrimSyncup(t *testing.T) {
 	}
 	s, err := mockspdk.NewMockSpdkServer("unix", sockPath, t)
 	if err != nil {
+		t.Errorf("Create mock spdk err: %v", err)
 		return
 	}
+	defer s.Stop()
 	for k, v := range simpalSpdk {
 		s.AddMethod(k, v)
 	}
-	go s.Run()
+	s.Run()
 	time.Sleep(time.Second)
-	cnAgent := newCnAgentServer(sockPath, sockTimeout, lisConf, trConf)
+	cnAgent, err := newCnAgentServer(sockPath, sockTimeout, lisConf, trConf)
+	if err != nil {
+		t.Errorf("Create cn agent err: %v", err)
+		return
+	}
+	defer cnAgent.Stop()
 	ctx := context.Background()
 	req := &pbcn.SyncupCnRequest{
 		ReqId:    reqId,
@@ -179,71 +186,91 @@ func TestPrimSyncup(t *testing.T) {
 	}
 	reply, err := cnAgent.SyncupCn(ctx, req)
 	if err != nil {
-		t.Errorf("SyncupCn failed: %v", err)
+		t.Errorf("SyncupCn err: %v", err)
+		return
 	}
 	replyInfo := reply.ReplyInfo
 	if replyInfo.ReplyCode != lib.CnSucceedCode {
-		t.Errorf("SyncupCn ReplyCode error: %v", replyInfo.ReplyCode)
+		t.Errorf("SyncupCn ReplyCode wrong: %v", replyInfo.ReplyCode)
+		return
 	}
 	if replyInfo.ReplyMsg != lib.CnSucceedMsg {
-		t.Errorf("SyncupCn ReplyMsg error: %v", replyInfo.ReplyMsg)
+		t.Errorf("SyncupCn ReplyMsg wrong: %v", replyInfo.ReplyMsg)
+		return
 	}
 	cnRsp := reply.CnRsp
 	if cnRsp.CnId != cnId {
 		t.Errorf("CnId mismatch: %v", cnRsp.CnId)
+		return
 	}
 	if cnRsp.CnInfo.ErrInfo.IsErr {
 		t.Errorf("CnRsp has err: %v", cnRsp.CnInfo.ErrInfo)
+		return
 	}
 	if len(cnRsp.CntlrFeRspList) != 1 {
 		t.Errorf("CntlrFeRspList len incorrect: %v", cnRsp.CntlrFeRspList)
+		return
 	}
 	cntlrFeRsp := cnRsp.CntlrFeRspList[0]
 	if cntlrFeRsp.CntlrId != primCntlrId {
 		t.Errorf("cntlrId mismatch: %v", cntlrFeRsp)
+		return
 	}
 	if cntlrFeRsp.CntlrFeInfo.ErrInfo.IsErr {
 		t.Errorf("cntlrFeRsp has err: %v", cntlrFeRsp)
+		return
 	}
 	if len(cntlrFeRsp.GrpFeRspList) != 1 {
 		t.Errorf("GrpFeRspList len incorrect: %v", cntlrFeRsp.GrpFeRspList)
+		return
 	}
 	grpFeRsp := cntlrFeRsp.GrpFeRspList[0]
 	if grpFeRsp.GrpId != grpId {
 		t.Errorf("grpId mismatch: %v", grpFeRsp)
+		return
 	}
 	if grpFeRsp.GrpFeInfo.ErrInfo.IsErr {
 		t.Errorf("grpFeRsp has err: %v", grpFeRsp)
+		return
 	}
 	if len(grpFeRsp.VdFeRspList) != 1 {
 		t.Errorf("VdFeRspList len incorrect: %v", grpFeRsp.VdFeRspList)
+		return
 	}
 	vdFeRsp := grpFeRsp.VdFeRspList[0]
 	if vdFeRsp.VdId != vdId {
 		t.Errorf("vdId mismatch: %v", vdFeRsp)
+		return
 	}
 	if vdFeRsp.VdFeInfo.ErrInfo.IsErr {
 		t.Errorf("vdFeRsp has err: %v", vdFeRsp)
+		return
 	}
 	if len(cntlrFeRsp.SnapFeRspList) != 1 {
 		t.Errorf("SnapFeRspList len incorrect: %v", cntlrFeRsp.SnapFeRspList)
+		return
 	}
 	snapFeRsp := cntlrFeRsp.SnapFeRspList[0]
 	if snapFeRsp.SnapId != snapId {
 		t.Errorf("snapId mismatch: %v", snapFeRsp)
+		return
 	}
 	if snapFeRsp.SnapFeInfo.ErrInfo.IsErr {
 		t.Errorf("snapFeRsp has err: %v", snapFeRsp)
+		return
 	}
 	if len(cntlrFeRsp.ExpFeRspList) != 1 {
 		t.Errorf("ExpFeRspList len incorrect: %v", cntlrFeRsp.ExpFeRspList)
+		return
 	}
 	expFeRsp := cntlrFeRsp.ExpFeRspList[0]
 	if expFeRsp.ExpId != expId {
 		t.Errorf("expId mismatch: %v", expFeRsp)
+		return
 	}
 	if expFeRsp.ExpFeInfo.ErrInfo.IsErr {
 		t.Errorf("expFeRsp has err: %v", expFeRsp)
+		return
 	}
 }
 
@@ -261,14 +288,19 @@ func TestSecSyncup(t *testing.T) {
 	}
 	s, err := mockspdk.NewMockSpdkServer("unix", sockPath, t)
 	if err != nil {
+		t.Errorf("Create mock spdk err: %v", err)
 		return
 	}
 	for k, v := range simpalSpdk {
 		s.AddMethod(k, v)
 	}
-	go s.Run()
+	s.Run()
 	time.Sleep(time.Second)
-	cnAgent := newCnAgentServer(sockPath, sockTimeout, lisConf, trConf)
+	cnAgent, err := newCnAgentServer(sockPath, sockTimeout, lisConf, trConf)
+	if err != nil {
+		t.Errorf("Create cn agent err: %v", err)
+		return
+	}
 	ctx := context.Background()
 	req := &pbcn.SyncupCnRequest{
 		ReqId:    reqId,
@@ -323,38 +355,48 @@ func TestSecSyncup(t *testing.T) {
 	}
 	reply, err := cnAgent.SyncupCn(ctx, req)
 	if err != nil {
-		t.Errorf("SyncupCn failed: %v", err)
+		t.Errorf("SyncupCn err: %v", err)
+		return
 	}
 	replyInfo := reply.ReplyInfo
 	if replyInfo.ReplyCode != lib.CnSucceedCode {
-		t.Errorf("SyncupCn ReplyCode error: %v", replyInfo.ReplyCode)
+		t.Errorf("SyncupCn ReplyCode wrong: %v", replyInfo.ReplyCode)
+		return
 	}
 	if replyInfo.ReplyMsg != lib.CnSucceedMsg {
-		t.Errorf("SyncupCn ReplyMsg error: %v", replyInfo.ReplyMsg)
+		t.Errorf("SyncupCn ReplyMsg wrong: %v", replyInfo.ReplyMsg)
+		return
 	}
 	cnRsp := reply.CnRsp
 	if cnRsp.CnId != cnId {
 		t.Errorf("CnId mismatch: %v", cnRsp.CnId)
+		return
 	}
 	if cnRsp.CnInfo.ErrInfo.IsErr {
 		t.Errorf("CnRsp has err: %v", cnRsp.CnInfo.ErrInfo)
+		return
 	}
 	if len(cnRsp.CntlrFeRspList) != 1 {
 		t.Errorf("CntlrFeRspList len incorrect: %v", cnRsp.CntlrFeRspList)
+		return
 	}
 	cntlrFeRsp := cnRsp.CntlrFeRspList[0]
 	if cntlrFeRsp.CntlrId != secCntlrId {
 		t.Errorf("cntlrId mismatch: %v", cntlrFeRsp)
+		return
 	}
 	if cntlrFeRsp.CntlrFeInfo.ErrInfo.IsErr {
 		t.Errorf("cntlrFeRsp has err: %v", cntlrFeRsp)
+		return
 	}
 	expFeRsp := cntlrFeRsp.ExpFeRspList[0]
 	if expFeRsp.ExpId != expId {
 		t.Errorf("expId mismatch: %v", expFeRsp)
+		return
 	}
 	if expFeRsp.ExpFeInfo.ErrInfo.IsErr {
 		t.Errorf("expFeRsp has err: %v", expFeRsp)
+		return
 	}
 }
 
@@ -372,15 +414,22 @@ func TestOldSyncup(t *testing.T) {
 	}
 	s, err := mockspdk.NewMockSpdkServer("unix", sockPath, t)
 	if err != nil {
+		t.Errorf("Create mosk  spdk err: %v", err)
 		return
 	}
+	defer s.Stop()
 	for k, v := range simpalSpdk {
 		s.AddMethod(k, v)
 	}
-	go s.Run()
+	s.Run()
 	time.Sleep(time.Second)
 
-	cnAgent := newCnAgentServer(sockPath, sockTimeout, lisConf, trConf)
+	cnAgent, err := newCnAgentServer(sockPath, sockTimeout, lisConf, trConf)
+	if err != nil {
+		t.Errorf("Create cn agent err: %v", err)
+		return
+	}
+	defer cnAgent.Stop()
 
 	ctx := context.Background()
 	revOld := int64(1)
@@ -396,14 +445,16 @@ func TestOldSyncup(t *testing.T) {
 	}
 	reply, err := cnAgent.SyncupCn(ctx, req)
 	if err != nil {
-		t.Errorf("SyncupCn failed: %v", err)
+		t.Errorf("SyncupCn err: %v", err)
 	}
 	replyInfo := reply.ReplyInfo
 	if replyInfo.ReplyCode != lib.CnSucceedCode {
-		t.Errorf("SyncupCn ReplyCode error: %v", replyInfo.ReplyCode)
+		t.Errorf("SyncupCn ReplyCode wrong: %v", replyInfo.ReplyCode)
+		return
 	}
 	if replyInfo.ReplyMsg != lib.CnSucceedMsg {
-		t.Errorf("SyncupCn ReplyMsg error: %v", replyInfo.ReplyMsg)
+		t.Errorf("SyncupCn ReplyMsg wrong: %v", replyInfo.ReplyMsg)
+		return
 	}
 
 	req = &pbcn.SyncupCnRequest{
@@ -416,13 +467,16 @@ func TestOldSyncup(t *testing.T) {
 	}
 	reply, err = cnAgent.SyncupCn(ctx, req)
 	if err != nil {
-		t.Errorf("SyncupCn failed: %v", err)
+		t.Errorf("SyncupCn err: %v", err)
+		return
 	}
 	replyInfo = reply.ReplyInfo
 	if replyInfo.ReplyCode != lib.CnOldRevErrCode {
-		t.Errorf("SyncupCn ReplyCode error: %v", replyInfo.ReplyCode)
+		t.Errorf("SyncupCn ReplyCode wrong: %v", replyInfo.ReplyCode)
+		return
 	}
 	if replyInfo.ReplyMsg != lib.CnOldRevErrMsg {
-		t.Errorf("SyncupCn ReplyMsg error: %v", replyInfo.ReplyMsg)
+		t.Errorf("SyncupCn ReplyMsg wrong: %v", replyInfo.ReplyMsg)
+		return
 	}
 }

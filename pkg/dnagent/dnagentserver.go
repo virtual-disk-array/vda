@@ -16,17 +16,22 @@ type dnAgentServer struct {
 }
 
 func newDnAgentServer(sockPath string, sockTimeout int,
-	lisConf *lib.LisConf, trConf map[string]interface{}) *dnAgentServer {
+	lisConf *lib.LisConf, trConf map[string]interface{}) (*dnAgentServer, error) {
 	nf := lib.NewNameFmt(lib.DefaultVdaPrefix, lib.DefaultNqnPrefix)
 	sc := lib.NewSpdkClient("unix", sockPath, time.Duration(sockTimeout)*time.Second)
 	var rsp interface{}
 	err := sc.Invoke("nvmf_create_transport", trConf, &rsp)
 	if err != nil {
-		logger.Fatal("Can not create nvmf transport: %v", err)
+		logger.Error("Can not create nvmf transport: %v", err)
+		return nil, err
 	}
 	return &dnAgentServer{
 		lisConf: lisConf,
 		nf:      nf,
 		sc:      sc,
-	}
+	}, nil
+}
+
+func (dnAgent *dnAgentServer) Stop() {
+	dnAgent.sc.Stop()
 }
