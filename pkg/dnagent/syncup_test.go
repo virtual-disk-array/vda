@@ -82,7 +82,6 @@ func TestNormalSyncup(t *testing.T) {
 	for k, v := range simpalSpdk {
 		s.AddMethod(k, v)
 	}
-	s.Run()
 	time.Sleep(time.Millisecond)
 	dnAgent, err := newDnAgentServer(sockPath, sockTimeout, lisConf, trConf)
 	if err != nil {
@@ -206,7 +205,6 @@ func TestOldSyncup(t *testing.T) {
 	for k, v := range simpalSpdk {
 		s.AddMethod(k, v)
 	}
-	s.Run()
 	time.Sleep(time.Millisecond)
 
 	dnAgent, err := newDnAgentServer(sockPath, sockTimeout, lisConf, trConf)

@@ -89,11 +89,6 @@ func (s *MockSpdkServer) run() {
 	}
 }
 
-func (s *MockSpdkServer) Run() {
-	s.wg.Add(1)
-	go s.run()
-}
-
 func (s *MockSpdkServer) Stop() {
 	s.lis.Close()
 	s.wg.Wait()
@@ -113,5 +108,7 @@ func NewMockSpdkServer(network, address string, t *testing.T) (*MockSpdkServer, 
 		lis:       lis,
 		address:   address,
 	}
+	s.wg.Add(1)
+	go s.run()
 	return s, nil
 }

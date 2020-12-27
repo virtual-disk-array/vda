@@ -28,6 +28,7 @@ clean:
 	rm -rf pkg/proto/portalapi/portalapi.pb.go
 	rm -rf pkg/proto/dnagentapi/dnagentapi.pb.go
 	rm -rf pkg/proto/cnagentapi/cnagentapi.pb.go
+	go clean -testcache ./...
 
 .PHONY: all
 all: proto compile test

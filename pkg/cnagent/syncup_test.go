@@ -88,7 +88,6 @@ func TestPrimSyncup(t *testing.T) {
 	for k, v := range simpalSpdk {
 		s.AddMethod(k, v)
 	}
-	s.Run()
 	time.Sleep(time.Millisecond)
 	cnAgent, err := newCnAgentServer(sockPath, sockTimeout, lisConf, trConf)
 	if err != nil {
@@ -294,7 +293,6 @@ func TestSecSyncup(t *testing.T) {
 	for k, v := range simpalSpdk {
 		s.AddMethod(k, v)
 	}
-	s.Run()
 	time.Sleep(time.Millisecond)
 	cnAgent, err := newCnAgentServer(sockPath, sockTimeout, lisConf, trConf)
 	if err != nil {
@@ -421,7 +419,6 @@ func TestOldSyncup(t *testing.T) {
 	for k, v := range simpalSpdk {
 		s.AddMethod(k, v)
 	}
-	s.Run()
 	time.Sleep(time.Millisecond)
 
 	cnAgent, err := newCnAgentServer(sockPath, sockTimeout, lisConf, trConf)
