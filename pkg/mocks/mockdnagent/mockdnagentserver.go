@@ -82,8 +82,8 @@ func (dnAgent *dnAgentServer) SyncupDn(ctx context.Context, req *pbdn.SyncupDnRe
 type MockDnAgentServer struct {
 	sockPath string
 	server   *grpc.Server
-	t        *testing.T
 	dnAgent  *dnAgentServer
+	t        *testing.T
 }
 
 func (s *MockDnAgentServer) Stop() {
@@ -118,6 +118,7 @@ func NewMockDnAgentServer(sockPath string, t *testing.T) (*MockDnAgentServer, er
 	return &MockDnAgentServer{
 		sockPath: sockPath,
 		server:   server,
+		dnAgent:  dnAgent,
 		t:        t,
 	}, nil
 }

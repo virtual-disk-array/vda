@@ -55,4 +55,10 @@ func TestCreateDn(t *testing.T) {
 		t.Errorf("ReplyCode wrong: %v", reply.ReplyInfo.ReplyCode)
 		return
 	}
+
+	syncupDnCnt := mockDnAgent.SyncupDnCnt()
+	if syncupDnCnt != 1 {
+		t.Errorf("syncupDnCnt wrong: %d", syncupDnCnt)
+		return
+	}
 }
