@@ -83,7 +83,7 @@ func TestNormalSyncup(t *testing.T) {
 		s.AddMethod(k, v)
 	}
 	s.Run()
-	time.Sleep(time.Second)
+	time.Sleep(time.Millisecond)
 	dnAgent, err := newDnAgentServer(sockPath, sockTimeout, lisConf, trConf)
 	if err != nil {
 		t.Errorf("Create dn agent err: %v", err)
@@ -207,7 +207,7 @@ func TestOldSyncup(t *testing.T) {
 		s.AddMethod(k, v)
 	}
 	s.Run()
-	time.Sleep(time.Second)
+	time.Sleep(time.Millisecond)
 
 	dnAgent, err := newDnAgentServer(sockPath, sockTimeout, lisConf, trConf)
 	if err != nil {

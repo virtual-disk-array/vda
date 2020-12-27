@@ -89,7 +89,7 @@ func TestPrimSyncup(t *testing.T) {
 		s.AddMethod(k, v)
 	}
 	s.Run()
-	time.Sleep(time.Second)
+	time.Sleep(time.Millisecond)
 	cnAgent, err := newCnAgentServer(sockPath, sockTimeout, lisConf, trConf)
 	if err != nil {
 		t.Errorf("Create cn agent err: %v", err)
@@ -295,7 +295,7 @@ func TestSecSyncup(t *testing.T) {
 		s.AddMethod(k, v)
 	}
 	s.Run()
-	time.Sleep(time.Second)
+	time.Sleep(time.Millisecond)
 	cnAgent, err := newCnAgentServer(sockPath, sockTimeout, lisConf, trConf)
 	if err != nil {
 		t.Errorf("Create cn agent err: %v", err)
@@ -422,7 +422,7 @@ func TestOldSyncup(t *testing.T) {
 		s.AddMethod(k, v)
 	}
 	s.Run()
-	time.Sleep(time.Second)
+	time.Sleep(time.Millisecond)
 
 	cnAgent, err := newCnAgentServer(sockPath, sockTimeout, lisConf, trConf)
 	if err != nil {

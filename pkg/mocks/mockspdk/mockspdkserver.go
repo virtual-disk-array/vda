@@ -31,6 +31,7 @@ type MockSpdkServer struct {
 	t         *testing.T
 	nameToApi map[string]func(params interface{}) (*SpdkErr, interface{})
 	lis       net.Listener
+	address   string
 	wg        sync.WaitGroup
 }
 
@@ -96,6 +97,7 @@ func (s *MockSpdkServer) Run() {
 func (s *MockSpdkServer) Stop() {
 	s.lis.Close()
 	s.wg.Wait()
+	os.Remove(s.address)
 }
 
 func NewMockSpdkServer(network, address string, t *testing.T) (*MockSpdkServer, error) {
@@ -109,6 +111,7 @@ func NewMockSpdkServer(network, address string, t *testing.T) (*MockSpdkServer, 
 		t:         t,
 		nameToApi: make(map[string]func(params interface{}) (*SpdkErr, interface{})),
 		lis:       lis,
+		address:   address,
 	}
 	return s, nil
 }
