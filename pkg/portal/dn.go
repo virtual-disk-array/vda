@@ -2,7 +2,6 @@ package portal
 
 import (
 	"context"
-	"fmt"
 	"math/rand"
 
 	"github.com/coreos/etcd/clientv3/concurrency"
@@ -38,9 +37,10 @@ func (ps *portalServer) CreateDn(ctx context.Context, req *pbpo.CreateDnRequest)
 		},
 	}
 	diskNode := &pbds.DiskNode{
-		DnId:   dnId,
-		DnConf: dnConf,
-		DnInfo: dnInfo,
+		DnId:     dnId,
+		SockAddr: req.SockAddr,
+		DnConf:   dnConf,
+		DnInfo:   dnInfo,
 	}
 
 	dnSummary := &pbds.DnSummary{
@@ -57,8 +57,8 @@ func (ps *portalServer) CreateDn(ctx context.Context, req *pbpo.CreateDnRequest)
 		return &pbpo.CreateDnReply{
 			ReplyInfo: &pbpo.ReplyInfo{
 				ReqId:     lib.GetReqId(ctx),
-				ReplyCode: internalErrCode,
-				ReplyMsg:  internalErrMsg,
+				ReplyCode: lib.PortalInternalErrCode,
+				ReplyMsg:  lib.PortalInternalErrMsg,
 			},
 		}, nil
 	}
@@ -70,8 +70,8 @@ func (ps *portalServer) CreateDn(ctx context.Context, req *pbpo.CreateDnRequest)
 		return &pbpo.CreateDnReply{
 			ReplyInfo: &pbpo.ReplyInfo{
 				ReqId:     lib.GetReqId(ctx),
-				ReplyCode: internalErrCode,
-				ReplyMsg:  internalErrMsg,
+				ReplyCode: lib.PortalInternalErrCode,
+				ReplyMsg:  lib.PortalInternalErrMsg,
 			},
 		}, nil
 	}
@@ -83,8 +83,8 @@ func (ps *portalServer) CreateDn(ctx context.Context, req *pbpo.CreateDnRequest)
 		return &pbpo.CreateDnReply{
 			ReplyInfo: &pbpo.ReplyInfo{
 				ReqId:     lib.GetReqId(ctx),
-				ReplyCode: internalErrCode,
-				ReplyMsg:  internalErrMsg,
+				ReplyCode: lib.PortalInternalErrCode,
+				ReplyMsg:  lib.PortalInternalErrMsg,
 			},
 		}, nil
 	}
@@ -93,8 +93,8 @@ func (ps *portalServer) CreateDn(ctx context.Context, req *pbpo.CreateDnRequest)
 	apply := func(stm concurrency.STM) error {
 		if val := []byte(stm.Get(dnEntityKey)); len(val) != 0 {
 			return &portalError{
-				code: dupResErrCode,
-				msg:  dupResErrMsg,
+				code: lib.PortalDupResErrCode,
+				msg:  lib.PortalDupResErrMsg,
 			}
 		}
 		stm.Put(dnEntityKey, dnEntityValStr)
@@ -117,8 +117,8 @@ func (ps *portalServer) CreateDn(ctx context.Context, req *pbpo.CreateDnRequest)
 			return &pbpo.CreateDnReply{
 				ReplyInfo: &pbpo.ReplyInfo{
 					ReqId:     lib.GetReqId(ctx),
-					ReplyCode: internalErrCode,
-					ReplyMsg:  internalErrMsg,
+					ReplyCode: lib.PortalInternalErrCode,
+					ReplyMsg:  lib.PortalInternalErrMsg,
 				},
 			}, nil
 		}
@@ -129,30 +129,30 @@ func (ps *portalServer) CreateDn(ctx context.Context, req *pbpo.CreateDnRequest)
 	return &pbpo.CreateDnReply{
 		ReplyInfo: &pbpo.ReplyInfo{
 			ReqId:     lib.GetReqId(ctx),
-			ReplyCode: succeedCode,
-			ReplyMsg:  succeedMsg,
+			ReplyCode: lib.PortalSucceedCode,
+			ReplyMsg:  lib.PortalSucceedMsg,
 		},
 	}, nil
 }
 
-func getDnApply(key string, diskNode *pbds.DiskNode) func(stm concurrency.STM) error {
-	return func(stm concurrency.STM) error {
-		val := []byte(stm.Get(key))
+func (ps *portalServer) GetDn(ctx context.Context, req *pbpo.GetDnRequest) (
+	*pbpo.GetDnReply, error) {
+	dnEntityKey := ps.kf.DnEntityKey(req.SockAddr)
+	diskNode := &pbds.DiskNode{}
+
+	apply := func(stm concurrency.STM) error {
+		val := []byte(stm.Get(dnEntityKey))
 		if len(val) == 0 {
-			return &portalError{2, "unknown resoruce"}
+			return &portalError{
+				lib.PortalUnknownResErrCode,
+				lib.PortalUnknownResErrMsg,
+			}
 		}
 		err := proto.Unmarshal(val, diskNode)
 		return err
 	}
-}
 
-func (ps *portalServer) GetDn(ctx context.Context, req *pbpo.GetDnRequest) (
-	*pbpo.GetDnReply, error) {
-	vda_prefix := "vda"
-	key := fmt.Sprintf("/%s/dn/%s", vda_prefix, req.SockAddr)
-	diskNode := &pbds.DiskNode{}
-	apply := getDnApply(key, diskNode)
-	_, err := concurrency.NewSTM(ps.etcdCli, apply, concurrency.WithAbortContext(ctx))
+	err := ps.sw.RunStm(apply, ctx, "GetDn: "+req.SockAddr)
 	if err != nil {
 		if serr, ok := err.(*portalError); ok {
 			return &pbpo.GetDnReply{
@@ -166,8 +166,8 @@ func (ps *portalServer) GetDn(ctx context.Context, req *pbpo.GetDnRequest) (
 			return &pbpo.GetDnReply{
 				ReplyInfo: &pbpo.ReplyInfo{
 					ReqId:     lib.GetReqId(ctx),
-					ReplyCode: 1,
-					ReplyMsg:  "internal error",
+					ReplyCode: lib.PortalInternalErrCode,
+					ReplyMsg:  lib.PortalInternalErrMsg,
 				},
 			}, nil
 		}
@@ -175,10 +175,11 @@ func (ps *portalServer) GetDn(ctx context.Context, req *pbpo.GetDnRequest) (
 		return &pbpo.GetDnReply{
 			ReplyInfo: &pbpo.ReplyInfo{
 				ReqId:     lib.GetReqId(ctx),
-				ReplyCode: 0,
-				ReplyMsg:  "succeed",
+				ReplyCode: lib.PortalSucceedCode,
+				ReplyMsg:  lib.PortalSucceedMsg,
 			},
 			DiskNode: &pbpo.DiskNode{
+				DnId:        diskNode.DnId,
 				SockAddr:    diskNode.SockAddr,
 				Description: diskNode.DnConf.Description,
 				NvmfListener: &pbpo.NvmfListener{

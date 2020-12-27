@@ -3,8 +3,14 @@ package lib
 const (
 	DefaultEtcdPrefix = "vda"
 
-	PortalSucceedCode = 0
-	PortalSucceedMsg  = "succeed"
+	PortalSucceedCode       = 0
+	PortalSucceedMsg        = "succeed"
+	PortalInternalErrCode   = 1
+	PortalInternalErrMsg    = "internal error"
+	PortalDupResErrCode     = 2
+	PortalDupResErrMsg      = "duplicate resource"
+	PortalUnknownResErrCode = 3
+	PortalUnknownResErrMsg  = "unknown resource"
 
 	DnSucceedCode   = 0
 	DnSucceedMsg    = "succeed"

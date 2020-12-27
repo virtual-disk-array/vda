@@ -82,19 +82,19 @@ func (sm *SyncupManager) SyncupDn(sockAddr string, ctx context.Context) {
 
 	reply, err := sm.syncupDn(sockAddr, ctx, req)
 	logger.Info("%v %v %v", reply, err, idToRes)
-	// if err == nil {
-	// 	if reply.ReplyInfo.ReplyCode == DnSucceedCode {
-	// 		sm.getDnRsp(reply, idToRes)
-	// 		capDiffList := sm.setDnInfo(diskNode, idToRes)
-	// 		sm.writeDnInfo(diskNode, capDiffList, revision, ctx)
-	// 	} else {
-	// 		logger.Warning("SyncupDn reply error: %v", reply.ReplyInfo)
-	// 	}
-	// } else {
-	// 	logger.Warning("SyncupDn grpc error: %v", err)
-	// 	capDiffList := sm.setDnInfo(diskNode, idToRes)
-	// 	sm.writeDnInfo(diskNode, capDiffList, revision, ctx)
-	// }
+	if err == nil {
+		if reply.ReplyInfo.ReplyCode == DnSucceedCode {
+			sm.getDnRsp(reply, idToRes)
+			capDiffList := sm.setDnInfo(diskNode, idToRes)
+			sm.writeDnInfo(diskNode, capDiffList, revision, ctx)
+		} else {
+			logger.Warning("SyncupDn reply error: %v", reply.ReplyInfo)
+		}
+	} else {
+		logger.Warning("SyncupDn grpc error: %v", err)
+		capDiffList := sm.setDnInfo(diskNode, idToRes)
+		sm.writeDnInfo(diskNode, capDiffList, revision, ctx)
+	}
 }
 
 func (sm *SyncupManager) getDiskNode(sockAddr string, ctx context.Context) (

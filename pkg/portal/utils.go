@@ -38,14 +38,3 @@ type portalError struct {
 func (pe *portalError) Error() string {
 	return fmt.Sprintf("code: %d msg: %s", pe.code, pe.msg)
 }
-
-const (
-	succeedCode       = 0
-	succeedMsg        = "succeed"
-	internalErrCode   = 1
-	internalErrMsg    = "internal error"
-	dupResErrCode     = 2
-	dupResErrMsg      = "duplicate resource"
-	unknownResErrCode = 3
-	unknownResErrMsg  = "unknonwn resource"
-)

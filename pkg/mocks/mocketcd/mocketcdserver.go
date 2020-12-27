@@ -2,7 +2,6 @@ package mocketcd
 
 import (
 	"context"
-	"fmt"
 	"net/url"
 	"os"
 	"testing"
@@ -40,7 +39,7 @@ func (s *MockEtcdServer) Get(ctx context.Context, key string) ([]byte, error) {
 		return nil, err
 	}
 	if len(gr.Kvs) != 1 {
-		return nil, fmt.Errorf("Kvs len mismatch: %d", len(gr.Kvs))
+		return nil, nil
 	}
 	return gr.Kvs[0].Value, nil
 }
