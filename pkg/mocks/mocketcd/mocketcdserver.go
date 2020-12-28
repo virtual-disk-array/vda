@@ -11,7 +11,8 @@ import (
 )
 
 const (
-	etcdDir = "/tmp/vdatest.default.etcd"
+	etcdDir     = "/tmp/vdatest.default.etcd"
+	peeringPort = "30001"
 )
 
 type MockEtcdServer struct {
@@ -58,6 +59,8 @@ func NewMockEtcdServer(port string, t *testing.T) (*MockEtcdServer, error) {
 		return nil, err
 	}
 	cfg.LCUrls = []url.URL{*listenClientURL}
+	listenPeerURL, err := url.Parse("http://127.0.0.1:" + peeringPort)
+	cfg.LPUrls = []url.URL{*listenPeerURL}
 	e, err := embed.StartEtcd(cfg)
 	if err != nil {
 		t.Errorf("StartEtcd err: %v", err)

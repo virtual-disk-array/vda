@@ -86,6 +86,7 @@ func launchCnAgent(cmd *cobra.Command, args []string) {
 	}
 	defer cnAgent.Stop()
 	pbcn.RegisterCnAgentServer(s, cnAgent)
+	logger.Info("Launch cn agent server")
 	if err := s.Serve(lis); err != nil {
 		logger.Fatal("Launch cn agent server err: %v", err)
 	}

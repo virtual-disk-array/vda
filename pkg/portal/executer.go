@@ -59,6 +59,7 @@ func launchPortal(cmd *cobra.Command, args []string) {
 
 	ps := newPortalServer(etcdCli)
 	pbpo.RegisterPortalServer(s, ps)
+	logger.Info("Launch portal server")
 	if err := s.Serve(lis); err != nil {
 		logger.Fatal("Launch portal server failed: %v", err)
 	}

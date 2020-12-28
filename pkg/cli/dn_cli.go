@@ -61,13 +61,13 @@ func init() {
 	dnCreateCmd.MarkFlagRequired("sock-addr")
 	dnCreateCmd.Flags().StringVarP(&dnCreateArgs.description, "description", "", "",
 		"dn description")
-	dnCreateCmd.Flags().StringVarP(&dnCreateArgs.trType, "tr-type", "", "",
+	dnCreateCmd.Flags().StringVarP(&dnCreateArgs.trType, "tr-type", "", "tcp",
 		"nvmf listener tr type")
-	dnCreateCmd.Flags().StringVarP(&dnCreateArgs.adrFam, "adr-fam", "", "",
+	dnCreateCmd.Flags().StringVarP(&dnCreateArgs.adrFam, "adr-fam", "", "ipv4",
 		"nvmf listener adr fam")
-	dnCreateCmd.Flags().StringVarP(&dnCreateArgs.trAddr, "tr-addr", "", "",
+	dnCreateCmd.Flags().StringVarP(&dnCreateArgs.trAddr, "tr-addr", "", "127.0.0.1",
 		"nvmf listener tr addr")
-	dnCreateCmd.Flags().StringVarP(&dnCreateArgs.trSvcId, "tr-svc-id", "", "",
+	dnCreateCmd.Flags().StringVarP(&dnCreateArgs.trSvcId, "tr-svc-id", "", "4420",
 		"nvmf listener tr svc id")
 	dnCreateCmd.Flags().StringVarP(&dnCreateArgs.location, "location", "", "",
 		"dn location")

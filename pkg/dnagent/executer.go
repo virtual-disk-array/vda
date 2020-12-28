@@ -86,6 +86,7 @@ func launchDnAgent(cmd *cobra.Command, args []string) {
 	}
 	defer dnAgent.Stop()
 	pbdn.RegisterDnAgentServer(s, dnAgent)
+	logger.Info("Launch dn agent server")
 	if err := s.Serve(lis); err != nil {
 		logger.Fatal("Launch dn agent server err: %v", err)
 	}
