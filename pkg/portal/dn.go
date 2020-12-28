@@ -14,7 +14,7 @@ import (
 	pbpo "github.com/virtual-disk-array/vda/pkg/proto/portalapi"
 )
 
-func (ps *portalServer) CreateDn(ctx context.Context, req *pbpo.CreateDnRequest) (
+func (po *portalServer) CreateDn(ctx context.Context, req *pbpo.CreateDnRequest) (
 	*pbpo.CreateDnReply, error) {
 	invalidParamMsg := ""
 	if req.SockAddr == "" {
@@ -77,9 +77,9 @@ func (ps *portalServer) CreateDn(ctx context.Context, req *pbpo.CreateDnRequest)
 		Description: req.Description,
 	}
 
-	dnEntityKey := ps.kf.DnEntityKey(req.SockAddr)
-	dnListKey := ps.kf.DnListKey(hashCode, req.SockAddr)
-	dnErrKey := ps.kf.DnErrKey(hashCode, req.SockAddr)
+	dnEntityKey := po.kf.DnEntityKey(req.SockAddr)
+	dnListKey := po.kf.DnListKey(hashCode, req.SockAddr)
+	dnErrKey := po.kf.DnErrKey(hashCode, req.SockAddr)
 
 	dnEntityVal, err := proto.Marshal(diskNode)
 	if err != nil {
@@ -133,7 +133,7 @@ func (ps *portalServer) CreateDn(ctx context.Context, req *pbpo.CreateDnRequest)
 		return nil
 	}
 
-	err = ps.sw.RunStm(apply, ctx, "CreateDn: "+req.SockAddr)
+	err = po.sw.RunStm(apply, ctx, "CreateDn: "+req.SockAddr)
 	if err != nil {
 		if serr, ok := err.(*portalError); ok {
 			return &pbpo.CreateDnReply{
@@ -154,7 +154,7 @@ func (ps *portalServer) CreateDn(ctx context.Context, req *pbpo.CreateDnRequest)
 		}
 	}
 
-	ps.sm.SyncupDn(req.SockAddr, ctx)
+	po.sm.SyncupDn(req.SockAddr, ctx)
 
 	return &pbpo.CreateDnReply{
 		ReplyInfo: &pbpo.ReplyInfo{
@@ -165,9 +165,9 @@ func (ps *portalServer) CreateDn(ctx context.Context, req *pbpo.CreateDnRequest)
 	}, nil
 }
 
-func (ps *portalServer) GetDn(ctx context.Context, req *pbpo.GetDnRequest) (
+func (po *portalServer) GetDn(ctx context.Context, req *pbpo.GetDnRequest) (
 	*pbpo.GetDnReply, error) {
-	dnEntityKey := ps.kf.DnEntityKey(req.SockAddr)
+	dnEntityKey := po.kf.DnEntityKey(req.SockAddr)
 	diskNode := &pbds.DiskNode{}
 
 	apply := func(stm concurrency.STM) error {
@@ -182,7 +182,7 @@ func (ps *portalServer) GetDn(ctx context.Context, req *pbpo.GetDnRequest) (
 		return err
 	}
 
-	err := ps.sw.RunStm(apply, ctx, "GetDn: "+req.SockAddr)
+	err := po.sw.RunStm(apply, ctx, "GetDn: "+req.SockAddr)
 	if err != nil {
 		if serr, ok := err.(*portalError); ok {
 			return &pbpo.GetDnReply{

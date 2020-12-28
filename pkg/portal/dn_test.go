@@ -38,7 +38,7 @@ func TestCreateDn(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	ps := newPortalServer(cli)
+	po := newPortalServer(cli)
 	req := &pbpo.CreateDnRequest{
 		SockAddr:    sockAddr,
 		Description: "create mock dn",
@@ -49,7 +49,7 @@ func TestCreateDn(t *testing.T) {
 			TrSvcId: "4420",
 		},
 	}
-	reply, err := ps.CreateDn(ctx, req)
+	reply, err := po.CreateDn(ctx, req)
 	if err != nil {
 		t.Errorf("CreateDn err: %v", err)
 		return
@@ -66,7 +66,7 @@ func TestCreateDn(t *testing.T) {
 	}
 
 	diskNode := &pbds.DiskNode{}
-	dnEntityKey := ps.kf.DnEntityKey(sockAddr)
+	dnEntityKey := po.kf.DnEntityKey(sockAddr)
 	dnEntityVal, err := mockEtcd.Get(ctx, dnEntityKey)
 	if err != nil {
 		t.Errorf("Get %s err: %v", dnEntityKey, err)
@@ -104,7 +104,7 @@ func TestGetDn(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	ps := newPortalServer(cli)
+	po := newPortalServer(cli)
 
 	dnId := "25c55717-98cb-4959-8e60-6269d80a6b77"
 	sockAddr := "localhost:9520"
@@ -133,7 +133,7 @@ func TestGetDn(t *testing.T) {
 			},
 		},
 	}
-	dnEntityKey := ps.kf.DnEntityKey(sockAddr)
+	dnEntityKey := po.kf.DnEntityKey(sockAddr)
 	dnEntityVal, err := proto.Marshal(diskNode)
 	if err != nil {
 		t.Errorf("Marshal diskNode err: %v %v", err, diskNode)
@@ -147,7 +147,7 @@ func TestGetDn(t *testing.T) {
 	req := &pbpo.GetDnRequest{
 		SockAddr: sockAddr,
 	}
-	reply, err := ps.GetDn(ctx, req)
+	reply, err := po.GetDn(ctx, req)
 	if err != nil {
 		t.Errorf("GetDn err: %v", err)
 		return
