@@ -3,23 +3,24 @@ package lib
 const (
 	DefaultEtcdPrefix = "vda"
 
-	PortalSucceedCode       = 0
+	PortalSucceedCode       = 1
 	PortalSucceedMsg        = "succeed"
-	PortalInternalErrCode   = 1
+	PortalInternalErrCode   = 2
 	PortalInternalErrMsg    = "internal error"
-	PortalDupResErrCode     = 2
+	PortalDupResErrCode     = 3
 	PortalDupResErrMsg      = "duplicate resource"
-	PortalUnknownResErrCode = 3
+	PortalUnknownResErrCode = 4
 	PortalUnknownResErrMsg  = "unknown resource"
+	PortalInvalidParamCode  = 5
 
-	DnSucceedCode   = 0
+	DnSucceedCode   = 1
 	DnSucceedMsg    = "succeed"
-	DnOldRevErrCode = 1
+	DnOldRevErrCode = 2
 	DnOldRevErrMsg  = "old revision"
 
-	CnSucceedCode   = 0
+	CnSucceedCode   = 1
 	CnSucceedMsg    = "succeed"
-	CnOldRevErrCode = 1
+	CnOldRevErrCode = 2
 	CnOldRevErrMsg  = "old revision"
 
 	ResUninitMsg = "uninit"
@@ -27,4 +28,6 @@ const (
 
 	DefaultVdaPrefix = "vda"
 	DefaultNqnPrefix = "nqn.2016-06.io.vda"
+
+	MaxHashCode = 65536
 )

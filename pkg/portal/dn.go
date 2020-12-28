@@ -2,6 +2,7 @@ package portal
 
 import (
 	"context"
+	"fmt"
 	"math/rand"
 
 	"github.com/coreos/etcd/clientv3/concurrency"
@@ -15,8 +16,37 @@ import (
 
 func (ps *portalServer) CreateDn(ctx context.Context, req *pbpo.CreateDnRequest) (
 	*pbpo.CreateDnReply, error) {
-	hashCode := uint32(rand.Intn(65536))
+	invalidParamMsg := ""
+	if req.SockAddr == "" {
+		invalidParamMsg = "SockAddr is empty"
+	} else if req.NvmfListener.TrType == "" {
+		invalidParamMsg = "TrType is empty"
+	} else if req.NvmfListener.AdrFam == "" {
+		invalidParamMsg = "AdrFam is empty"
+	} else if req.NvmfListener.TrAddr == "" {
+		invalidParamMsg = "TrAddr is empty"
+	} else if req.NvmfListener.TrSvcId == "" {
+		invalidParamMsg = "TrSvcId is empty"
+	} else if req.HashCode > lib.MaxHashCode {
+		invalidParamMsg = fmt.Sprintf("HashCode is larger than %d", lib.MaxHashCode)
+	}
+	if invalidParamMsg != "" {
+		return &pbpo.CreateDnReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInvalidParamCode,
+				ReplyMsg:  invalidParamMsg,
+			},
+		}, nil
+	}
+
 	dnId := lib.NewHexStrUuid()
+
+	hashCode := req.HashCode
+	if hashCode == 0 {
+		hashCode = uint32(rand.Intn(lib.MaxHashCode)) + 1
+	}
+
 	dnConf := &pbds.DnConf{
 		Description: req.Description,
 		NvmfListener: &pbds.NvmfListener{

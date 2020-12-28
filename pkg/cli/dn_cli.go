@@ -1,12 +1,9 @@
 package cli
 
 import (
-	"context"
-	"log"
-	"time"
+	"fmt"
 
 	"github.com/spf13/cobra"
-	"google.golang.org/grpc"
 
 	pbpo "github.com/virtual-disk-array/vda/pkg/proto/portalapi"
 )
@@ -20,6 +17,7 @@ type dnCreateArgsStruct struct {
 	trSvcId     string
 	location    string
 	isOffline   bool
+	hashCode    uint32
 }
 
 type dnDeleteArgsStruct struct {
@@ -40,21 +38,21 @@ var (
 		Args: cobra.MaximumNArgs(0),
 		Run:  dnCreateFunc,
 	}
-	dnCreateArgs = dnCreateArgsStruct{}
+	dnCreateArgs = &dnCreateArgsStruct{}
 
 	dnDeleteCmd = &cobra.Command{
 		Use:  "delete",
 		Args: cobra.MaximumNArgs(0),
 		Run:  dnDeleteFunc,
 	}
-	dnDeleteArgs = dnDeleteArgsStruct{}
+	dnDeleteArgs = &dnDeleteArgsStruct{}
 
 	dnGetCmd = &cobra.Command{
 		Use:  "get",
 		Args: cobra.MaximumNArgs(0),
 		Run:  dnGetFunc,
 	}
-	dnGetArgs = dnGetArgsStruct{}
+	dnGetArgs = &dnGetArgsStruct{}
 )
 
 func init() {
@@ -75,6 +73,8 @@ func init() {
 		"dn location")
 	dnCreateCmd.Flags().BoolVarP(&dnCreateArgs.isOffline, "is-offline", "", false,
 		"whether dn is offline")
+	dnCreateCmd.Flags().Uint32VarP(&dnCreateArgs.hashCode, "hash-code", "", 0,
+		"hash code of the dn")
 	dnCmd.AddCommand(dnCreateCmd)
 
 	dnDeleteCmd.Flags().StringVarP(&dnDeleteArgs.sockAddr, "sock-addr", "", "",
@@ -89,21 +89,7 @@ func init() {
 
 }
 
-func dnCreateFunc(cmd *cobra.Command, args []string) {
-	log.Println(rootArgs)
-	log.Println(dnCreateArgs)
-
-	conn, err := grpc.Dial(rootArgs.portalAddr, grpc.WithInsecure(), grpc.WithBlock())
-	if err != nil {
-		log.Fatalf("did not connect: %v", err)
-	}
-	defer conn.Close()
-	c := pbpo.NewPortalClient(conn)
-
-	ctx, cancel := context.WithTimeout(
-		context.Background(), time.Duration(rootArgs.portalTimeout)*time.Second)
-	defer cancel()
-
+func (cli *client) createDn(args *dnCreateArgsStruct) string {
 	req := &pbpo.CreateDnRequest{
 		SockAddr:    dnCreateArgs.sockAddr,
 		Description: dnCreateArgs.description,
@@ -115,33 +101,41 @@ func dnCreateFunc(cmd *cobra.Command, args []string) {
 		},
 		Location:  dnCreateArgs.location,
 		IsOffline: dnCreateArgs.isOffline,
+		HashCode:  dnCreateArgs.hashCode,
 	}
-	reply, err := c.CreateDn(ctx, req)
-	log.Println(reply)
+	reply, err := cli.c.CreateDn(cli.ctx, req)
+	if err != nil {
+		return err.Error()
+	} else {
+		return cli.serialize(reply)
+	}
+}
+
+func dnCreateFunc(cmd *cobra.Command, args []string) {
+	cli := newClient(rootArgs)
+	defer cli.close()
+	output := cli.createDn(dnCreateArgs)
+	fmt.Println(output)
 }
 
 func dnDeleteFunc(cmd *cobra.Command, args []string) {
-	log.Println(rootArgs)
-	log.Println(dnDeleteArgs)
 }
 
-func dnGetFunc(cmd *cobra.Command, args []string) {
-	log.Println(rootArgs)
-	log.Println(dnGetArgs)
-
-	conn, err := grpc.Dial(rootArgs.portalAddr, grpc.WithInsecure(), grpc.WithBlock())
-	if err != nil {
-		log.Fatalf("did not connect: %v", err)
-	}
-	defer conn.Close()
-	c := pbpo.NewPortalClient(conn)
-
-	ctx, cancel := context.WithTimeout(
-		context.Background(), time.Duration(rootArgs.portalTimeout)*time.Second)
-	defer cancel()
+func (cli *client) getDn(args *dnGetArgsStruct) string {
 	req := &pbpo.GetDnRequest{
 		SockAddr: dnGetArgs.sockAddr,
 	}
-	reply, err := c.GetDn(ctx, req)
-	log.Println(reply)
+	reply, err := cli.c.GetDn(cli.ctx, req)
+	if err != nil {
+		return err.Error()
+	} else {
+		return cli.serialize(reply)
+	}
+}
+
+func dnGetFunc(cmd *cobra.Command, args []string) {
+	cli := newClient(rootArgs)
+	defer cli.close()
+	output := cli.getDn(dnGetArgs)
+	fmt.Println(output)
 }

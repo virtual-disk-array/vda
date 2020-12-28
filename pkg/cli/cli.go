@@ -1,9 +1,15 @@
 package cli
 
 import (
-	"log"
+	"context"
+	"encoding/json"
+	"time"
 
 	"github.com/spf13/cobra"
+	"google.golang.org/grpc"
+
+	"github.com/virtual-disk-array/vda/pkg/logger"
+	pbpo "github.com/virtual-disk-array/vda/pkg/proto/portalapi"
 )
 
 type rootArgsStruct struct {
@@ -17,7 +23,7 @@ var (
 		Short: "vda cli",
 		Long:  `vda cli`,
 	}
-	rootArgs = rootArgsStruct{}
+	rootArgs = &rootArgsStruct{}
 )
 
 func init() {
@@ -25,11 +31,48 @@ func init() {
 		&rootArgs.portalAddr, "portal-addr", "", "localhost:9520", "portal socket address")
 	rootCmd.PersistentFlags().IntVarP(
 		&rootArgs.portalTimeout, "portal-timeout", "", 30, "portal timeout")
-	// rootCmd.AddCommand(dnCmd)
+	rootCmd.AddCommand(dnCmd)
 }
 
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
-		log.Fatal(err)
+		logger.Fatal("Execute err: %v", err)
+	}
+}
+
+type client struct {
+	conn   *grpc.ClientConn
+	c      pbpo.PortalClient
+	ctx    context.Context
+	cancel context.CancelFunc
+}
+
+func (cli *client) close() {
+	cli.cancel()
+	cli.conn.Close()
+}
+
+func (cli *client) serialize(reply interface{}) string {
+	output, err := json.MarshalIndent(reply, "", "  ")
+	if err != nil {
+		return err.Error()
+	} else {
+		return string(output)
+	}
+}
+
+func newClient(args *rootArgsStruct) *client {
+	conn, err := grpc.Dial(args.portalAddr, grpc.WithInsecure(), grpc.WithBlock())
+	if err != nil {
+		logger.Fatal("Connection err: %v %v", args, err)
+	}
+	c := pbpo.NewPortalClient(conn)
+	ctx, cancel := context.WithTimeout(context.Background(),
+		time.Duration(args.portalTimeout)*time.Second)
+	return &client{
+		conn:   conn,
+		c:      c,
+		ctx:    ctx,
+		cancel: cancel,
 	}
 }

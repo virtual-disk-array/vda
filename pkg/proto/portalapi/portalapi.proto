@@ -303,6 +303,7 @@ message CreateDnRequest {
   NvmfListener nvmf_listener = 3;
   string location = 4;
   bool is_offline = 5;
+  uint32 hash_code = 6;
 }
 
 message CreateDnReply {
