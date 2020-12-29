@@ -242,7 +242,8 @@ func (dnAgent *dnAgentServer) SyncupDn(ctx context.Context, req *pbdn.SyncupDnRe
 		return &pbdn.SyncupDnReply{
 			ReplyInfo: &pbdn.ReplyInfo{
 				ReplyCode: lib.DnOldRevErrCode,
-				ReplyMsg:  lib.DnOldRevErrMsg,
+				ReplyMsg: fmt.Sprintf("received rev: %d, current rev: %d",
+					req.Revision, lastReq.Revision),
 			},
 		}, nil
 	}

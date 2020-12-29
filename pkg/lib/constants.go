@@ -13,12 +13,10 @@ const (
 	DnSucceedCode   = 1
 	DnSucceedMsg    = "succeed"
 	DnOldRevErrCode = 2
-	DnOldRevErrMsg  = "old revision"
 
 	CnSucceedCode   = 1
 	CnSucceedMsg    = "succeed"
 	CnOldRevErrCode = 2
-	CnOldRevErrMsg  = "old revision"
 
 	ResUninitMsg = "uninit"
 	ResNoInfoMsg = "no info"

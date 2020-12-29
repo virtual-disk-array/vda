@@ -258,8 +258,4 @@ func TestOldSyncup(t *testing.T) {
 		t.Errorf("SyncupDn ReplyCode wrong: %v", replyInfo.ReplyCode)
 		return
 	}
-	if replyInfo.ReplyMsg != lib.DnOldRevErrMsg {
-		t.Errorf("SyncupDn ReplyMsg wrong: %v", replyInfo.ReplyMsg)
-		return
-	}
 }

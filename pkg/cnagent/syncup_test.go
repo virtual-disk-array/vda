@@ -472,8 +472,4 @@ func TestOldSyncup(t *testing.T) {
 		t.Errorf("SyncupCn ReplyCode wrong: %v", replyInfo.ReplyCode)
 		return
 	}
-	if replyInfo.ReplyMsg != lib.CnOldRevErrMsg {
-		t.Errorf("SyncupCn ReplyMsg wrong: %v", replyInfo.ReplyMsg)
-		return
-	}
 }

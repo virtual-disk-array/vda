@@ -516,7 +516,8 @@ func (cnAgent *cnAgentServer) SyncupCn(ctx context.Context, req *pbcn.SyncupCnRe
 		return &pbcn.SyncupCnReply{
 			ReplyInfo: &pbcn.ReplyInfo{
 				ReplyCode: lib.CnOldRevErrCode,
-				ReplyMsg:  lib.CnOldRevErrMsg,
+				ReplyMsg: fmt.Sprintf("received rev: %d, current rev: %d",
+					req.Revision, lastReq.Revision),
 			},
 		}, nil
 	}
