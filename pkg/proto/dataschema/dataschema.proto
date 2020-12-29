@@ -264,6 +264,7 @@ message VirtualDisk {
   uint64 size = 3;
   string dn_sock_addr = 4;
   string pd_name = 5;
+  BdevQos qos = 6;
 }
 
 message Group {
@@ -291,17 +292,22 @@ message Exporter {
   string snap_name = 5;
 }
 
+message DaConf {
+  BdevQos qos = 1;
+  uint32 strip_Cnt = 2;
+  uint32 strip_size_kb = 3;
+}
+
 // /{vda_prefix}/da/{da_name}
 message DiskArray {
   string da_id = 1;
   string da_name = 2;
   string description = 3;
-  uint32 strip_cnt = 4;
-  uint32 strip_size_kb = 5;
-  repeated Controller cntlr_list = 6;
-  repeated Group grp_list = 7;
-  repeated Snap snap_list = 8;
-  repeated Exporter exp_list = 9;
+  DaConf da_conf = 4;
+  repeated Controller cntlr_list = 5;
+  repeated Group grp_list = 6;
+  repeated Snap snap_list = 7;
+  repeated Exporter exp_list = 8;
 }
 
 // /{vda_prefix}/capacity/dn/{free_size@sock_addr@pd_name}

@@ -59,3 +59,11 @@ func NvmfUuid(nqn string) (string, error) {
 	}
 	return id.String(), nil
 }
+
+func DivCeil(x, y uint64) uint64 {
+	return (x + y - 1) / y
+}
+
+func RoundUp(x, y uint64) uint64 {
+	return DivCeil(x, y) * y
+}

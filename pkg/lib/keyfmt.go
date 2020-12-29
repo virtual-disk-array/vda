@@ -50,6 +50,10 @@ func (kf *KeyFmt) CnErrKey(hashCode uint32, sockAddr string) string {
 	return fmt.Sprintf("/%s/error/cn/%d@%s", kf.prefix, hashCode, sockAddr)
 }
 
+func (kf *KeyFmt) AllocLockPath() string {
+	return fmt.Sprintf("%s/lock/alloc", kf.prefix)
+}
+
 func NewKeyFmt(prefix string) *KeyFmt {
 	return &KeyFmt{
 		prefix: prefix,

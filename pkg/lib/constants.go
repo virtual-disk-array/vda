@@ -30,4 +30,7 @@ const (
 	DefaultNqnPrefix = "nqn.2016-06.io.vda"
 
 	MaxHashCode = 65536
+
+	AllocLockTTL  = 2
+	AllocMaxRetry = 10
 )
