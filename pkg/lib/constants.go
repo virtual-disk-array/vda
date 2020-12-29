@@ -6,11 +6,8 @@ const (
 	PortalSucceedCode       = 1
 	PortalSucceedMsg        = "succeed"
 	PortalInternalErrCode   = 2
-	PortalInternalErrMsg    = "internal error"
 	PortalDupResErrCode     = 3
-	PortalDupResErrMsg      = "duplicate resource"
 	PortalUnknownResErrCode = 4
-	PortalUnknownResErrMsg  = "unknown resource"
 	PortalInvalidParamCode  = 5
 
 	DnSucceedCode   = 1

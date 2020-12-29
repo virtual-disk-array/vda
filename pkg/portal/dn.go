@@ -88,7 +88,7 @@ func (po *portalServer) CreateDn(ctx context.Context, req *pbpo.CreateDnRequest)
 			ReplyInfo: &pbpo.ReplyInfo{
 				ReqId:     lib.GetReqId(ctx),
 				ReplyCode: lib.PortalInternalErrCode,
-				ReplyMsg:  lib.PortalInternalErrMsg,
+				ReplyMsg:  err.Error(),
 			},
 		}, nil
 	}
@@ -101,7 +101,7 @@ func (po *portalServer) CreateDn(ctx context.Context, req *pbpo.CreateDnRequest)
 			ReplyInfo: &pbpo.ReplyInfo{
 				ReqId:     lib.GetReqId(ctx),
 				ReplyCode: lib.PortalInternalErrCode,
-				ReplyMsg:  lib.PortalInternalErrMsg,
+				ReplyMsg:  err.Error(),
 			},
 		}, nil
 	}
@@ -114,7 +114,7 @@ func (po *portalServer) CreateDn(ctx context.Context, req *pbpo.CreateDnRequest)
 			ReplyInfo: &pbpo.ReplyInfo{
 				ReqId:     lib.GetReqId(ctx),
 				ReplyCode: lib.PortalInternalErrCode,
-				ReplyMsg:  lib.PortalInternalErrMsg,
+				ReplyMsg:  err.Error(),
 			},
 		}, nil
 	}
@@ -124,7 +124,7 @@ func (po *portalServer) CreateDn(ctx context.Context, req *pbpo.CreateDnRequest)
 		if val := []byte(stm.Get(dnEntityKey)); len(val) != 0 {
 			return &portalError{
 				code: lib.PortalDupResErrCode,
-				msg:  lib.PortalDupResErrMsg,
+				msg:  dnEntityKey,
 			}
 		}
 		stm.Put(dnEntityKey, dnEntityValStr)
@@ -148,7 +148,7 @@ func (po *portalServer) CreateDn(ctx context.Context, req *pbpo.CreateDnRequest)
 				ReplyInfo: &pbpo.ReplyInfo{
 					ReqId:     lib.GetReqId(ctx),
 					ReplyCode: lib.PortalInternalErrCode,
-					ReplyMsg:  lib.PortalInternalErrMsg,
+					ReplyMsg:  err.Error(),
 				},
 			}, nil
 		}
@@ -175,7 +175,7 @@ func (po *portalServer) GetDn(ctx context.Context, req *pbpo.GetDnRequest) (
 		if len(val) == 0 {
 			return &portalError{
 				lib.PortalUnknownResErrCode,
-				lib.PortalUnknownResErrMsg,
+				dnEntityKey,
 			}
 		}
 		err := proto.Unmarshal(val, diskNode)
@@ -197,7 +197,7 @@ func (po *portalServer) GetDn(ctx context.Context, req *pbpo.GetDnRequest) (
 				ReplyInfo: &pbpo.ReplyInfo{
 					ReqId:     lib.GetReqId(ctx),
 					ReplyCode: lib.PortalInternalErrCode,
-					ReplyMsg:  lib.PortalInternalErrMsg,
+					ReplyMsg:  err.Error(),
 				},
 			}, nil
 		}
