@@ -28,4 +28,7 @@ const (
 
 	AllocLockTTL  = 2
 	AllocMaxRetry = 10
+
+	DefaultSanpName        = "%default%"
+	DefaultSanpDescription = "default snap"
 )

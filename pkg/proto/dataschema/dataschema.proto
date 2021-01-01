@@ -294,7 +294,7 @@ message Exporter {
 
 message DaConf {
   BdevQos qos = 1;
-  uint32 strip_Cnt = 2;
+  uint32 strip_cnt = 2;
   uint32 strip_size_kb = 3;
 }
 

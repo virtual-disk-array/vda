@@ -111,7 +111,7 @@ func (sm *SyncupManager) getDiskNode(sockAddr string, ctx context.Context) (
 		}
 		err := proto.Unmarshal(dnEntityVal, diskNode)
 		if err != nil {
-			logger.Error("Unmarshal diskNode failed %s %v", sockAddr, err)
+			logger.Error("Unmarshal diskNode err %s %v", sockAddr, err)
 			return err
 		}
 		revision = stm.Rev(dnEntityKey)
@@ -277,7 +277,7 @@ func (sm *SyncupManager) writeDnInfo(diskNode *pbds.DiskNode, capDiffList []*cap
 	dnEntityKey := sm.kf.DnEntityKey(diskNode.SockAddr)
 	dnEntityVal, err := proto.Marshal(diskNode)
 	if err != nil {
-		logger.Error("Marshal diskNode failed: %v %v", diskNode, err)
+		logger.Error("Marshal diskNode err: %v %v", diskNode, err)
 		return
 	}
 	dnEntityValStr := string(dnEntityVal)
@@ -288,7 +288,7 @@ func (sm *SyncupManager) writeDnInfo(diskNode *pbds.DiskNode, capDiffList []*cap
 	}
 	dnErrVal, err := proto.Marshal(dnSummary)
 	if err != nil {
-		logger.Error("Marshal dnSummary failed: %v %v", dnSummary, err)
+		logger.Error("Marshal dnSummary err: %v %v", dnSummary, err)
 		return
 	}
 	dnErrValStr := string(dnErrVal)
@@ -315,7 +315,7 @@ func (sm *SyncupManager) writeDnInfo(diskNode *pbds.DiskNode, capDiffList []*cap
 
 	err = sm.sw.RunStm(apply, ctx, "SyncupDnPut: "+diskNode.SockAddr)
 	if err != nil {
-		logger.Error("RunStm failed: %v", err)
+		logger.Error("RunStm err: %v", err)
 	}
 }
 
@@ -324,7 +324,7 @@ func (sm *SyncupManager) syncupDn(sockAddr string, ctx context.Context,
 	conn, err := grpc.Dial(sockAddr, grpc.WithInsecure(), grpc.WithBlock())
 	logger.Info("syncupDn: %v %v", conn, err)
 	if err != nil {
-		logger.Warning("Create conn failed: %s %v", sockAddr, err)
+		logger.Warning("Create conn err: %s %v", sockAddr, err)
 		return nil, err
 	}
 	defer conn.Close()
@@ -332,7 +332,7 @@ func (sm *SyncupManager) syncupDn(sockAddr string, ctx context.Context,
 	logger.Info("SyncupDn req: %s %v", sockAddr, req)
 	reply, err := c.SyncupDn(ctx, req)
 	if err != nil {
-		logger.Warning("SyncupDn failed: %v", err)
+		logger.Warning("SyncupDn err: %v", err)
 	} else {
 		logger.Info("SyncupDn reply: %v", reply)
 	}
@@ -395,7 +395,7 @@ func (sm *SyncupManager) getControllerNode(sockAddr string, ctx context.Context)
 		}
 		err := proto.Unmarshal(cnEntityVal, controllerNode)
 		if err != nil {
-			logger.Error("Unmarshal1 controllerNode failed %s %v", sockAddr, err)
+			logger.Error("Unmarshal1 controllerNode err %s %v", sockAddr, err)
 			return err
 		}
 		revision = stm.Rev(cnEntityKey)
@@ -511,14 +511,14 @@ func (sm *SyncupManager) syncupCn(sockAddr string, ctx context.Context,
 	req *pbcn.SyncupCnRequest) (*pbcn.SyncupCnReply, error) {
 	conn, err := grpc.Dial(sockAddr, grpc.WithInsecure(), grpc.WithBlock())
 	if err != nil {
-		logger.Warning("Create conn failed: %s %v", sockAddr, err)
+		logger.Warning("Create conn err: %s %v", sockAddr, err)
 		return nil, err
 	}
 	c := pbcn.NewCnAgentClient(conn)
 	logger.Info("SyncupCn req: %s %v", sockAddr, req)
 	reply, err := c.SyncupCn(ctx, req)
 	if err != nil {
-		logger.Warning("SyncupCn failed: %v", err)
+		logger.Warning("SyncupCn err: %v", err)
 	} else {
 		logger.Info("SyncupCn reply: %v", reply)
 	}
@@ -604,7 +604,7 @@ func (sm *SyncupManager) writeCnInfo(controllerNode *pbds.ControllerNode,
 	cnEntityKey := sm.kf.CnEntityKey(controllerNode.SockAddr)
 	cnEntityVal, err := proto.Marshal(controllerNode)
 	if err != nil {
-		logger.Error("Marshal controllerNode failed: %v %v", controllerNode, err)
+		logger.Error("Marshal controllerNode err: %v %v", controllerNode, err)
 		return
 	}
 	cnEntityValStr := string(cnEntityVal)
@@ -615,7 +615,7 @@ func (sm *SyncupManager) writeCnInfo(controllerNode *pbds.ControllerNode,
 	}
 	cnErrVal, err := proto.Marshal(cnSummary)
 	if err != nil {
-		logger.Error("Marshal cnSummary failed: %v %v", cnSummary, err)
+		logger.Error("Marshal cnSummary err: %v %v", cnSummary, err)
 		return
 	}
 	cnErrValStr := string(cnErrVal)
@@ -642,6 +642,6 @@ func (sm *SyncupManager) writeCnInfo(controllerNode *pbds.ControllerNode,
 
 	err = sm.sw.RunStm(apply, ctx, "SyncupCnPut: "+controllerNode.SockAddr)
 	if err != nil {
-		logger.Error("RunStm failed: %v", err)
+		logger.Error("RunStm err: %v", err)
 	}
 }

@@ -5,11 +5,11 @@ import (
 	"fmt"
 
 	"github.com/coreos/etcd/clientv3/concurrency"
-	// "github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/proto"
 
 	"github.com/virtual-disk-array/vda/pkg/lib"
 	"github.com/virtual-disk-array/vda/pkg/logger"
-	// pbds "github.com/virtual-disk-array/vda/pkg/proto/dataschema"
+	pbds "github.com/virtual-disk-array/vda/pkg/proto/dataschema"
 	pbpo "github.com/virtual-disk-array/vda/pkg/proto/portalapi"
 )
 
@@ -17,13 +17,445 @@ type retriableError struct {
 	msg string
 }
 
-func (e *retriableError) Error() string {
+func (e retriableError) Error() string {
 	return e.msg
 }
 
 func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaRequest,
-	dnPdCandList []*lib.DnPdCand, cnCandList []*lib.CnCand) error {
-	return nil
+	dnPdCandList []*lib.DnPdCand, cnCandList []*lib.CnCand,
+	qos *lib.BdevQos, vdSize uint64) error {
+
+	daId := lib.NewHexStrUuid()
+	grpId := lib.NewHexStrUuid()
+	snapId := lib.NewHexStrUuid()
+	grpSize := vdSize * uint64(req.StripCnt)
+
+	apply := func(stm concurrency.STM) error {
+		dnList := make([]*pbds.DiskNode, 0)
+		vdList := make([]*pbds.VirtualDisk, 0)
+		for i, cand := range dnPdCandList {
+			dnEntityKey := po.kf.DnEntityKey(cand.SockAddr)
+			dnEntityVal := []byte(stm.Get(dnEntityKey))
+			if len(dnEntityVal) == 0 {
+				msg := fmt.Sprintf("Can not find diskNode %s", cand.SockAddr)
+				logger.Warning(msg)
+				return retriableError{msg}
+			}
+			diskNode := &pbds.DiskNode{}
+			if err := proto.Unmarshal(dnEntityVal, diskNode); err != nil {
+				msg := fmt.Sprintf("Unmarshal diskNode err %s %v",
+					cand.SockAddr, err)
+				logger.Warning(msg)
+				return retriableError{msg}
+			}
+			if diskNode.SockAddr != cand.SockAddr {
+				msg := fmt.Sprintf("SockAddr mismatch: %s %s",
+					diskNode.SockAddr, cand.SockAddr)
+				logger.Warning(msg)
+				return retriableError{msg}
+			}
+			if diskNode.DnInfo.ErrInfo.IsErr {
+				msg := fmt.Sprintf("diskNode IsErr: %s", cand.SockAddr)
+				logger.Warning(msg)
+				return retriableError{msg}
+			}
+			if diskNode.DnConf.IsOffline {
+				msg := fmt.Sprintf("diskNode IsOffline: %s", cand.SockAddr)
+				logger.Warning(msg)
+				return retriableError{msg}
+			}
+			dnList = append(dnList, diskNode)
+
+			vd := &pbds.VirtualDisk{
+				VdId:       lib.NewHexStrUuid(),
+				VdIdx:      uint32(i),
+				Size:       vdSize,
+				DnSockAddr: cand.SockAddr,
+				PdName:     cand.PdName,
+				Qos: &pbds.BdevQos{
+					RwIosPerSec:    qos.RwIosPerSec,
+					RwMbytesPerSec: qos.RwMbytesPerSec,
+					RMbytesPerSec:  qos.RMbytesPerSec,
+					WMbytesPerSec:  qos.WMbytesPerSec,
+				},
+			}
+			vdList = append(vdList, vd)
+		}
+
+		cnList := make([]*pbds.ControllerNode, 0)
+		for _, cand := range cnCandList {
+			cnEntityKey := po.kf.CnEntityKey(cand.SockAddr)
+			cnEntityVal := []byte(stm.Get(cnEntityKey))
+			if len(cnEntityVal) == 0 {
+				msg := fmt.Sprintf("Can not find controllerNode %s", cand.SockAddr)
+				logger.Warning(msg)
+				return retriableError{msg}
+			}
+			controllerNode := &pbds.ControllerNode{}
+			if err := proto.Unmarshal(cnEntityVal, controllerNode); err != nil {
+				msg := fmt.Sprintf("Unmarshal controllerNode err: %s %v",
+					cand.SockAddr, err)
+				logger.Warning(msg)
+				return retriableError{msg}
+			}
+			if controllerNode.SockAddr != cand.SockAddr {
+				msg := fmt.Sprintf("SockAddr mismatch: %s %s",
+					controllerNode.SockAddr, cand.SockAddr)
+				logger.Warning(msg)
+				return retriableError{msg}
+			}
+			if controllerNode.CnInfo.ErrInfo.IsErr {
+				msg := fmt.Sprintf("controllerNode IsErr: %s", cand.SockAddr)
+				logger.Warning(msg)
+				return retriableError{msg}
+			}
+			if controllerNode.CnConf.IsOffline {
+				msg := fmt.Sprintf("controllerNode IsOffline: %s", cand.SockAddr)
+				logger.Warning(msg)
+				return retriableError{msg}
+			}
+			cnList = append(cnList, controllerNode)
+		}
+
+		grpList := make([]*pbds.Group, 0)
+		grp := &pbds.Group{
+			GrpId:  grpId,
+			GrpIdx: uint32(0),
+			Size:   grpSize,
+			VdList: vdList,
+		}
+		grpList = append(grpList, grp)
+
+		snapList := make([]*pbds.Snap, 0)
+		snap := &pbds.Snap{
+			SnapId:      snapId,
+			SnapName:    lib.DefaultSanpName,
+			Description: lib.DefaultSanpDescription,
+			OriName:     "",
+			IsClone:     false,
+			Idx:         0,
+			Size:        req.Size,
+		}
+		snapList = append(snapList, snap)
+
+		expList := make([]*pbds.Exporter, 0)
+
+		vdFeList := make([]*pbds.VdFrontend, 0)
+		for _, vd := range grp.VdList {
+			vdFe := &pbds.VdFrontend{
+				VdId: vd.VdId,
+				VdFeConf: &pbds.VdFeConf{
+					DnNvmfListener: &pbds.NvmfListener{
+						TrType:  dnList[vd.VdIdx].DnConf.NvmfListener.TrType,
+						AdrFam:  dnList[vd.VdIdx].DnConf.NvmfListener.AdrFam,
+						TrAddr:  dnList[vd.VdIdx].DnConf.NvmfListener.TrAddr,
+						TrSvcId: dnList[vd.VdIdx].DnConf.NvmfListener.TrSvcId,
+					},
+					DnSockAddr: vd.DnSockAddr,
+					VdIdx:      vd.VdIdx,
+					Size:       vd.Size,
+				},
+				VdFeInfo: &pbds.VdFeInfo{
+					ErrInfo: &pbds.ErrInfo{
+						IsErr:     true,
+						ErrMsg:    lib.ResUninitMsg,
+						Timestamp: lib.ResTimestamp(),
+					},
+				},
+			}
+			vdFeList = append(vdFeList, vdFe)
+		}
+		grpFeList := make([]*pbds.GrpFrontend, 0)
+		grpFe := &pbds.GrpFrontend{
+			GrpId: grp.GrpId,
+			GrpFeConf: &pbds.GrpFeConf{
+				GrpIdx: grp.GrpIdx,
+				Size:   grp.Size,
+			},
+			GrpFeInfo: &pbds.GrpFeInfo{
+				ErrInfo: &pbds.ErrInfo{
+					IsErr:     true,
+					ErrMsg:    lib.ResUninitMsg,
+					Timestamp: lib.ResTimestamp(),
+				},
+			},
+			VdFeList: vdFeList,
+		}
+		grpFeList = append(grpFeList, grpFe)
+
+		snapFeList := make([]*pbds.SnapFrontend, 0)
+		snapFe := &pbds.SnapFrontend{
+			SnapId: snap.SnapId,
+			SnapFeConf: &pbds.SnapFeConf{
+				OriId:   "",
+				IsClone: snap.IsClone,
+				Idx:     snap.Idx,
+				Size:    snap.Size,
+			},
+			SnapFeInfo: &pbds.SnapFeInfo{
+				ErrInfo: &pbds.ErrInfo{
+					IsErr:     true,
+					ErrMsg:    lib.ResUninitMsg,
+					Timestamp: lib.ResTimestamp(),
+				},
+			},
+		}
+		snapFeList = append(snapFeList, snapFe)
+
+		expFeList := make([]*pbds.ExpFrontend, 0)
+
+		var primCntlr *pbds.Controller
+		cntlrList := make([]*pbds.Controller, 0)
+		for i, controllerNode := range cnList {
+			isPrimary := false
+			if i == 0 {
+				isPrimary = true
+			}
+			cntlr := &pbds.Controller{
+				CntlrId:    lib.NewHexStrUuid(),
+				CnSockAddr: controllerNode.SockAddr,
+				CntlrIdx:   uint32(i),
+				IsPrimary:  isPrimary,
+				CnNvmfListener: &pbds.NvmfListener{
+					TrType:  controllerNode.CnConf.NvmfListener.TrType,
+					AdrFam:  controllerNode.CnConf.NvmfListener.AdrFam,
+					TrAddr:  controllerNode.CnConf.NvmfListener.TrAddr,
+					TrSvcId: controllerNode.CnConf.NvmfListener.TrSvcId,
+				},
+			}
+			cntlrList = append(cntlrList, cntlr)
+		}
+		diskArray := &pbds.DiskArray{
+			DaId:        daId,
+			DaName:      req.DaName,
+			Description: req.Description,
+			DaConf: &pbds.DaConf{
+				Qos: &pbds.BdevQos{
+					RwIosPerSec:    req.RwIosPerSec,
+					RwMbytesPerSec: req.RwMbytesPerSec,
+					RMbytesPerSec:  req.RMbytesPerSec,
+					WMbytesPerSec:  req.WMbytesPerSec,
+				},
+				StripCnt:    req.StripCnt,
+				StripSizeKb: req.StripSizeKb,
+			},
+			CntlrList: cntlrList,
+			GrpList:   grpList,
+			SnapList:  snapList,
+			ExpList:   expList,
+		}
+		daEntityKey := po.kf.DaEntityKey(diskArray.DaName)
+		daEntityVal := stm.Get(daEntityKey)
+		if len(daEntityVal) != 0 {
+			msg := fmt.Sprintf("Duplicate DaName: %s", diskArray.DaName)
+			logger.Error(msg)
+			return fmt.Errorf(msg)
+		}
+		newDaEntityVal, err := proto.Marshal(diskArray)
+		if err != nil {
+			msg := fmt.Sprintf("Marshal diskArray err: %v %v", diskArray, err)
+			logger.Error(msg)
+			return fmt.Errorf(msg)
+		}
+		stm.Put(daEntityKey, string(newDaEntityVal))
+
+		for i, cand := range dnPdCandList {
+			var targetPd *pbds.PhysicalDisk
+			diskNode := dnList[i]
+			for _, pd := range diskNode.PdList {
+				if pd.PdName == cand.PdName {
+					targetPd = pd
+					break
+				}
+			}
+			if targetPd == nil {
+				msg := fmt.Sprintf("Can not find pd from dn: %v", cand)
+				logger.Warning(msg)
+				return retriableError{msg}
+			}
+			if targetPd.PdInfo.ErrInfo.IsErr {
+				msg := fmt.Sprintf("physicalDisk IsErr: %v", cand)
+				logger.Warning(msg)
+				return retriableError{msg}
+			}
+			if targetPd.PdConf.IsOffline {
+				msg := fmt.Sprintf("physicalDisk IsOffline: %v", cand)
+				logger.Warning(msg)
+				return retriableError{msg}
+			}
+
+			cap := targetPd.Capacity
+
+			if cap.FreeSize < vdSize {
+				msg := fmt.Sprintf("FreeSize not enough: %v %v %d",
+					cand, cap, vdSize)
+				logger.Warning(msg)
+				return retriableError{msg}
+			} else {
+				cap.FreeSize -= vdSize
+			}
+
+			if cap.FreeQos.RwIosPerSec != 0 && qos.RwIosPerSec != 0 {
+				if cap.FreeQos.RwIosPerSec < qos.RwIosPerSec {
+					msg := fmt.Sprintf("RwIosPerSec not enough: %v %v %v",
+						cand, cap, qos)
+					logger.Warning(msg)
+					return retriableError{msg}
+				} else {
+					cap.FreeQos.RwIosPerSec -= qos.RwIosPerSec
+				}
+			} else if cap.FreeQos.RwIosPerSec != 0 && qos.RwIosPerSec == 0 {
+				msg := fmt.Sprintf("RwIosPerSec not enough: %v %v %v",
+					cand, cap, qos)
+				logger.Warning(msg)
+				return retriableError{msg}
+			}
+
+			if cap.FreeQos.RwMbytesPerSec != 0 && qos.RwMbytesPerSec != 0 {
+				if cap.FreeQos.RwMbytesPerSec < qos.RwMbytesPerSec {
+					msg := fmt.Sprintf("physicalDisk RwMbytesPerSec not enough")
+					logger.Warning(msg)
+					return retriableError{msg}
+				} else {
+					cap.FreeQos.RwMbytesPerSec -= qos.RwMbytesPerSec
+				}
+			} else if cap.FreeQos.RwMbytesPerSec != 0 && qos.RwIosPerSec == 0 {
+				msg := fmt.Sprintf("RwMbytesPerSec not enough: %v %v %v",
+					cand, cap, qos)
+				logger.Warning(msg)
+				return retriableError{msg}
+			}
+
+			if cap.FreeQos.RMbytesPerSec != 0 && qos.RMbytesPerSec != 0 {
+				if cap.FreeQos.RMbytesPerSec < qos.RMbytesPerSec {
+					msg := fmt.Sprintf("physicalDisk RMbytesPerSec not enough: %v %v %v",
+						cand, cap, qos)
+					logger.Warning(msg)
+					return retriableError{msg}
+				} else {
+					cap.FreeQos.RMbytesPerSec -= qos.RMbytesPerSec
+				}
+			} else if cap.FreeQos.RMbytesPerSec != 0 && qos.RMbytesPerSec == 0 {
+				msg := fmt.Sprintf("RMbytesPerSec not enough: %v %v %v",
+					cand, cap, qos)
+				logger.Warning(msg)
+				return retriableError{msg}
+			}
+
+			if cap.FreeQos.WMbytesPerSec != 0 && qos.WMbytesPerSec != 0 {
+				if cap.FreeQos.WMbytesPerSec < qos.WMbytesPerSec {
+					msg := fmt.Sprintf("physicalDisk WMbytesPerSec not enough: %v %v %v",
+						cand, cap, qos)
+					logger.Warning(msg)
+					return retriableError{msg}
+				} else {
+					cap.FreeQos.WMbytesPerSec -= qos.WMbytesPerSec
+				}
+			} else if cap.FreeQos.WMbytesPerSec != 0 && qos.WMbytesPerSec == 0 {
+				msg := fmt.Sprintf("WMbytesPerSec not enough: %v %v %v",
+					cand, cap, qos)
+				logger.Warning(msg)
+				return retriableError{msg}
+			}
+			vd := vdList[i]
+			vdBe := &pbds.VdBackend{
+				VdId: vd.VdId,
+				VdBeConf: &pbds.VdBeConf{
+					Size: vd.Size,
+					Qos: &pbds.BdevQos{
+						RwIosPerSec:    qos.RwIosPerSec,
+						RwMbytesPerSec: qos.RwMbytesPerSec,
+						RMbytesPerSec:  qos.RMbytesPerSec,
+						WMbytesPerSec:  qos.WMbytesPerSec,
+					},
+					CntlrId: primCntlr.CntlrId,
+				},
+				VdBeInfo: &pbds.VdBeInfo{
+					ErrInfo: &pbds.ErrInfo{
+						IsErr:     true,
+						ErrMsg:    lib.ResUninitMsg,
+						Timestamp: lib.ResTimestamp(),
+					},
+				},
+			}
+			targetPd.VdBeList = append(targetPd.VdBeList, vdBe)
+			newDnEntityVal, err := proto.Marshal(diskNode)
+			if err != nil {
+				msg := fmt.Sprintf("Marshal diskNode err: %v %v", diskNode, err)
+				logger.Error(msg)
+				return fmt.Errorf(msg)
+			}
+			dnEntityKey := po.kf.DnEntityKey(cand.SockAddr)
+			stm.Put(dnEntityKey, string(newDnEntityVal))
+
+			dnErrKey := po.kf.DnErrKey(diskNode.DnConf.HashCode, diskNode.SockAddr)
+			dnErrVal := []byte(stm.Get(dnErrKey))
+			if len(dnErrVal) == 0 {
+				dnSummary := &pbds.DnSummary{
+					Description: diskNode.DnConf.Description,
+				}
+				dnErrVal, err := proto.Marshal(dnSummary)
+				if err != nil {
+					msg := fmt.Sprintf("Marshal dnSummary err: %v", err)
+					logger.Error(msg)
+					return fmt.Errorf(msg)
+				}
+				stm.Put(dnErrKey, string(dnErrVal))
+			}
+		}
+
+		for i, cand := range cnCandList {
+			controllerNode := cnList[i]
+			controllerNode.CnCapacity.CntlrCnt += uint32(1)
+			cntlr := cntlrList[i]
+			cntlrFe := &pbds.CntlrFrontend{
+				CntlrId: cntlr.CntlrId,
+				CntlrFeConf: &pbds.CntlrFeConf{
+					DaId:        daId,
+					StripSizeKb: req.StripSizeKb,
+					CntlrList:   cntlrList,
+				},
+				CntlrFeInfo: &pbds.CntlrFeInfo{
+					ErrInfo: &pbds.ErrInfo{
+						IsErr:     true,
+						ErrMsg:    lib.ResUninitMsg,
+						Timestamp: lib.ResTimestamp(),
+					},
+				},
+				GrpFeList:  grpFeList,
+				SnapFeList: snapFeList,
+				ExpFeList:  expFeList,
+			}
+			controllerNode.CntlrFeList = append(controllerNode.CntlrFeList, cntlrFe)
+			newCnEntityVal, err := proto.Marshal(controllerNode)
+			if err != nil {
+				msg := fmt.Sprintf("Marshal controllerNode err: %v %v", cand.SockAddr, err)
+				logger.Error(msg)
+				return fmt.Errorf(msg)
+			}
+			cnEntityKey := po.kf.CnEntityKey(cand.SockAddr)
+			stm.Put(cnEntityKey, string(newCnEntityVal))
+
+			cnErrKey := po.kf.CnErrKey(controllerNode.CnConf.HashCode, controllerNode.SockAddr)
+			cnErrVal := []byte(stm.Get(cnErrKey))
+			if len(cnErrVal) == 0 {
+				cnSummary := &pbds.CnSummary{
+					Description: controllerNode.CnConf.Description,
+				}
+				cnErrVal, err := proto.Marshal(cnSummary)
+				if err != nil {
+					msg := fmt.Sprintf("Marshal cnSummary err: %v", err)
+					logger.Error(msg)
+					return fmt.Errorf(msg)
+				}
+				stm.Put(cnErrKey, string(cnErrVal))
+			}
+		}
+		return nil
+	}
+
+	err := po.sw.RunStm(apply, ctx, "CreateDa: "+req.DaName)
+	return err
 }
 
 func (po *portalServer) createNewDa(ctx context.Context, req *pbpo.CreateDaRequest) (
@@ -75,7 +507,7 @@ func (po *portalServer) createNewDa(ctx context.Context, req *pbpo.CreateDaReque
 			logger.Error("AllocateCn err: %v", err)
 			return dnList, cnList, err
 		}
-		err = po.applyAllocation(ctx, req, dnPdCandList, cnCandList)
+		err = po.applyAllocation(ctx, req, dnPdCandList, cnCandList, qos, vdSize)
 		if err != nil {
 			if serr, ok := err.(*retriableError); ok {
 				logger.Warning("Retriable error: %v", serr)
