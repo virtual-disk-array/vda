@@ -37,31 +37,31 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 			dnEntityKey := po.kf.DnEntityKey(cand.SockAddr)
 			dnEntityVal := []byte(stm.Get(dnEntityKey))
 			if len(dnEntityVal) == 0 {
+				logger.Warning("Can not find diskNode, cand: %v", cand)
 				msg := fmt.Sprintf("Can not find diskNode %s", cand.SockAddr)
-				logger.Warning(msg)
 				return retriableError{msg}
 			}
 			diskNode := &pbds.DiskNode{}
 			if err := proto.Unmarshal(dnEntityVal, diskNode); err != nil {
+				logger.Warning("Unmarshal diskNode err: %v %v %v", cand, diskNode, err)
 				msg := fmt.Sprintf("Unmarshal diskNode err %s %v",
 					cand.SockAddr, err)
-				logger.Warning(msg)
 				return retriableError{msg}
 			}
 			if diskNode.SockAddr != cand.SockAddr {
+				logger.Warning("SockAddr mismatch: %v %v", cand, diskNode)
 				msg := fmt.Sprintf("SockAddr mismatch: %s %s",
 					diskNode.SockAddr, cand.SockAddr)
-				logger.Warning(msg)
 				return retriableError{msg}
 			}
 			if diskNode.DnInfo.ErrInfo.IsErr {
-				msg := fmt.Sprintf("diskNode IsErr: %s", cand.SockAddr)
-				logger.Warning(msg)
+				logger.Warning("diskNode IsErr: %v", diskNode)
+				msg := fmt.Sprintf("diskNode IsErr: %s", diskNode.SockAddr)
 				return retriableError{msg}
 			}
 			if diskNode.DnConf.IsOffline {
-				msg := fmt.Sprintf("diskNode IsOffline: %s", cand.SockAddr)
-				logger.Warning(msg)
+				logger.Warning("diskNode IsOffline: %v", diskNode)
+				msg := fmt.Sprintf("diskNode IsOffline: %s", diskNode.SockAddr)
 				return retriableError{msg}
 			}
 			dnList = append(dnList, diskNode)
@@ -87,31 +87,33 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 			cnEntityKey := po.kf.CnEntityKey(cand.SockAddr)
 			cnEntityVal := []byte(stm.Get(cnEntityKey))
 			if len(cnEntityVal) == 0 {
+				logger.Warning("Can not find controllerNode, cand: %v", cand)
 				msg := fmt.Sprintf("Can not find controllerNode %s", cand.SockAddr)
-				logger.Warning(msg)
 				return retriableError{msg}
 			}
 			controllerNode := &pbds.ControllerNode{}
 			if err := proto.Unmarshal(cnEntityVal, controllerNode); err != nil {
+				logger.Warning("Unmarshal controllerNode err: %v %v %v",
+					cand, controllerNode, err)
 				msg := fmt.Sprintf("Unmarshal controllerNode err: %s %v",
 					cand.SockAddr, err)
-				logger.Warning(msg)
 				return retriableError{msg}
 			}
 			if controllerNode.SockAddr != cand.SockAddr {
+				logger.Warning("SockAddr mismatch:  %v %v", cand, controllerNode)
 				msg := fmt.Sprintf("SockAddr mismatch: %s %s",
 					controllerNode.SockAddr, cand.SockAddr)
 				logger.Warning(msg)
 				return retriableError{msg}
 			}
 			if controllerNode.CnInfo.ErrInfo.IsErr {
-				msg := fmt.Sprintf("controllerNode IsErr: %s", cand.SockAddr)
-				logger.Warning(msg)
+				logger.Warning("controllerNode IsErr: %v", controllerNode)
+				msg := fmt.Sprintf("controllerNode IsErr: %s", controllerNode.SockAddr)
 				return retriableError{msg}
 			}
 			if controllerNode.CnConf.IsOffline {
-				msg := fmt.Sprintf("controllerNode IsOffline: %s", cand.SockAddr)
-				logger.Warning(msg)
+				logger.Warning("controllerNode IsOffline: %v", controllerNode.CnConf.IsOffline)
+				msg := fmt.Sprintf("controllerNode IsOffline: %s", controllerNode.SockAddr)
 				return retriableError{msg}
 			}
 			cnList = append(cnList, controllerNode)
@@ -141,7 +143,7 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 		expList := make([]*pbds.Exporter, 0)
 
 		vdFeList := make([]*pbds.VdFrontend, 0)
-		for _, vd := range grp.VdList {
+		for _, vd := range vdList {
 			vdFe := &pbds.VdFrontend{
 				VdId: vd.VdId,
 				VdFeConf: &pbds.VdFeConf{
@@ -247,14 +249,14 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 		daEntityKey := po.kf.DaEntityKey(diskArray.DaName)
 		daEntityVal := stm.Get(daEntityKey)
 		if len(daEntityVal) != 0 {
+			logger.Error("Duplicate DaName: %s", diskArray.DaName)
 			msg := fmt.Sprintf("Duplicate DaName: %s", diskArray.DaName)
-			logger.Error(msg)
 			return fmt.Errorf(msg)
 		}
 		newDaEntityVal, err := proto.Marshal(diskArray)
 		if err != nil {
-			msg := fmt.Sprintf("Marshal diskArray err: %v %v", diskArray, err)
-			logger.Error(msg)
+			logger.Error("Marshal diskArray err: %v %v", diskArray, err)
+			msg := fmt.Sprintf("Marshal diskArray err: %s %v", diskArray.DaName, err)
 			return fmt.Errorf(msg)
 		}
 		stm.Put(daEntityKey, string(newDaEntityVal))
@@ -269,27 +271,27 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 				}
 			}
 			if targetPd == nil {
-				msg := fmt.Sprintf("Can not find pd from dn: %v", cand)
-				logger.Warning(msg)
+				logger.Warning("Can not find pd from dn: %v %v", cand, diskNode)
+				msg := fmt.Sprintf("Can not find pd from dn: %s %s", cand.SockAddr, cand.PdName)
 				return retriableError{msg}
 			}
 			if targetPd.PdInfo.ErrInfo.IsErr {
-				msg := fmt.Sprintf("physicalDisk IsErr: %v", cand)
-				logger.Warning(msg)
+				logger.Warning("physicalDisk IsErr: %v %v %v", cand, diskNode, targetPd)
+				msg := fmt.Sprintf("physicalDisk IsErr: %s %s", cand.SockAddr, cand.PdName)
 				return retriableError{msg}
 			}
 			if targetPd.PdConf.IsOffline {
-				msg := fmt.Sprintf("physicalDisk IsOffline: %v", cand)
-				logger.Warning(msg)
+				logger.Warning("physicalDisk IsOffline: %v %v %v", cand, diskNode, targetPd)
+				msg := fmt.Sprintf("physicalDisk IsOffline: %s %s", cand.SockAddr, cand.PdName)
 				return retriableError{msg}
 			}
 
 			cap := targetPd.Capacity
 
 			if cap.FreeSize < vdSize {
-				msg := fmt.Sprintf("FreeSize not enough: %v %v %d",
-					cand, cap, vdSize)
-				logger.Warning(msg)
+				logger.Warning("FreeSize not enough: %v %v %v %v",
+					cand, diskNode, cap, qos)
+				msg := fmt.Sprintf("FreeSize not enough")
 				return retriableError{msg}
 			} else {
 				cap.FreeSize -= vdSize
@@ -297,64 +299,65 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 
 			if cap.FreeQos.RwIosPerSec != 0 && qos.RwIosPerSec != 0 {
 				if cap.FreeQos.RwIosPerSec < qos.RwIosPerSec {
-					msg := fmt.Sprintf("RwIosPerSec not enough: %v %v %v",
-						cand, cap, qos)
-					logger.Warning(msg)
+					logger.Warning("RwIosPerSec not enough: %v %v %v %v",
+						cand, diskNode, cap, qos)
+					msg := fmt.Sprintf("RwIosPerSec not enough")
 					return retriableError{msg}
 				} else {
 					cap.FreeQos.RwIosPerSec -= qos.RwIosPerSec
 				}
 			} else if cap.FreeQos.RwIosPerSec != 0 && qos.RwIosPerSec == 0 {
-				msg := fmt.Sprintf("RwIosPerSec not enough: %v %v %v",
-					cand, cap, qos)
-				logger.Warning(msg)
+				logger.Warning("RwIosPerSec not enough: %v %v %v %v",
+					cand, diskNode, cap, qos)
+				msg := fmt.Sprintf("RwIosPerSec not enough")
 				return retriableError{msg}
 			}
 
 			if cap.FreeQos.RwMbytesPerSec != 0 && qos.RwMbytesPerSec != 0 {
 				if cap.FreeQos.RwMbytesPerSec < qos.RwMbytesPerSec {
-					msg := fmt.Sprintf("physicalDisk RwMbytesPerSec not enough")
-					logger.Warning(msg)
+					logger.Warning("RwMbytesPerSec not enough: %v %v %v %v",
+						cand, diskNode, cap, qos)
+					msg := fmt.Sprintf("RwMbytesPerSec not enough")
 					return retriableError{msg}
 				} else {
 					cap.FreeQos.RwMbytesPerSec -= qos.RwMbytesPerSec
 				}
 			} else if cap.FreeQos.RwMbytesPerSec != 0 && qos.RwIosPerSec == 0 {
-				msg := fmt.Sprintf("RwMbytesPerSec not enough: %v %v %v",
-					cand, cap, qos)
-				logger.Warning(msg)
+				logger.Warning("RwMbytesPerSec not enough: %v %v %v %v",
+					cand, diskNode, cap, qos)
+				msg := fmt.Sprintf("RwMbytesPerSec not enough")
 				return retriableError{msg}
 			}
 
 			if cap.FreeQos.RMbytesPerSec != 0 && qos.RMbytesPerSec != 0 {
 				if cap.FreeQos.RMbytesPerSec < qos.RMbytesPerSec {
-					msg := fmt.Sprintf("physicalDisk RMbytesPerSec not enough: %v %v %v",
-						cand, cap, qos)
-					logger.Warning(msg)
+					logger.Warning("RMbytesPerSec not enough: %v %v %v %v",
+						cand, diskNode, cap, qos)
+					msg := fmt.Sprintf("RMbytesPerSec not enough")
 					return retriableError{msg}
 				} else {
 					cap.FreeQos.RMbytesPerSec -= qos.RMbytesPerSec
 				}
 			} else if cap.FreeQos.RMbytesPerSec != 0 && qos.RMbytesPerSec == 0 {
-				msg := fmt.Sprintf("RMbytesPerSec not enough: %v %v %v",
-					cand, cap, qos)
-				logger.Warning(msg)
+				logger.Warning("RMbytesPerSec not enough: %v %v %v %v",
+					cand, diskNode, cap, qos)
+				msg := fmt.Sprintf("RMbytesPerSec not enough")
 				return retriableError{msg}
 			}
 
 			if cap.FreeQos.WMbytesPerSec != 0 && qos.WMbytesPerSec != 0 {
 				if cap.FreeQos.WMbytesPerSec < qos.WMbytesPerSec {
-					msg := fmt.Sprintf("physicalDisk WMbytesPerSec not enough: %v %v %v",
-						cand, cap, qos)
-					logger.Warning(msg)
+					logger.Warning("WMbytesPerSec not enough: %v %v %v %v",
+						cand, diskNode, cap, qos)
+					msg := fmt.Sprintf("WMbytesPerSec not enough")
 					return retriableError{msg}
 				} else {
 					cap.FreeQos.WMbytesPerSec -= qos.WMbytesPerSec
 				}
 			} else if cap.FreeQos.WMbytesPerSec != 0 && qos.WMbytesPerSec == 0 {
-				msg := fmt.Sprintf("WMbytesPerSec not enough: %v %v %v",
-					cand, cap, qos)
-				logger.Warning(msg)
+				logger.Warning("WMbytesPerSec not enough: %v %v %v %v",
+					cand, diskNode, cap, qos)
+				msg := fmt.Sprintf("WMbytesPerSec not enough")
 				return retriableError{msg}
 			}
 			vd := vdList[i]
@@ -381,8 +384,9 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 			targetPd.VdBeList = append(targetPd.VdBeList, vdBe)
 			newDnEntityVal, err := proto.Marshal(diskNode)
 			if err != nil {
-				msg := fmt.Sprintf("Marshal diskNode err: %v %v", diskNode, err)
-				logger.Error(msg)
+				logger.Error("Marshal diskNode err: %v %v", diskNode, err)
+				msg := fmt.Sprintf("Marshal diskNode err: %s %v",
+					diskNode.SockAddr, err)
 				return fmt.Errorf(msg)
 			}
 			dnEntityKey := po.kf.DnEntityKey(cand.SockAddr)
@@ -396,8 +400,9 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 				}
 				dnErrVal, err := proto.Marshal(dnSummary)
 				if err != nil {
-					msg := fmt.Sprintf("Marshal dnSummary err: %v", err)
-					logger.Error(msg)
+					logger.Error("Marshal dnSummary err: %v %v", dnSummary, err)
+					msg := fmt.Sprintf("Marshal dnSummary err: %s %v",
+						diskNode.SockAddr, err)
 					return fmt.Errorf(msg)
 				}
 				stm.Put(dnErrKey, string(dnErrVal))
@@ -429,8 +434,9 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 			controllerNode.CntlrFeList = append(controllerNode.CntlrFeList, cntlrFe)
 			newCnEntityVal, err := proto.Marshal(controllerNode)
 			if err != nil {
-				msg := fmt.Sprintf("Marshal controllerNode err: %v %v", cand.SockAddr, err)
-				logger.Error(msg)
+				logger.Error("Marshal controllerNode err: %v %v", controllerNode, err)
+				msg := fmt.Sprintf("Marshal controllerNode err: %s %v",
+					controllerNode.SockAddr, err)
 				return fmt.Errorf(msg)
 			}
 			cnEntityKey := po.kf.CnEntityKey(cand.SockAddr)
@@ -444,8 +450,9 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 				}
 				cnErrVal, err := proto.Marshal(cnSummary)
 				if err != nil {
-					msg := fmt.Sprintf("Marshal cnSummary err: %v", err)
-					logger.Error(msg)
+					logger.Error("Marshal cnSummary err: %v %v", cnSummary, err)
+					msg := fmt.Sprintf("Marshal cnSummary err: %s %v",
+						controllerNode.SockAddr, err)
 					return fmt.Errorf(msg)
 				}
 				stm.Put(cnErrKey, string(cnErrVal))
