@@ -13,16 +13,19 @@ type portalServer struct {
 	kf      *lib.KeyFmt
 	sw      *lib.StmWrapper
 	sm      *lib.SyncupManager
+	alloc   *lib.Allocator
 }
 
 func newPortalServer(etcdCli *clientv3.Client) *portalServer {
 	kf := lib.NewKeyFmt(lib.DefaultEtcdPrefix)
 	sw := lib.NewStmWrapper(etcdCli)
 	sm := lib.NewSyncupManager(kf, sw)
+	alloc := lib.NewAllocator(etcdCli, kf)
 	return &portalServer{
 		etcdCli: etcdCli,
 		kf:      kf,
 		sw:      sw,
 		sm:      sm,
+		alloc:   alloc,
 	}
 }

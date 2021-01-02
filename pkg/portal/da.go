@@ -288,6 +288,16 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 
 			cap := targetPd.Capacity
 
+			oldDnCapKey := po.kf.DnCapKey(cap.FreeSize, diskNode.SockAddr, targetPd.PdName)
+			oldDnCapVal := stm.Get(oldDnCapKey)
+			if len(oldDnCapVal) == 0 {
+				logger.Warning("Can not find dn cap: %s %v", oldDnCapKey, diskNode)
+				msg := fmt.Sprintf("Can not find dn cap: %s %s",
+					oldDnCapKey, diskNode.SockAddr)
+				return fmt.Errorf(msg)
+			}
+			stm.Del(oldDnCapKey)
+
 			if cap.FreeSize < vdSize {
 				logger.Warning("FreeSize not enough: %v %v %v %v",
 					cand, diskNode, cap, qos)
@@ -360,6 +370,36 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 				msg := fmt.Sprintf("WMbytesPerSec not enough")
 				return retriableError{msg}
 			}
+
+			newDnCapKey := po.kf.DnCapKey(cap.FreeSize, diskNode.SockAddr, targetPd.PdName)
+			dnSearchAttr := &pbds.DnSearchAttr{
+				PdCapacity: &pbds.PdCapacity{
+					TotalSize: cap.TotalSize,
+					FreeSize:  cap.FreeSize,
+					TotalQos: &pbds.BdevQos{
+						RwIosPerSec:    cap.TotalQos.RwIosPerSec,
+						RwMbytesPerSec: cap.TotalQos.RwMbytesPerSec,
+						RMbytesPerSec:  cap.TotalQos.RMbytesPerSec,
+						WMbytesPerSec:  cap.TotalQos.WMbytesPerSec,
+					},
+					FreeQos: &pbds.BdevQos{
+						RwIosPerSec:    cap.FreeQos.RwIosPerSec,
+						RwMbytesPerSec: cap.FreeQos.RwMbytesPerSec,
+						RMbytesPerSec:  cap.FreeQos.RMbytesPerSec,
+						WMbytesPerSec:  cap.FreeQos.WMbytesPerSec,
+					},
+				},
+				Location: diskNode.DnConf.Location,
+			}
+			newDnCapVal, err := proto.Marshal(dnSearchAttr)
+			if err != nil {
+				logger.Error("Marshal dnSearchAttr err: %v %v %v %v",
+					diskNode, targetPd, dnSearchAttr, err)
+				msg := fmt.Sprintf("Marshal dnSearchAttr err: %v", err)
+				return fmt.Errorf(msg)
+			}
+			stm.Put(newDnCapKey, string(newDnCapVal))
+
 			vd := vdList[i]
 			vdBe := &pbds.VdBackend{
 				VdId: vd.VdId,
@@ -411,7 +451,36 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 
 		for i, cand := range cnCandList {
 			controllerNode := cnList[i]
-			controllerNode.CnCapacity.CntlrCnt += uint32(1)
+
+			cap := controllerNode.CnCapacity
+			oldCnCapKey := po.kf.CnCapKey(cap.CntlrCnt, controllerNode.SockAddr)
+			oldCnCapVal := stm.Get(oldCnCapKey)
+			if len(oldCnCapVal) == 0 {
+				logger.Warning("Can not find cn cap: %s %v", oldCnCapKey, controllerNode)
+				msg := fmt.Sprintf("Can not find cn cap: %s %s",
+					oldCnCapKey, controllerNode.SockAddr)
+				return fmt.Errorf(msg)
+			}
+			stm.Del(oldCnCapKey)
+
+			cap.CntlrCnt += uint32(1)
+
+			newCnCapKey := po.kf.CnCapKey(cap.CntlrCnt, controllerNode.SockAddr)
+			cnSearchAttr := &pbds.CnSearchAttr{
+				CnCapacity: &pbds.CnCapacity{
+					CntlrCnt: cap.CntlrCnt,
+				},
+				Location: controllerNode.CnConf.Location,
+			}
+			newCnCapVal, err := proto.Marshal(cnSearchAttr)
+			if err != nil {
+				logger.Error("Marshal cnSearchAttr err: %v %v %v",
+					controllerNode, cnSearchAttr, err)
+				msg := fmt.Sprintf("Marshal cnSearchAttr err: %v", err)
+				return fmt.Errorf(msg)
+			}
+			stm.Put(newCnCapKey, string(newCnCapVal))
+
 			cntlr := cntlrList[i]
 			cntlrFe := &pbds.CntlrFrontend{
 				CntlrId: cntlr.CntlrId,
@@ -504,12 +573,12 @@ func (po *portalServer) createNewDa(ctx context.Context, req *pbpo.CreateDaReque
 			logger.Error("Exceed max retry cnt")
 			return dnList, cnList, err
 		}
-		dnPdCandList, err := lib.AllocateDnPd(req.StripCnt, vdSize, qos)
+		dnPdCandList, err := po.alloc.AllocDnPd(ctx, req.StripCnt, vdSize, qos)
 		if err != nil {
 			logger.Error("AllocateDnPd err: %v", err)
 			return dnList, cnList, err
 		}
-		cnCandList, err := lib.AllocateCn(req.CntlrCnt)
+		cnCandList, err := po.alloc.AllocCn(ctx, req.CntlrCnt)
 		if err != nil {
 			logger.Error("AllocateCn err: %v", err)
 			return dnList, cnList, err
