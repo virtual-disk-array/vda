@@ -24,7 +24,7 @@ const (
 	DefaultVdaPrefix = "vda"
 	DefaultNqnPrefix = "nqn.2016-06.io.vda"
 
-	MaxHashCode = 65536
+	MaxHashCode = 0xffff
 
 	AllocLockTTL  = 2
 	AllocMaxRetry = 10

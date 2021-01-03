@@ -100,11 +100,11 @@ func (kf *KeyFmt) DecodeCnCapKey(key string) (
 }
 
 func (kf *KeyFmt) DnListKey(hashCode uint32, sockAddr string) string {
-	return fmt.Sprintf("/%s/list/dn/%04x@%s", kf.prefix, hashCode, sockAddr)
+	return fmt.Sprintf("/%s/list/dn/%08x@%s", kf.prefix, hashCode, sockAddr)
 }
 
 func (kf *KeyFmt) CnListKey(hashCode uint32, sockAddr string) string {
-	return fmt.Sprintf("/%s/list/cn/%04x@%s", kf.prefix, hashCode, sockAddr)
+	return fmt.Sprintf("/%s/list/cn/%08x@%s", kf.prefix, hashCode, sockAddr)
 }
 
 func (kf *KeyFmt) DaListKey(daName string) string {
@@ -112,11 +112,11 @@ func (kf *KeyFmt) DaListKey(daName string) string {
 }
 
 func (kf *KeyFmt) DnErrKey(hashCode uint32, sockAddr string) string {
-	return fmt.Sprintf("/%s/error/dn/%04x@%s", kf.prefix, hashCode, sockAddr)
+	return fmt.Sprintf("/%s/error/dn/%08x@%s", kf.prefix, hashCode, sockAddr)
 }
 
 func (kf *KeyFmt) CnErrKey(hashCode uint32, sockAddr string) string {
-	return fmt.Sprintf("/%s/error/cn/%04x@%s", kf.prefix, hashCode, sockAddr)
+	return fmt.Sprintf("/%s/error/cn/%08x@%s", kf.prefix, hashCode, sockAddr)
 }
 
 func (kf *KeyFmt) AllocLockPath() string {
