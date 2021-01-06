@@ -20,7 +20,11 @@ func newPortalServer(etcdCli *clientv3.Client) *portalServer {
 	kf := lib.NewKeyFmt(lib.DefaultEtcdPrefix)
 	sw := lib.NewStmWrapper(etcdCli)
 	sm := lib.NewSyncupManager(kf, sw)
-	alloc := lib.NewAllocator(etcdCli, kf)
+	boundList := make([]uint64, 0)
+	boundList = append(boundList, 100*1024*1024*1024)
+	boundList = append(boundList, 1000*1024*1024*1024)
+	boundList = append(boundList, 0xffffffffffffffff)
+	alloc := lib.NewAllocator(etcdCli, kf, boundList)
 	return &portalServer{
 		etcdCli: etcdCli,
 		kf:      kf,

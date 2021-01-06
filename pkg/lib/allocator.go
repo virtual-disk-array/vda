@@ -293,9 +293,10 @@ func (alloc *Allocator) AllocCn(ctx context.Context, cnCnt uint32) (
 	return nil, fmt.Errorf("No enough Cn")
 }
 
-func NewAllocator(etcdCli *clientv3.Client, kf *KeyFmt) *Allocator {
+func NewAllocator(etcdCli *clientv3.Client, kf *KeyFmt, boundList []uint64) *Allocator {
 	return &Allocator{
-		etcdCli: etcdCli,
-		kf:      kf,
+		etcdCli:   etcdCli,
+		kf:        kf,
+		boundList: boundList,
 	}
 }
