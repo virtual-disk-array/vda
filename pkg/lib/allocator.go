@@ -43,6 +43,13 @@ type dnPdContext struct {
 	candList []*DnPdCand
 }
 
+type cnContext struct {
+	ctx      context.Context
+	cnt      uint32
+	locMap   map[string]bool
+	candList []*CnCand
+}
+
 func (alloc *Allocator) allocDnPdByBoundary(dnPdCtx *dnPdContext,
 	highBound, lowBound uint64) error {
 	opts := []clientv3.OpOption{
@@ -62,14 +69,18 @@ func (alloc *Allocator) allocDnPdByBoundary(dnPdCtx *dnPdContext,
 			return err
 		}
 		logger.Info("kv.Get len: %s %d", lastKey, len(gr.Kvs))
+		if len(gr.Kvs)-startIdx == 0 {
+			break
+		}
 		for _, item := range gr.Kvs[startIdx:] {
 			key := string(item.Key)
 			lastKey = key
+			startIdx = 1
 			val := item.Value
 			freeSize, sockAddr, pdName, err := alloc.kf.DecodeDnCapKey(key)
 			if err != nil {
 				if serr, ok := err.(*OutOfRangeError); ok {
-					logger.Info("At the end: %v", serr)
+					logger.Info("DnPdCap at the end: %v", serr)
 					return nil
 				} else {
 					logger.Warning("DecodeDnCapKey err: %v", err)
@@ -185,9 +196,101 @@ func (alloc *Allocator) AllocDnPd(ctx context.Context, vdCnt uint32,
 	return nil, fmt.Errorf("No enough DnPd")
 }
 
+func (alloc *Allocator) allocCn(cnCtx *cnContext) error {
+	opts := []clientv3.OpOption{
+		clientv3.WithSort(clientv3.SortByKey, clientv3.SortAscend),
+		clientv3.WithLimit(alloc.pageSize),
+		clientv3.WithFromKey(),
+	}
+	lastKey := alloc.kf.CnCapPrefix()
+	startIdx := 0
+	kv := clientv3.NewKV(alloc.etcdCli)
+	logger.Info("allocCn: %v", cnCtx)
+	for {
+		gr, err := kv.Get(cnCtx.ctx, lastKey, opts...)
+		if err != nil {
+			logger.Error("kv.Get err: %s %v", lastKey, err)
+			return err
+		}
+		logger.Info("kv.Get len: %s %d", lastKey, len(gr.Kvs))
+		if len(gr.Kvs)-startIdx == 0 {
+			break
+		}
+		for _, item := range gr.Kvs[startIdx:] {
+			key := string(item.Key)
+			lastKey = key
+			startIdx = 1
+			val := item.Value
+			_, sockAddr, err := alloc.kf.DecodeCnCapKey(key)
+			if err != nil {
+				if serr, ok := err.(*OutOfRangeError); ok {
+					logger.Info("CnCap at the end: %v", serr)
+					return nil
+				} else {
+					logger.Warning("DecodeCnCapKey err: %v", err)
+					continue
+				}
+			}
+			attr := &pbds.CnSearchAttr{}
+			if err := proto.Unmarshal(val, attr); err != nil {
+				logger.Warning("Unmarshal CnSearchAttr err: %s %v", key, err)
+				continue
+			}
+			_, ok := cnCtx.locMap[attr.Location]
+			if ok {
+				continue
+			}
+			controllerNode := &pbds.ControllerNode{}
+			cnEntityKey := alloc.kf.CnEntityKey(sockAddr)
+			gr1, err := kv.Get(cnCtx.ctx, cnEntityKey)
+			if err != nil {
+				logger.Error("Get cnEntityKey err: %s %v", cnEntityKey, err)
+				return err
+			}
+			if len(gr.Kvs) < 1 {
+				logger.Warning("Can nto find cnEntityKey: %s", cnEntityKey)
+				continue
+			}
+			if err := proto.Unmarshal(gr1.Kvs[0].Value, controllerNode); err != nil {
+				logger.Warning("Unmarshal controllerNode err: %s %v", cnEntityKey, err)
+				continue
+			}
+			if controllerNode.CnConf.IsOffline {
+				continue
+			}
+			if controllerNode.CnInfo.ErrInfo.IsErr {
+				continue
+			}
+			cand := &CnCand{
+				SockAddr: sockAddr,
+			}
+			cnCtx.candList = append(cnCtx.candList, cand)
+			cnCtx.locMap[attr.Location] = true
+			if uint32(len(cnCtx.candList)) >= cnCtx.cnt {
+				return nil
+			}
+		}
+	}
+	return nil
+}
+
 func (alloc *Allocator) AllocCn(ctx context.Context, cnCnt uint32) (
 	[]*CnCand, error) {
-	return nil, nil
+	cnCtx := &cnContext{
+		ctx:      ctx,
+		cnt:      cnCnt,
+		locMap:   make(map[string]bool),
+		candList: make([]*CnCand, 0),
+	}
+	err := alloc.allocCn(cnCtx)
+	if err != nil {
+		return nil, err
+	}
+	if uint32(len(cnCtx.candList)) >= cnCnt {
+		return cnCtx.candList, nil
+	}
+	logger.Warning("No enough Cn: %v", cnCtx)
+	return nil, fmt.Errorf("No enough Cn")
 }
 
 func NewAllocator(etcdCli *clientv3.Client, kf *KeyFmt) *Allocator {
