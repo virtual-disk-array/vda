@@ -31,4 +31,7 @@ const (
 
 	DefaultSanpName        = "%default%"
 	DefaultSanpDescription = "default snap"
+
+	PortalDefaultListLimit = int64(100)
+	PortalMaxListLimit     = int64(1000)
 )

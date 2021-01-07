@@ -79,7 +79,7 @@ func (alloc *Allocator) allocDnPdByBoundary(dnPdCtx *dnPdContext,
 			val := item.Value
 			freeSize, sockAddr, pdName, err := alloc.kf.DecodeDnCapKey(key)
 			if err != nil {
-				if serr, ok := err.(*OutOfRangeError); ok {
+				if serr, ok := err.(*InvalidKeyError); ok {
 					logger.Info("DnPdCap at the end: %v", serr)
 					return nil
 				} else {
@@ -223,7 +223,7 @@ func (alloc *Allocator) allocCn(cnCtx *cnContext) error {
 			val := item.Value
 			_, sockAddr, err := alloc.kf.DecodeCnCapKey(key)
 			if err != nil {
-				if serr, ok := err.(*OutOfRangeError); ok {
+				if serr, ok := err.(*InvalidKeyError); ok {
 					logger.Info("CnCap at the end: %v", serr)
 					return nil
 				} else {

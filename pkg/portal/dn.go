@@ -2,9 +2,11 @@ package portal
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"math/rand"
 
+	"github.com/coreos/etcd/clientv3"
 	"github.com/coreos/etcd/clientv3/concurrency"
 	"github.com/golang/protobuf/proto"
 
@@ -163,6 +165,170 @@ func (po *portalServer) CreateDn(ctx context.Context, req *pbpo.CreateDnRequest)
 			ReplyMsg:  lib.PortalSucceedMsg,
 		},
 	}, nil
+}
+
+func (po *portalServer) listDnWithoutToken(ctx context.Context, limit int64) (
+	*pbpo.ListDnReply, error) {
+	opts := []clientv3.OpOption{
+		clientv3.WithSort(clientv3.SortByKey, clientv3.SortAscend),
+		clientv3.WithLimit(limit),
+		clientv3.WithPrefix(),
+	}
+	kv := clientv3.NewKV(po.etcdCli)
+	prefix := po.kf.DnListPrefix()
+	gr, err := kv.Get(ctx, prefix, opts...)
+	if err != nil {
+		return &pbpo.ListDnReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInternalErrCode,
+				ReplyMsg:  err.Error(),
+			},
+		}, nil
+	}
+	dnSummaryList := make([]*pbpo.DnSummary, 0)
+	for _, item := range gr.Kvs {
+		_, sockAddr, err := po.kf.DecodeDnListKey(string(item.Key))
+		if err != nil {
+			return &pbpo.ListDnReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: lib.PortalInternalErrCode,
+					ReplyMsg:  err.Error(),
+				},
+			}, nil
+		}
+		dsDnSummary := &pbds.DnSummary{}
+		if err := proto.Unmarshal(item.Value, dsDnSummary); err != nil {
+			return &pbpo.ListDnReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: lib.PortalInternalErrCode,
+					ReplyMsg:  err.Error(),
+				},
+			}, nil
+		}
+		poDnSummary := &pbpo.DnSummary{
+			SockAddr:    sockAddr,
+			Description: dsDnSummary.Description,
+		}
+		dnSummaryList = append(dnSummaryList, poDnSummary)
+	}
+	token := ""
+	if len(gr.Kvs) > 0 {
+		lastKey := gr.Kvs[len(gr.Kvs)-1].Key
+		token = base64.StdEncoding.EncodeToString(lastKey)
+	}
+	return &pbpo.ListDnReply{
+		ReplyInfo: &pbpo.ReplyInfo{
+			ReqId:     lib.GetReqId(ctx),
+			ReplyCode: lib.PortalSucceedCode,
+			ReplyMsg:  lib.PortalSucceedMsg,
+		},
+		Token:         token,
+		DnSummaryList: dnSummaryList,
+	}, nil
+
+}
+
+func (po *portalServer) listDnWithToken(ctx context.Context, limit int64,
+	token string) (*pbpo.ListDnReply, error) {
+	opts := []clientv3.OpOption{
+		clientv3.WithSort(clientv3.SortByKey, clientv3.SortAscend),
+		clientv3.WithLimit(limit),
+		clientv3.WithFromKey(),
+	}
+	kv := clientv3.NewKV(po.etcdCli)
+	lastKey, err := base64.StdEncoding.DecodeString(token)
+	if err != nil {
+		return &pbpo.ListDnReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInvalidParamCode,
+				ReplyMsg:  err.Error(),
+			},
+		}, nil
+	}
+	gr, err := kv.Get(ctx, string(lastKey), opts...)
+	if err != nil {
+		return &pbpo.ListDnReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInternalErrCode,
+				ReplyMsg:  err.Error(),
+			},
+		}, nil
+	}
+	dnSummaryList := make([]*pbpo.DnSummary, 0)
+	for _, item := range gr.Kvs[1:] {
+		_, sockAddr, err := po.kf.DecodeDnListKey(string(item.Key))
+		if err != nil {
+			if serr, ok := err.(*lib.InvalidKeyError); ok {
+				logger.Info("listDnWithToken InvalidKeyError: %v", serr)
+				break
+			} else {
+				return &pbpo.ListDnReply{
+					ReplyInfo: &pbpo.ReplyInfo{
+						ReqId:     lib.GetReqId(ctx),
+						ReplyCode: lib.PortalInternalErrCode,
+						ReplyMsg:  err.Error(),
+					},
+				}, nil
+			}
+		}
+		dsDnSummary := &pbds.DnSummary{}
+		if err := proto.Unmarshal(item.Value, dsDnSummary); err != nil {
+			return &pbpo.ListDnReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: lib.PortalInternalErrCode,
+					ReplyMsg:  err.Error(),
+				},
+			}, nil
+		}
+		poDnSummary := &pbpo.DnSummary{
+			SockAddr:    sockAddr,
+			Description: dsDnSummary.Description,
+		}
+		dnSummaryList = append(dnSummaryList, poDnSummary)
+	}
+	nextToken := ""
+	if len(gr.Kvs)-1 > 0 {
+		lastKey := gr.Kvs[len(gr.Kvs)-1].Key
+		nextToken = base64.StdEncoding.EncodeToString(lastKey)
+	}
+	return &pbpo.ListDnReply{
+		ReplyInfo: &pbpo.ReplyInfo{
+			ReqId:     lib.GetReqId(ctx),
+			ReplyCode: lib.PortalSucceedCode,
+			ReplyMsg:  lib.PortalSucceedMsg,
+		},
+		Token:         nextToken,
+		DnSummaryList: dnSummaryList,
+	}, nil
+}
+
+func (po *portalServer) ListDn(ctx context.Context, req *pbpo.ListDnRequest) (
+	*pbpo.ListDnReply, error) {
+	limit := lib.PortalDefaultListLimit
+	if req.Limit > lib.PortalMaxListLimit {
+		invalidParamMsg := fmt.Sprintf("Limit is larger than %d",
+			lib.PortalMaxListLimit)
+		return &pbpo.ListDnReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInvalidParamCode,
+				ReplyMsg:  invalidParamMsg,
+			},
+		}, nil
+	} else if req.Limit != 0 {
+		limit = req.Limit
+	}
+	if req.Token == "" {
+		return po.listDnWithoutToken(ctx, limit)
+	} else {
+		return po.listDnWithToken(ctx, limit, req.Token)
+	}
 }
 
 func (po *portalServer) GetDn(ctx context.Context, req *pbpo.GetDnRequest) (

@@ -11,11 +11,11 @@ const (
 	maxUint32 = uint32(0xffffffff)
 )
 
-type OutOfRangeError struct {
+type InvalidKeyError struct {
 	msg string
 }
 
-func (e *OutOfRangeError) Error() string {
+func (e *InvalidKeyError) Error() string {
 	return e.msg
 }
 
@@ -51,13 +51,13 @@ func (kf *KeyFmt) DecodeDnCapKey(key string) (
 	uint64, string, string, error) {
 	capPrefix := kf.DnCapPrefix()
 	if !strings.HasPrefix(key, capPrefix) {
-		msg := fmt.Sprintf("DnCap key out of range: %s", key)
-		return uint64(0), "", "", &OutOfRangeError{msg}
+		msg := fmt.Sprintf("Invalid DnCapKey: %s", key)
+		return uint64(0), "", "", &InvalidKeyError{msg}
 	}
 	items := strings.Split(key[len(capPrefix):], "@")
 	if len(items) != 3 {
 		return uint64(0), "", "", fmt.Errorf(
-			"DnCap key less than 3 items: %s", key)
+			"DnCapKey less than 3 items: %s", key)
 	}
 	size, err := strconv.ParseUint(items[0], 16, 64)
 	if err != nil {
@@ -83,13 +83,13 @@ func (kf *KeyFmt) DecodeCnCapKey(key string) (
 	uint32, string, error) {
 	capPrefix := kf.CnCapPrefix()
 	if !strings.HasPrefix(key, capPrefix) {
-		msg := fmt.Sprintf("CnCap key out of range: %s", key)
-		return uint32(0), "", &OutOfRangeError{msg}
+		msg := fmt.Sprintf("Invalid CnKapKey: %s", key)
+		return uint32(0), "", &InvalidKeyError{msg}
 	}
 	items := strings.Split(key[len(capPrefix):], "@")
 	if len(items) != 2 {
 		return uint32(0), "", fmt.Errorf(
-			"CnCap key less than 2 items: %s", key)
+			"CnCapKey less than 2 items: %s", key)
 	}
 	cnt, err := strconv.ParseUint(items[0], 16, 32)
 	if err != nil {
@@ -99,12 +99,54 @@ func (kf *KeyFmt) DecodeCnCapKey(key string) (
 	return cntlrCnt, items[1], nil
 }
 
+func (kf *KeyFmt) DnListPrefix() string {
+	return fmt.Sprintf("/%s/list/dn/", kf.prefix)
+}
+
 func (kf *KeyFmt) DnListKey(hashCode uint32, sockAddr string) string {
-	return fmt.Sprintf("/%s/list/dn/%08x@%s", kf.prefix, hashCode, sockAddr)
+	return fmt.Sprintf("%s%08x@%s", kf.DnListPrefix(), hashCode, sockAddr)
+}
+
+func (kf *KeyFmt) DecodeDnListKey(key string) (uint32, string, error) {
+	prefix := kf.DnListPrefix()
+	if !strings.HasPrefix(key, prefix) {
+		msg := fmt.Sprintf("Invalid DnListkey: %s", key)
+		return uint32(0), "", &InvalidKeyError{msg}
+	}
+	items := strings.Split(key[len(prefix):], "@")
+	if len(items) != 2 {
+		return uint32(0), "", fmt.Errorf("DnListKey less than 2")
+	}
+	hashCode, err := strconv.ParseUint(items[0], 16, 32)
+	if err != nil {
+		return uint32(0), "", err
+	}
+	return uint32(hashCode), items[1], nil
+}
+
+func (kf *KeyFmt) CnListPrefix() string {
+	return fmt.Sprintf("/%s/list/cn/", kf.prefix)
 }
 
 func (kf *KeyFmt) CnListKey(hashCode uint32, sockAddr string) string {
-	return fmt.Sprintf("/%s/list/cn/%08x@%s", kf.prefix, hashCode, sockAddr)
+	return fmt.Sprintf("%s%08x@%s", kf.CnListPrefix(), hashCode, sockAddr)
+}
+
+func (kf *KeyFmt) DecodeCnListKey(key string) (uint32, string, error) {
+	prefix := kf.CnListPrefix()
+	if !strings.HasPrefix(key, prefix) {
+		msg := fmt.Sprintf("Invalid CnListkey: %s", key)
+		return uint32(0), "", &InvalidKeyError{msg}
+	}
+	items := strings.Split(key[len(prefix):], "@")
+	if len(items) != 2 {
+		return uint32(0), "", fmt.Errorf("CnListKey less than 2")
+	}
+	hashCode, err := strconv.ParseUint(items[0], 16, 32)
+	if err != nil {
+		return uint32(0), "", err
+	}
+	return uint32(hashCode), items[1], nil
 }
 
 func (kf *KeyFmt) DaListKey(daName string) string {
