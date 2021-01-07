@@ -260,6 +260,17 @@ func (po *portalServer) listDnWithToken(ctx context.Context, limit int64,
 		}, nil
 	}
 	dnSummaryList := make([]*pbpo.DnSummary, 0)
+	if len(gr.Kvs) <= 1 {
+		return &pbpo.ListDnReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalSucceedCode,
+				ReplyMsg:  lib.PortalSucceedMsg,
+			},
+			Token:         "",
+			DnSummaryList: dnSummaryList,
+		}, nil
+	}
 	for _, item := range gr.Kvs[1:] {
 		_, sockAddr, err := po.kf.DecodeDnListKey(string(item.Key))
 		if err != nil {
@@ -292,11 +303,7 @@ func (po *portalServer) listDnWithToken(ctx context.Context, limit int64,
 		}
 		dnSummaryList = append(dnSummaryList, poDnSummary)
 	}
-	nextToken := ""
-	if len(gr.Kvs)-1 > 0 {
-		lastKey := gr.Kvs[len(gr.Kvs)-1].Key
-		nextToken = base64.StdEncoding.EncodeToString(lastKey)
-	}
+	nextToken := base64.StdEncoding.EncodeToString(gr.Kvs[len(gr.Kvs)-1].Key)
 	return &pbpo.ListDnReply{
 		ReplyInfo: &pbpo.ReplyInfo{
 			ReqId:     lib.GetReqId(ctx),
