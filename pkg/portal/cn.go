@@ -189,3 +189,151 @@ func (po *portalServer) CreateCn(ctx context.Context, req *pbpo.CreateCnRequest)
 		},
 	}, nil
 }
+
+func (po *portalServer) DeleteCn(ctx context.Context, req *pbpo.DeleteCnRequest) (
+	*pbpo.DeleteCnReply, error) {
+	invalidParamMsg := ""
+	if req.SockAddr == "" {
+		invalidParamMsg = "SockAddr is empty"
+	}
+	if invalidParamMsg != "" {
+		return &pbpo.DeleteCnReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInvalidParamCode,
+				ReplyMsg:  invalidParamMsg,
+			},
+		}, nil
+	}
+
+	cnEntityKey := po.kf.CnEntityKey(req.SockAddr)
+	controllerNode := &pbds.ControllerNode{}
+
+	apply := func(stm concurrency.STM) error {
+		cnEntityVal := []byte(stm.Get(cnEntityKey))
+		if len(cnEntityVal) == 0 {
+			return &portalError{
+				lib.PortalUnknownResErrCode,
+				cnEntityKey,
+			}
+		}
+		if err := proto.Unmarshal(cnEntityVal, controllerNode); err != nil {
+			logger.Error("Unmarshal controllerNode err: %s %v",
+				cnEntityKey, controllerNode)
+			return err
+		}
+		if len(controllerNode.CntlrFeList) > 0 {
+			return &portalError{
+				lib.PortalResBusyErrCode,
+				"controllerNode has controller(s)",
+			}
+		}
+		stm.Del(cnEntityKey)
+		cnListKey := po.kf.CnListKey(controllerNode.CnConf.HashCode, req.SockAddr)
+		stm.Del(cnListKey)
+		cnCapKey := po.kf.CnCapKey(controllerNode.CnCapacity.CntlrCnt, req.SockAddr)
+		stm.Del(cnCapKey)
+		if controllerNode.CnInfo.ErrInfo.IsErr {
+			cnErrKey := po.kf.CnErrKey(controllerNode.CnConf.HashCode, req.SockAddr)
+			stm.Del(cnErrKey)
+		}
+		return nil
+	}
+
+	err := po.sw.RunStm(apply, ctx, "DeleteCn: "+req.SockAddr)
+	if err != nil {
+		if serr, ok := err.(*portalError); ok {
+			return &pbpo.DeleteCnReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: serr.code,
+					ReplyMsg:  serr.msg,
+				},
+			}, nil
+		} else {
+			return &pbpo.DeleteCnReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: lib.PortalInternalErrCode,
+					ReplyMsg:  err.Error(),
+				},
+			}, nil
+		}
+	} else {
+		return &pbpo.DeleteCnReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalSucceedCode,
+				ReplyMsg:  lib.PortalSucceedMsg,
+			},
+		}, nil
+	}
+}
+
+func (po *portalServer) GetCn(ctx context.Context, req *pbpo.GetCnRequest) (
+	*pbpo.GetCnReply, error) {
+	cnEntityKey := po.kf.CnEntityKey(req.SockAddr)
+	controllerNode := &pbds.ControllerNode{}
+
+	apply := func(stm concurrency.STM) error {
+		val := []byte(stm.Get(cnEntityKey))
+		if len(val) == 0 {
+			return &portalError{
+				lib.PortalUnknownResErrCode,
+				cnEntityKey,
+			}
+		}
+		err := proto.Unmarshal(val, controllerNode)
+		return err
+	}
+
+	err := po.sw.RunStm(apply, ctx, "GetCn: "+req.SockAddr)
+	if err != nil {
+		if serr, ok := err.(*portalError); ok {
+			return &pbpo.GetCnReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: serr.code,
+					ReplyMsg:  serr.msg,
+				},
+			}, nil
+		} else {
+			return &pbpo.GetCnReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: lib.PortalInternalErrCode,
+					ReplyMsg:  err.Error(),
+				},
+			}, nil
+		}
+	} else {
+		cntlrFeList := make([]*pbpo.CntlrFrontend, 0)
+		return &pbpo.GetCnReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalSucceedCode,
+				ReplyMsg:  lib.PortalSucceedMsg,
+			},
+			ControllerNode: &pbpo.ControllerNode{
+				CnId:        controllerNode.CnId,
+				SockAddr:    controllerNode.SockAddr,
+				Description: controllerNode.CnConf.Description,
+				NvmfListener: &pbpo.NvmfListener{
+					TrType:  controllerNode.CnConf.NvmfListener.TrType,
+					AdrFam:  controllerNode.CnConf.NvmfListener.AdrFam,
+					TrAddr:  controllerNode.CnConf.NvmfListener.TrAddr,
+					TrSvcId: controllerNode.CnConf.NvmfListener.TrSvcId,
+				},
+				Location:  controllerNode.CnConf.Location,
+				IsOffline: controllerNode.CnConf.IsOffline,
+				HashCode:  controllerNode.CnConf.HashCode,
+				ErrInfo: &pbpo.ErrInfo{
+					IsErr:     controllerNode.CnInfo.ErrInfo.IsErr,
+					ErrMsg:    controllerNode.CnInfo.ErrInfo.ErrMsg,
+					Timestamp: controllerNode.CnInfo.ErrInfo.Timestamp,
+				},
+				CntlrFeList: cntlrFeList,
+			},
+		}, nil
+	}
+}

@@ -9,6 +9,7 @@ const (
 	PortalDupResErrCode     = 3
 	PortalUnknownResErrCode = 4
 	PortalInvalidParamCode  = 5
+	PortalResBusyErrCode    = 6
 
 	DnSucceedCode   = 1
 	DnSucceedMsg    = "succeed"

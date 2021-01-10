@@ -200,8 +200,14 @@ func (po *portalServer) DeleteDn(ctx context.Context, req *pbpo.DeleteDnRequest)
 			logger.Error("Unmarshal diskNode err: %s %v", dnEntityKey, diskNode)
 			return err
 		}
-		dnListKey := po.kf.DnListKey(diskNode.DnConf.HashCode, req.SockAddr)
+		if len(diskNode.PdList) > 0 {
+			return &portalError{
+				lib.PortalResBusyErrCode,
+				"diskNode has physicalDisk(s)",
+			}
+		}
 		stm.Del(dnEntityKey)
+		dnListKey := po.kf.DnListKey(diskNode.DnConf.HashCode, req.SockAddr)
 		stm.Del(dnListKey)
 		if diskNode.DnInfo.ErrInfo.IsErr {
 			dnErrKey := po.kf.DnErrKey(diskNode.DnConf.HashCode, req.SockAddr)
