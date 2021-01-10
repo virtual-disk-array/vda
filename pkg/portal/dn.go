@@ -68,11 +68,13 @@ func (po *portalServer) CreateDn(ctx context.Context, req *pbpo.CreateDnRequest)
 			Timestamp: lib.ResTimestamp(),
 		},
 	}
+	pdList := make([]*pbds.PhysicalDisk, 0)
 	diskNode := &pbds.DiskNode{
 		DnId:     dnId,
 		SockAddr: req.SockAddr,
 		DnConf:   dnConf,
 		DnInfo:   dnInfo,
+		PdList:   pdList,
 	}
 
 	dnSummary := &pbds.DnSummary{

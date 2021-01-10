@@ -413,7 +413,9 @@ message CreateCnRequest {
   string sock_addr = 1;
   string description = 2;
   NvmfListener nvmf_listener = 3;
-  bool is_offline = 4;
+  string location = 4;
+  bool is_offline = 5;
+  uint32 hash_code = 6;
 }
 
 message CreateCnReply {
