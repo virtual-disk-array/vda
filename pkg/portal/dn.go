@@ -85,7 +85,7 @@ func (po *portalServer) CreateDn(ctx context.Context, req *pbpo.CreateDnRequest)
 
 	dnEntityVal, err := proto.Marshal(diskNode)
 	if err != nil {
-		logger.Error("Marshal diskNode failed: %v %v", diskNode, err)
+		logger.Error("Marshal diskNode err: %v %v", diskNode, err)
 		return &pbpo.CreateDnReply{
 			ReplyInfo: &pbpo.ReplyInfo{
 				ReqId:     lib.GetReqId(ctx),
@@ -98,7 +98,7 @@ func (po *portalServer) CreateDn(ctx context.Context, req *pbpo.CreateDnRequest)
 
 	dnListVal, err := proto.Marshal(dnSummary)
 	if err != nil {
-		logger.Error("Marshal dnSummary failed: %v %v", dnSummary, err)
+		logger.Error("Marshal dnSummary err: %v %v", dnSummary, err)
 		return &pbpo.CreateDnReply{
 			ReplyInfo: &pbpo.ReplyInfo{
 				ReqId:     lib.GetReqId(ctx),
@@ -111,7 +111,7 @@ func (po *portalServer) CreateDn(ctx context.Context, req *pbpo.CreateDnRequest)
 
 	dnErrVal, err := proto.Marshal(dnSummary)
 	if err != nil {
-		logger.Error("Marshal dnSummary failed: %v %v", dnSummary, err)
+		logger.Error("Marshal dnSummary err: %v %v", dnSummary, err)
 		return &pbpo.CreateDnReply{
 			ReplyInfo: &pbpo.ReplyInfo{
 				ReqId:     lib.GetReqId(ctx),
@@ -165,6 +165,341 @@ func (po *portalServer) CreateDn(ctx context.Context, req *pbpo.CreateDnRequest)
 			ReplyMsg:  lib.PortalSucceedMsg,
 		},
 	}, nil
+}
+
+func (po *portalServer) DeleteDn(ctx context.Context, req *pbpo.DeleteDnRequest) (
+	*pbpo.DeleteDnReply, error) {
+	invalidParamMsg := ""
+	if req.SockAddr == "" {
+		invalidParamMsg = "SockAddr is empty"
+	}
+	if invalidParamMsg != "" {
+		return &pbpo.DeleteDnReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInvalidParamCode,
+				ReplyMsg:  invalidParamMsg,
+			},
+		}, nil
+	}
+
+	dnEntityKey := po.kf.DnEntityKey(req.SockAddr)
+	diskNode := &pbds.DiskNode{}
+
+	apply := func(stm concurrency.STM) error {
+		dnEntityVal := []byte(stm.Get(dnEntityKey))
+		if len(dnEntityVal) == 0 {
+			return &portalError{
+				lib.PortalUnknownResErrCode,
+				dnEntityKey,
+			}
+		}
+		if err := proto.Unmarshal(dnEntityVal, diskNode); err != nil {
+			logger.Error("Unmarshal diskNode err: %s %v", dnEntityKey, diskNode)
+			return err
+		}
+		dnListKey := po.kf.DnListKey(diskNode.DnConf.HashCode, req.SockAddr)
+		stm.Del(dnEntityKey)
+		stm.Del(dnListKey)
+		if diskNode.DnInfo.ErrInfo.IsErr {
+			dnErrKey := po.kf.DnErrKey(diskNode.DnConf.HashCode, req.SockAddr)
+			stm.Del(dnErrKey)
+		}
+		return nil
+	}
+
+	err := po.sw.RunStm(apply, ctx, "DeleteDn: "+req.SockAddr)
+	if err != nil {
+		if serr, ok := err.(*portalError); ok {
+			return &pbpo.DeleteDnReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: serr.code,
+					ReplyMsg:  serr.msg,
+				},
+			}, nil
+		} else {
+			return &pbpo.DeleteDnReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: lib.PortalInternalErrCode,
+					ReplyMsg:  err.Error(),
+				},
+			}, nil
+		}
+	} else {
+		return &pbpo.DeleteDnReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalSucceedCode,
+				ReplyMsg:  lib.PortalSucceedMsg,
+			},
+		}, nil
+	}
+}
+
+func (po *portalServer) modifyDnDescription(ctx context.Context, sockAddr string,
+	description string) (*pbpo.ModifyDnReply, error) {
+	dnEntityKey := po.kf.DnEntityKey(sockAddr)
+	diskNode := &pbds.DiskNode{}
+	dnSummary := &pbds.DnSummary{
+		Description: description,
+	}
+	dnListVal, err := proto.Marshal(dnSummary)
+	if err != nil {
+		logger.Error("Marshal dnSummary err: %v %v", dnSummary, err)
+		return &pbpo.ModifyDnReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInternalErrCode,
+				ReplyMsg:  err.Error(),
+			},
+		}, nil
+	}
+	dnListValStr := string(dnListVal)
+
+	dnErrVal, err := proto.Marshal(dnSummary)
+	if err != nil {
+		logger.Error("Marshal dnSummary err: %v %v", dnSummary, err)
+		return &pbpo.ModifyDnReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInternalErrCode,
+				ReplyMsg:  err.Error(),
+			},
+		}, nil
+	}
+	dnErrValStr := string(dnErrVal)
+
+	apply := func(stm concurrency.STM) error {
+		dnEntityVal := []byte(stm.Get(dnEntityKey))
+		if len(dnEntityVal) == 0 {
+			return &portalError{
+				lib.PortalUnknownResErrCode,
+				dnEntityKey,
+			}
+		}
+		if err := proto.Unmarshal(dnEntityVal, diskNode); err != nil {
+			logger.Error("Unmarshal diskNode err: %s", dnEntityKey)
+			return err
+		}
+		diskNode.DnConf.Description = description
+		newDnEntityVal, err := proto.Marshal(diskNode)
+		if err != nil {
+			logger.Error("Marshal diskNode err: %s %v", dnEntityKey, diskNode)
+			return err
+		}
+		stm.Put(dnEntityKey, string(newDnEntityVal))
+		dnListKey := po.kf.DnListKey(diskNode.DnConf.HashCode, sockAddr)
+		stm.Put(dnListKey, dnListValStr)
+		if diskNode.DnInfo.ErrInfo.IsErr {
+			dnErrKey := po.kf.DnErrKey(diskNode.DnConf.HashCode, sockAddr)
+			stm.Put(dnErrKey, dnErrValStr)
+		}
+		return nil
+	}
+
+	err = po.sw.RunStm(apply, ctx, "ModifyDnDescription: "+sockAddr)
+	if err != nil {
+		if serr, ok := err.(*portalError); ok {
+			return &pbpo.ModifyDnReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: serr.code,
+					ReplyMsg:  serr.msg,
+				},
+			}, nil
+		} else {
+			return &pbpo.ModifyDnReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: lib.PortalInternalErrCode,
+					ReplyMsg:  err.Error(),
+				},
+			}, nil
+		}
+	} else {
+		return &pbpo.ModifyDnReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalSucceedCode,
+				ReplyMsg:  lib.PortalSucceedMsg,
+			},
+		}, nil
+	}
+}
+
+func (po *portalServer) modifyDnIsOffline(ctx context.Context, sockAddr string,
+	isOffline bool) (*pbpo.ModifyDnReply, error) {
+	dnEntityKey := po.kf.DnEntityKey(sockAddr)
+	diskNode := &pbds.DiskNode{}
+
+	apply := func(stm concurrency.STM) error {
+		dnEntityVal := []byte(stm.Get(dnEntityKey))
+		if len(dnEntityVal) == 0 {
+			return &portalError{
+				lib.PortalUnknownResErrCode,
+				dnEntityKey,
+			}
+		}
+		if err := proto.Unmarshal(dnEntityVal, diskNode); err != nil {
+			logger.Error("Unmarshal diskNode err: %s", dnEntityKey)
+			return err
+		}
+		diskNode.DnConf.IsOffline = isOffline
+		newDnEntityVal, err := proto.Marshal(diskNode)
+		if err != nil {
+			logger.Error("Marshal diskNode err: %s %v", dnEntityKey, diskNode)
+			return err
+		}
+		stm.Put(dnEntityKey, string(newDnEntityVal))
+		return nil
+	}
+
+	err := po.sw.RunStm(apply, ctx, "ModifyDnIsOffline: "+sockAddr)
+	if err != nil {
+		if serr, ok := err.(*portalError); ok {
+			return &pbpo.ModifyDnReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: serr.code,
+					ReplyMsg:  serr.msg,
+				},
+			}, nil
+		} else {
+			return &pbpo.ModifyDnReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: lib.PortalInternalErrCode,
+					ReplyMsg:  err.Error(),
+				},
+			}, nil
+		}
+	} else {
+		return &pbpo.ModifyDnReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalSucceedCode,
+				ReplyMsg:  lib.PortalSucceedMsg,
+			},
+		}, nil
+	}
+}
+
+func (po *portalServer) modifyDnHashCode(ctx context.Context, sockAddr string,
+	hashCode uint32) (*pbpo.ModifyDnReply, error) {
+	dnEntityKey := po.kf.DnEntityKey(sockAddr)
+	diskNode := &pbds.DiskNode{}
+
+	apply := func(stm concurrency.STM) error {
+		dnEntityVal := []byte(stm.Get(dnEntityKey))
+		if len(dnEntityVal) == 0 {
+			return &portalError{
+				lib.PortalUnknownResErrCode,
+				dnEntityKey,
+			}
+		}
+		if err := proto.Unmarshal(dnEntityVal, diskNode); err != nil {
+			logger.Error("Unmarshal diskNode err: %s", dnEntityKey)
+			return err
+		}
+		oldHashCode := diskNode.DnConf.HashCode
+		diskNode.DnConf.HashCode = hashCode
+		newDnEntityVal, err := proto.Marshal(diskNode)
+		if err != nil {
+			logger.Error("Marshal diskNode err: %s %v", dnEntityKey, diskNode)
+			return err
+		}
+		stm.Put(dnEntityKey, string(newDnEntityVal))
+		dnSummary := &pbds.DnSummary{
+			Description: diskNode.DnConf.Description,
+		}
+		dnListVal, err := proto.Marshal(dnSummary)
+		if err != nil {
+			logger.Error("Marshal dnSummary err: %v %v", dnSummary, err)
+			return err
+		}
+		oldDnListKey := po.kf.DnListKey(oldHashCode, sockAddr)
+		stm.Del(oldDnListKey)
+		newDnListKey := po.kf.DnListKey(hashCode, sockAddr)
+		stm.Put(newDnListKey, string(dnListVal))
+		if diskNode.DnInfo.ErrInfo.IsErr {
+			oldDnErrKey := po.kf.DnErrKey(oldHashCode, sockAddr)
+			stm.Del(oldDnErrKey)
+			dnErrVal, err := proto.Marshal(dnSummary)
+			if err != nil {
+				logger.Error("Marshal dnSummary err: %v %v", dnSummary, err)
+				return err
+			}
+			newDnErrKey := po.kf.DnErrKey(hashCode, sockAddr)
+			stm.Put(newDnErrKey, string(dnErrVal))
+		}
+		return nil
+	}
+
+	err := po.sw.RunStm(apply, ctx, "ModifyDnHashCode: "+sockAddr)
+	if err != nil {
+		if serr, ok := err.(*portalError); ok {
+			return &pbpo.ModifyDnReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: serr.code,
+					ReplyMsg:  serr.msg,
+				},
+			}, nil
+		} else {
+			return &pbpo.ModifyDnReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: lib.PortalInternalErrCode,
+					ReplyMsg:  err.Error(),
+				},
+			}, nil
+		}
+	} else {
+		return &pbpo.ModifyDnReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalSucceedCode,
+				ReplyMsg:  lib.PortalSucceedMsg,
+			},
+		}, nil
+	}
+}
+
+func (po *portalServer) ModifyDn(ctx context.Context, req *pbpo.ModifyDnRequest) (
+	*pbpo.ModifyDnReply, error) {
+	invalidParamMsg := ""
+	if req.SockAddr == "" {
+		invalidParamMsg = "SockAddr is empty"
+	}
+	if invalidParamMsg != "" {
+		return &pbpo.ModifyDnReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInvalidParamCode,
+				ReplyMsg:  invalidParamMsg,
+			},
+		}, nil
+	}
+
+	switch x := req.Attr.(type) {
+	case *pbpo.ModifyDnRequest_Description:
+		return po.modifyDnDescription(ctx, req.SockAddr, x.Description)
+	case *pbpo.ModifyDnRequest_IsOffline:
+		return po.modifyDnIsOffline(ctx, req.SockAddr, x.IsOffline)
+	case *pbpo.ModifyDnRequest_HashCode:
+		return po.modifyDnHashCode(ctx, req.SockAddr, x.HashCode)
+	default:
+		logger.Error("Unknow attr: %v", x)
+		return &pbpo.ModifyDnReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInvalidParamCode,
+				ReplyMsg:  "Unknow attr",
+			},
+		}, nil
+	}
 }
 
 func (po *portalServer) listDnWithoutToken(ctx context.Context, limit int64) (
