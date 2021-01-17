@@ -2,11 +2,11 @@ package portal
 
 import (
 	"context"
-	// "encoding/base64"
+	"encoding/base64"
 	"fmt"
 	"math/rand"
 
-	// "github.com/coreos/etcd/clientv3"
+	"github.com/coreos/etcd/clientv3"
 	"github.com/coreos/etcd/clientv3/concurrency"
 	"github.com/golang/protobuf/proto"
 
@@ -267,6 +267,177 @@ func (po *portalServer) DeleteCn(ctx context.Context, req *pbpo.DeleteCnRequest)
 				ReplyMsg:  lib.PortalSucceedMsg,
 			},
 		}, nil
+	}
+}
+
+func (po *portalServer) listCnWithoutToken(ctx context.Context, limit int64) (
+	*pbpo.ListCnReply, error) {
+	opts := []clientv3.OpOption{
+		clientv3.WithSort(clientv3.SortByKey, clientv3.SortAscend),
+		clientv3.WithLimit(limit),
+		clientv3.WithPrefix(),
+	}
+	kv := clientv3.NewKV(po.etcdCli)
+	prefix := po.kf.CnListPrefix()
+	gr, err := kv.Get(ctx, prefix, opts...)
+	if err != nil {
+		return &pbpo.ListCnReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInternalErrCode,
+				ReplyMsg:  err.Error(),
+			},
+		}, nil
+	}
+	cnSummaryList := make([]*pbpo.CnSummary, 0)
+	for _, item := range gr.Kvs {
+		_, sockAddr, err := po.kf.DecodeCnListKey(string(item.Key))
+		if err != nil {
+			return &pbpo.ListCnReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: lib.PortalInternalErrCode,
+					ReplyMsg:  err.Error(),
+				},
+			}, nil
+		}
+		dsCnSummary := &pbds.CnSummary{}
+		if err := proto.Unmarshal(item.Value, dsCnSummary); err != nil {
+			return &pbpo.ListCnReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: lib.PortalInternalErrCode,
+					ReplyMsg:  err.Error(),
+				},
+			}, nil
+		}
+		poCnSummary := &pbpo.CnSummary{
+			SockAddr:    sockAddr,
+			Description: dsCnSummary.Description,
+		}
+		cnSummaryList = append(cnSummaryList, poCnSummary)
+	}
+	token := ""
+	if len(gr.Kvs) > 0 {
+		lastKey := gr.Kvs[len(gr.Kvs)-1].Key
+		token = base64.StdEncoding.EncodeToString(lastKey)
+	}
+	return &pbpo.ListCnReply{
+		ReplyInfo: &pbpo.ReplyInfo{
+			ReqId:     lib.GetReqId(ctx),
+			ReplyCode: lib.PortalSucceedCode,
+			ReplyMsg:  lib.PortalSucceedMsg,
+		},
+		Token:         token,
+		CnSummaryList: cnSummaryList,
+	}, nil
+
+}
+
+func (po *portalServer) listCnWithToken(ctx context.Context, limit int64,
+	token string) (*pbpo.ListCnReply, error) {
+	opts := []clientv3.OpOption{
+		clientv3.WithSort(clientv3.SortByKey, clientv3.SortAscend),
+		clientv3.WithLimit(limit),
+		clientv3.WithFromKey(),
+	}
+	kv := clientv3.NewKV(po.etcdCli)
+	lastKey, err := base64.StdEncoding.DecodeString(token)
+	if err != nil {
+		return &pbpo.ListCnReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInvalidParamCode,
+				ReplyMsg:  err.Error(),
+			},
+		}, nil
+	}
+	gr, err := kv.Get(ctx, string(lastKey), opts...)
+	if err != nil {
+		return &pbpo.ListCnReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInternalErrCode,
+				ReplyMsg:  err.Error(),
+			},
+		}, nil
+	}
+	cnSummaryList := make([]*pbpo.CnSummary, 0)
+	if len(gr.Kvs) <= 1 {
+		return &pbpo.ListCnReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalSucceedCode,
+				ReplyMsg:  lib.PortalSucceedMsg,
+			},
+			Token:         "",
+			CnSummaryList: cnSummaryList,
+		}, nil
+	}
+	for _, item := range gr.Kvs[1:] {
+		_, sockAddr, err := po.kf.DecodeCnListKey(string(item.Key))
+		if err != nil {
+			if serr, ok := err.(*lib.InvalidKeyError); ok {
+				logger.Info("listCnWithToken InvalidKeyError: %v", serr)
+				break
+			} else {
+				return &pbpo.ListCnReply{
+					ReplyInfo: &pbpo.ReplyInfo{
+						ReqId:     lib.GetReqId(ctx),
+						ReplyCode: lib.PortalInternalErrCode,
+						ReplyMsg:  err.Error(),
+					},
+				}, nil
+			}
+		}
+		dsCnSummary := &pbds.CnSummary{}
+		if err := proto.Unmarshal(item.Value, dsCnSummary); err != nil {
+			return &pbpo.ListCnReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: lib.PortalInternalErrCode,
+					ReplyMsg:  err.Error(),
+				},
+			}, nil
+		}
+		poCnSummary := &pbpo.CnSummary{
+			SockAddr:    sockAddr,
+			Description: dsCnSummary.Description,
+		}
+		cnSummaryList = append(cnSummaryList, poCnSummary)
+	}
+	nextToken := base64.StdEncoding.EncodeToString(gr.Kvs[len(gr.Kvs)-1].Key)
+	return &pbpo.ListCnReply{
+		ReplyInfo: &pbpo.ReplyInfo{
+			ReqId:     lib.GetReqId(ctx),
+			ReplyCode: lib.PortalSucceedCode,
+			ReplyMsg:  lib.PortalSucceedMsg,
+		},
+		Token:         nextToken,
+		CnSummaryList: cnSummaryList,
+	}, nil
+}
+
+func (po *portalServer) ListCn(ctx context.Context, req *pbpo.ListCnRequest) (
+	*pbpo.ListCnReply, error) {
+	limit := lib.PortalDefaultListLimit
+	if req.Limit > lib.PortalMaxListLimit {
+		invalidParamMsg := fmt.Sprintf("Limit is larger than %d",
+			lib.PortalMaxListLimit)
+		return &pbpo.ListCnReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInvalidParamCode,
+				ReplyMsg:  invalidParamMsg,
+			},
+		}, nil
+	} else if req.Limit != 0 {
+		limit = req.Limit
+	}
+	if req.Token == "" {
+		return po.listCnWithoutToken(ctx, limit)
+	} else {
+		return po.listCnWithToken(ctx, limit, req.Token)
 	}
 }
 
