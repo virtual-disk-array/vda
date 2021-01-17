@@ -194,23 +194,12 @@ message GrpFrontend {
 
 message SnapFrontend {
   string snap_id = 1;
-  string snap_name = 2;
-  string description = 3;
-  string ori_name = 4;
-  uint64 size = 5;
-  ErrInfo err_info = 6;
-  SnapAttr snap_attr = 7;
+  ErrInfo err_info = 2;
 }
 
 message ExpFrontend {
   string exp_id = 1;
-  string exp_name = 2;
-  string description = 3;
-  string initiator_nqn = 4;
-  string snap_name = 5;
-  ErrInfo err_info = 6;
-  BdevIostat bdev_iostat = 7;
-  BdevHistgram bdev_histgram = 8;
+  ErrInfo err_info = 2;
 }
 
 message CntlrFrontend {
@@ -219,10 +208,9 @@ message CntlrFrontend {
   uint32 cntlr_idx = 3;
   bool is_primary = 4;
   ErrInfo err_info = 5;
-  Lvstore lvstore = 6;
-  repeated GrpFrontend grp_fe_list = 7;
-  repeated SnapFrontend snap_fe_list= 8;
-  repeated ExpFrontend exp_fe_list = 9;
+  repeated GrpFrontend grp_fe_list = 6;
+  repeated SnapFrontend snap_fe_list= 7;
+  repeated ExpFrontend exp_fe_list = 8;
 }
 
 message Controller {

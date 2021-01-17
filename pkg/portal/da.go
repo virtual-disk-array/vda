@@ -486,6 +486,7 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 				CntlrId: cntlr.CntlrId,
 				CntlrFeConf: &pbds.CntlrFeConf{
 					DaId:        daId,
+					DaName:      req.DaName,
 					StripSizeKb: req.StripSizeKb,
 					CntlrList:   cntlrList,
 				},

@@ -307,7 +307,93 @@ func (po *portalServer) GetCn(ctx context.Context, req *pbpo.GetCnRequest) (
 			}, nil
 		}
 	} else {
-		cntlrFeList := make([]*pbpo.CntlrFrontend, 0)
+		poCntlrFeList := make([]*pbpo.CntlrFrontend, 0)
+		for _, dsCntlrFe := range controllerNode.CntlrFeList {
+			var thisCntlr *pbds.Controller
+			for _, cntlr := range dsCntlrFe.CntlrFeConf.CntlrList {
+				if cntlr.CntlrId == dsCntlrFe.CntlrId {
+					thisCntlr = cntlr
+					break
+				}
+			}
+			if thisCntlr == nil {
+				return &pbpo.GetCnReply{
+					ReplyInfo: &pbpo.ReplyInfo{
+						ReqId:     lib.GetReqId(ctx),
+						ReplyCode: lib.PortalInternalErrCode,
+						ReplyMsg:  fmt.Sprintf("Can not find cntlr: %s", dsCntlrFe.CntlrId),
+					},
+				}, nil
+			}
+			poGrpFeList := make([]*pbpo.GrpFrontend, 0)
+			for _, dsGrpFe := range dsCntlrFe.GrpFeList {
+				poVdFeList := make([]*pbpo.VdFrontend, 0)
+				for _, dsVdFe := range dsGrpFe.VdFeList {
+					poVdFe := &pbpo.VdFrontend{
+						VdId:  dsVdFe.VdId,
+						VdIdx: dsVdFe.VdFeConf.VdIdx,
+						Size:  dsVdFe.VdFeConf.Size,
+						ErrInfo: &pbpo.ErrInfo{
+							IsErr:     dsVdFe.VdFeInfo.ErrInfo.IsErr,
+							ErrMsg:    dsVdFe.VdFeInfo.ErrInfo.ErrMsg,
+							Timestamp: dsVdFe.VdFeInfo.ErrInfo.Timestamp,
+						},
+					}
+					poVdFeList = append(poVdFeList, poVdFe)
+				}
+				poGrpFe := &pbpo.GrpFrontend{
+					GrpId:  dsGrpFe.GrpId,
+					GrpIdx: dsGrpFe.GrpFeConf.GrpIdx,
+					Size:   dsGrpFe.GrpFeConf.Size,
+					ErrInfo: &pbpo.ErrInfo{
+						IsErr:     dsGrpFe.GrpFeInfo.ErrInfo.IsErr,
+						ErrMsg:    dsGrpFe.GrpFeInfo.ErrInfo.ErrMsg,
+						Timestamp: dsGrpFe.GrpFeInfo.ErrInfo.Timestamp,
+					},
+					VdFeList: poVdFeList,
+				}
+				poGrpFeList = append(poGrpFeList, poGrpFe)
+			}
+			poSnapFeList := make([]*pbpo.SnapFrontend, 0)
+			for _, dsSnapFe := range dsCntlrFe.SnapFeList {
+				poSnapFe := &pbpo.SnapFrontend{
+					SnapId: dsSnapFe.SnapId,
+					ErrInfo: &pbpo.ErrInfo{
+						IsErr:     dsSnapFe.SnapFeInfo.ErrInfo.IsErr,
+						ErrMsg:    dsSnapFe.SnapFeInfo.ErrInfo.ErrMsg,
+						Timestamp: dsSnapFe.SnapFeInfo.ErrInfo.Timestamp,
+					},
+				}
+				poSnapFeList = append(poSnapFeList, poSnapFe)
+			}
+			poExpFeList := make([]*pbpo.ExpFrontend, 0)
+			for _, dsExpFe := range dsCntlrFe.ExpFeList {
+				poExpFe := &pbpo.ExpFrontend{
+					ExpId: dsExpFe.ExpId,
+					ErrInfo: &pbpo.ErrInfo{
+						IsErr:     dsExpFe.ExpFeInfo.ErrInfo.IsErr,
+						ErrMsg:    dsExpFe.ExpFeInfo.ErrInfo.ErrMsg,
+						Timestamp: dsExpFe.ExpFeInfo.ErrInfo.Timestamp,
+					},
+				}
+				poExpFeList = append(poExpFeList, poExpFe)
+			}
+			poCntlrFe := &pbpo.CntlrFrontend{
+				CntlrId:   dsCntlrFe.CntlrId,
+				DaName:    dsCntlrFe.CntlrFeConf.DaName,
+				CntlrIdx:  thisCntlr.CntlrIdx,
+				IsPrimary: thisCntlr.IsPrimary,
+				ErrInfo: &pbpo.ErrInfo{
+					IsErr:     dsCntlrFe.CntlrFeInfo.ErrInfo.IsErr,
+					ErrMsg:    dsCntlrFe.CntlrFeInfo.ErrInfo.ErrMsg,
+					Timestamp: dsCntlrFe.CntlrFeInfo.ErrInfo.Timestamp,
+				},
+				GrpFeList:  poGrpFeList,
+				SnapFeList: poSnapFeList,
+				ExpFeList:  poExpFeList,
+			}
+			poCntlrFeList = append(poCntlrFeList, poCntlrFe)
+		}
 		return &pbpo.GetCnReply{
 			ReplyInfo: &pbpo.ReplyInfo{
 				ReqId:     lib.GetReqId(ctx),
@@ -332,7 +418,7 @@ func (po *portalServer) GetCn(ctx context.Context, req *pbpo.GetCnRequest) (
 					ErrMsg:    controllerNode.CnInfo.ErrInfo.ErrMsg,
 					Timestamp: controllerNode.CnInfo.ErrInfo.Timestamp,
 				},
-				CntlrFeList: cntlrFeList,
+				CntlrFeList: poCntlrFeList,
 			},
 		}, nil
 	}

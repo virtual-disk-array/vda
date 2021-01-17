@@ -215,8 +215,9 @@ message ExpFrontend {
 
 message CntlrFeConf {
   string da_id = 1;
-  uint32 strip_size_kb = 2;
-  repeated Controller cntlr_list = 3;
+  string da_name = 2;
+  uint32 strip_size_kb = 3;
+  repeated Controller cntlr_list = 4;
 }
 
 message CntlrFeInfo {
