@@ -270,6 +270,270 @@ func (po *portalServer) DeleteCn(ctx context.Context, req *pbpo.DeleteCnRequest)
 	}
 }
 
+func (po *portalServer) modifyCnDescription(ctx context.Context, sockAddr string,
+	description string) (*pbpo.ModifyCnReply, error) {
+	cnEntityKey := po.kf.CnEntityKey(sockAddr)
+	controllerNode := &pbds.ControllerNode{}
+	cnSummary := &pbds.CnSummary{
+		Description: description,
+	}
+	cnListVal, err := proto.Marshal(cnSummary)
+	if err != nil {
+		logger.Error("Marshal cnSummary err: %v %v", cnSummary, err)
+		return &pbpo.ModifyCnReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInternalErrCode,
+				ReplyMsg:  err.Error(),
+			},
+		}, nil
+	}
+	cnListValStr := string(cnListVal)
+
+	cnErrVal, err := proto.Marshal(cnSummary)
+	if err != nil {
+		logger.Error("Marshal cnSummary err: %v %v", cnSummary, err)
+		return &pbpo.ModifyCnReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInternalErrCode,
+				ReplyMsg:  err.Error(),
+			},
+		}, nil
+	}
+	cnErrValStr := string(cnErrVal)
+
+	apply := func(stm concurrency.STM) error {
+		cnEntityVal := []byte(stm.Get(cnEntityKey))
+		if len(cnEntityVal) == 0 {
+			return &portalError{
+				lib.PortalUnknownResErrCode,
+				cnEntityKey,
+			}
+		}
+		if err := proto.Unmarshal(cnEntityVal, controllerNode); err != nil {
+			logger.Error("Unmarshal controllerNode err: %s", cnEntityKey)
+			return err
+		}
+		controllerNode.CnConf.Description = description
+		newCnEntityVal, err := proto.Marshal(controllerNode)
+		if err != nil {
+			logger.Error("Marshal controllerNode err: %s %v", cnEntityKey, controllerNode)
+			return err
+		}
+		stm.Put(cnEntityKey, string(newCnEntityVal))
+		cnListKey := po.kf.CnListKey(controllerNode.CnConf.HashCode, sockAddr)
+		stm.Put(cnListKey, cnListValStr)
+		if controllerNode.CnInfo.ErrInfo.IsErr {
+			cnErrKey := po.kf.CnErrKey(controllerNode.CnConf.HashCode, sockAddr)
+			stm.Put(cnErrKey, cnErrValStr)
+		}
+		return nil
+	}
+
+	err = po.sw.RunStm(apply, ctx, "ModifyCnDescription: "+sockAddr)
+	if err != nil {
+		if serr, ok := err.(*portalError); ok {
+			return &pbpo.ModifyCnReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: serr.code,
+					ReplyMsg:  serr.msg,
+				},
+			}, nil
+		} else {
+			return &pbpo.ModifyCnReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: lib.PortalInternalErrCode,
+					ReplyMsg:  err.Error(),
+				},
+			}, nil
+		}
+	} else {
+		return &pbpo.ModifyCnReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalSucceedCode,
+				ReplyMsg:  lib.PortalSucceedMsg,
+			},
+		}, nil
+	}
+}
+
+func (po *portalServer) modifyCnIsOffline(ctx context.Context, sockAddr string,
+	isOffline bool) (*pbpo.ModifyCnReply, error) {
+	cnEntityKey := po.kf.CnEntityKey(sockAddr)
+	controllerNode := &pbds.ControllerNode{}
+
+	apply := func(stm concurrency.STM) error {
+		cnEntityVal := []byte(stm.Get(cnEntityKey))
+		if len(cnEntityVal) == 0 {
+			return &portalError{
+				lib.PortalUnknownResErrCode,
+				cnEntityKey,
+			}
+		}
+		if err := proto.Unmarshal(cnEntityVal, controllerNode); err != nil {
+			logger.Error("Unmarshal controllerNode err: %s", cnEntityKey)
+			return err
+		}
+		controllerNode.CnConf.IsOffline = isOffline
+		newCnEntityVal, err := proto.Marshal(controllerNode)
+		if err != nil {
+			logger.Error("Marshal controllerNode err: %s %v", cnEntityKey, controllerNode)
+			return err
+		}
+		stm.Put(cnEntityKey, string(newCnEntityVal))
+		return nil
+	}
+
+	err := po.sw.RunStm(apply, ctx, "ModifyCnIsOffline: "+sockAddr)
+	if err != nil {
+		if serr, ok := err.(*portalError); ok {
+			return &pbpo.ModifyCnReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: serr.code,
+					ReplyMsg:  serr.msg,
+				},
+			}, nil
+		} else {
+			return &pbpo.ModifyCnReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: lib.PortalInternalErrCode,
+					ReplyMsg:  err.Error(),
+				},
+			}, nil
+		}
+	} else {
+		return &pbpo.ModifyCnReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalSucceedCode,
+				ReplyMsg:  lib.PortalSucceedMsg,
+			},
+		}, nil
+	}
+}
+
+func (po *portalServer) modifyCnHashCode(ctx context.Context, sockAddr string,
+	hashCode uint32) (*pbpo.ModifyCnReply, error) {
+	cnEntityKey := po.kf.CnEntityKey(sockAddr)
+	controllerNode := &pbds.ControllerNode{}
+
+	apply := func(stm concurrency.STM) error {
+		cnEntityVal := []byte(stm.Get(cnEntityKey))
+		if len(cnEntityVal) == 0 {
+			return &portalError{
+				lib.PortalUnknownResErrCode,
+				cnEntityKey,
+			}
+		}
+		if err := proto.Unmarshal(cnEntityVal, controllerNode); err != nil {
+			logger.Error("Unmarshal controllerNode err: %s", cnEntityKey)
+			return err
+		}
+		oldHashCode := controllerNode.CnConf.HashCode
+		controllerNode.CnConf.HashCode = hashCode
+		newCnEntityVal, err := proto.Marshal(controllerNode)
+		if err != nil {
+			logger.Error("Marshal controllerNode err: %s %v", cnEntityKey, controllerNode)
+			return err
+		}
+		stm.Put(cnEntityKey, string(newCnEntityVal))
+		cnSummary := &pbds.CnSummary{
+			Description: controllerNode.CnConf.Description,
+		}
+		cnListVal, err := proto.Marshal(cnSummary)
+		if err != nil {
+			logger.Error("Marshal cnSummary err: %v %v", cnSummary, err)
+			return err
+		}
+		oldCnListKey := po.kf.CnListKey(oldHashCode, sockAddr)
+		stm.Del(oldCnListKey)
+		newCnListKey := po.kf.CnListKey(hashCode, sockAddr)
+		stm.Put(newCnListKey, string(cnListVal))
+		if controllerNode.CnInfo.ErrInfo.IsErr {
+			oldCnErrKey := po.kf.CnErrKey(oldHashCode, sockAddr)
+			stm.Del(oldCnErrKey)
+			cnErrVal, err := proto.Marshal(cnSummary)
+			if err != nil {
+				logger.Error("Marshal cnSummary err: %v %v", cnSummary, err)
+				return err
+			}
+			newCnErrKey := po.kf.CnErrKey(hashCode, sockAddr)
+			stm.Put(newCnErrKey, string(cnErrVal))
+		}
+		return nil
+	}
+
+	err := po.sw.RunStm(apply, ctx, "ModifyCnHashCode: "+sockAddr)
+	if err != nil {
+		if serr, ok := err.(*portalError); ok {
+			return &pbpo.ModifyCnReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: serr.code,
+					ReplyMsg:  serr.msg,
+				},
+			}, nil
+		} else {
+			return &pbpo.ModifyCnReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: lib.PortalInternalErrCode,
+					ReplyMsg:  err.Error(),
+				},
+			}, nil
+		}
+	} else {
+		return &pbpo.ModifyCnReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalSucceedCode,
+				ReplyMsg:  lib.PortalSucceedMsg,
+			},
+		}, nil
+	}
+}
+
+func (po *portalServer) ModifyCn(ctx context.Context, req *pbpo.ModifyCnRequest) (
+	*pbpo.ModifyCnReply, error) {
+	invalidParamMsg := ""
+	if req.SockAddr == "" {
+		invalidParamMsg = "SockAddr is empty"
+	}
+	if invalidParamMsg != "" {
+		return &pbpo.ModifyCnReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInvalidParamCode,
+				ReplyMsg:  invalidParamMsg,
+			},
+		}, nil
+	}
+
+	switch x := req.Attr.(type) {
+	case *pbpo.ModifyCnRequest_Description:
+		return po.modifyCnDescription(ctx, req.SockAddr, x.Description)
+	case *pbpo.ModifyCnRequest_IsOffline:
+		return po.modifyCnIsOffline(ctx, req.SockAddr, x.IsOffline)
+	case *pbpo.ModifyCnRequest_HashCode:
+		return po.modifyCnHashCode(ctx, req.SockAddr, x.HashCode)
+	default:
+		logger.Error("Unknow attr: %v", x)
+		return &pbpo.ModifyCnReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInvalidParamCode,
+				ReplyMsg:  "Unknow attr",
+			},
+		}, nil
+	}
+}
+
 func (po *portalServer) listCnWithoutToken(ctx context.Context, limit int64) (
 	*pbpo.ListCnReply, error) {
 	opts := []clientv3.OpOption{
