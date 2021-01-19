@@ -474,3 +474,86 @@ func (po *portalServer) ModifyPd(ctx context.Context, req *pbpo.ModifyPdRequest)
 		}, nil
 	}
 }
+
+func (po *portalServer) ListPd(ctx context.Context, req *pbpo.ListPdRequest) (
+	*pbpo.ListPdReply, error) {
+	invalidParamMsg := ""
+	if req.SockAddr == "" {
+		invalidParamMsg = "SockAddr is empty"
+	}
+	if invalidParamMsg != "" {
+		return &pbpo.ListPdReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInvalidParamCode,
+				ReplyMsg:  invalidParamMsg,
+			},
+		}, nil
+	}
+
+	dnEntityKey := po.kf.DnEntityKey(req.SockAddr)
+	diskNode := &pbds.DiskNode{}
+
+	var pdSummaryList []*pbpo.PdSummary
+	apply := func(stm concurrency.STM) error {
+		val := []byte(stm.Get(dnEntityKey))
+		if len(val) == 0 {
+			return &portalError{
+				lib.PortalUnknownResErrCode,
+				dnEntityKey,
+			}
+		}
+		if err := proto.Unmarshal(val, diskNode); err != nil {
+			logger.Error("Unmarshal diskNode err: %s %v", dnEntityKey, err)
+			return err
+		}
+
+		if diskNode.SockAddr != req.SockAddr {
+			logger.Error("SockAddr mismatch: %s %v", req.SockAddr, diskNode)
+			return &portalError{
+				lib.PortalInternalErrCode,
+				"DiskNode SockAddr mismatch",
+			}
+		}
+
+		pdSummaryList = make([]*pbpo.PdSummary, 0)
+		for _, pd := range diskNode.PdList {
+			pdSummary := &pbpo.PdSummary{
+				PdName:      pd.PdName,
+				Description: pd.PdConf.Description,
+			}
+			pdSummaryList = append(pdSummaryList, pdSummary)
+		}
+		return nil
+	}
+
+	err := po.sw.RunStm(apply, ctx, "ListPd: "+req.SockAddr)
+	if err != nil {
+		if serr, ok := err.(*portalError); ok {
+			return &pbpo.ListPdReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: serr.code,
+					ReplyMsg:  serr.msg,
+				},
+			}, nil
+		} else {
+			return &pbpo.ListPdReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: lib.PortalInternalErrCode,
+					ReplyMsg:  err.Error(),
+				},
+			}, nil
+		}
+	} else {
+		return &pbpo.ListPdReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInternalErrCode,
+				ReplyMsg:  err.Error(),
+			},
+			PdSummaryList: pdSummaryList,
+		}, nil
+	}
+}
