@@ -81,6 +81,7 @@ func (po *portalServer) CreateCn(ctx context.Context, req *pbpo.CreateCnRequest)
 		CntlrFeList: cntlrFeList,
 	}
 	cnSummary := &pbds.CnSummary{
+		SockAddr:    req.SockAddr,
 		Description: req.Description,
 	}
 	cnEntityKey := po.kf.CnEntityKey(req.SockAddr)
@@ -233,8 +234,8 @@ func (po *portalServer) DeleteCn(ctx context.Context, req *pbpo.DeleteCnRequest)
 		stm.Del(cnListKey)
 		cnCapKey := po.kf.CnCapKey(controllerNode.CnCapacity.CntlrCnt, req.SockAddr)
 		stm.Del(cnCapKey)
-		if controllerNode.CnInfo.ErrInfo.IsErr {
-			cnErrKey := po.kf.CnErrKey(controllerNode.CnConf.HashCode, req.SockAddr)
+		cnErrKey := po.kf.CnErrKey(controllerNode.CnConf.HashCode, req.SockAddr)
+		if len(stm.Get(cnErrKey)) > 0 {
 			stm.Del(cnErrKey)
 		}
 		return nil
@@ -275,6 +276,7 @@ func (po *portalServer) modifyCnDescription(ctx context.Context, sockAddr string
 	cnEntityKey := po.kf.CnEntityKey(sockAddr)
 	controllerNode := &pbds.ControllerNode{}
 	cnSummary := &pbds.CnSummary{
+		SockAddr:    sockAddr,
 		Description: description,
 	}
 	cnListVal, err := proto.Marshal(cnSummary)
@@ -324,8 +326,8 @@ func (po *portalServer) modifyCnDescription(ctx context.Context, sockAddr string
 		stm.Put(cnEntityKey, string(newCnEntityVal))
 		cnListKey := po.kf.CnListKey(controllerNode.CnConf.HashCode, sockAddr)
 		stm.Put(cnListKey, cnListValStr)
-		if controllerNode.CnInfo.ErrInfo.IsErr {
-			cnErrKey := po.kf.CnErrKey(controllerNode.CnConf.HashCode, sockAddr)
+		cnErrKey := po.kf.CnErrKey(controllerNode.CnConf.HashCode, sockAddr)
+		if len(stm.Get(cnErrKey)) > 0 {
 			stm.Put(cnErrKey, cnErrValStr)
 		}
 		return nil
@@ -444,6 +446,7 @@ func (po *portalServer) modifyCnHashCode(ctx context.Context, sockAddr string,
 		}
 		stm.Put(cnEntityKey, string(newCnEntityVal))
 		cnSummary := &pbds.CnSummary{
+			SockAddr:    controllerNode.SockAddr,
 			Description: controllerNode.CnConf.Description,
 		}
 		cnListVal, err := proto.Marshal(cnSummary)

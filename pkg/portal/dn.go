@@ -78,6 +78,7 @@ func (po *portalServer) CreateDn(ctx context.Context, req *pbpo.CreateDnRequest)
 	}
 
 	dnSummary := &pbds.DnSummary{
+		SockAddr:    req.SockAddr,
 		Description: req.Description,
 	}
 
@@ -209,8 +210,8 @@ func (po *portalServer) DeleteDn(ctx context.Context, req *pbpo.DeleteDnRequest)
 		stm.Del(dnEntityKey)
 		dnListKey := po.kf.DnListKey(diskNode.DnConf.HashCode, req.SockAddr)
 		stm.Del(dnListKey)
-		if diskNode.DnInfo.ErrInfo.IsErr {
-			dnErrKey := po.kf.DnErrKey(diskNode.DnConf.HashCode, req.SockAddr)
+		dnErrKey := po.kf.DnErrKey(diskNode.DnConf.HashCode, req.SockAddr)
+		if len(stm.Get(dnErrKey)) > 0 {
 			stm.Del(dnErrKey)
 		}
 		return nil
@@ -251,6 +252,7 @@ func (po *portalServer) modifyDnDescription(ctx context.Context, sockAddr string
 	dnEntityKey := po.kf.DnEntityKey(sockAddr)
 	diskNode := &pbds.DiskNode{}
 	dnSummary := &pbds.DnSummary{
+		SockAddr:    sockAddr,
 		Description: description,
 	}
 	dnListVal, err := proto.Marshal(dnSummary)
@@ -300,8 +302,8 @@ func (po *portalServer) modifyDnDescription(ctx context.Context, sockAddr string
 		stm.Put(dnEntityKey, string(newDnEntityVal))
 		dnListKey := po.kf.DnListKey(diskNode.DnConf.HashCode, sockAddr)
 		stm.Put(dnListKey, dnListValStr)
-		if diskNode.DnInfo.ErrInfo.IsErr {
-			dnErrKey := po.kf.DnErrKey(diskNode.DnConf.HashCode, sockAddr)
+		dnErrKey := po.kf.DnErrKey(diskNode.DnConf.HashCode, sockAddr)
+		if len(stm.Get(dnErrKey)) > 0 {
 			stm.Put(dnErrKey, dnErrValStr)
 		}
 		return nil
@@ -420,6 +422,7 @@ func (po *portalServer) modifyDnHashCode(ctx context.Context, sockAddr string,
 		}
 		stm.Put(dnEntityKey, string(newDnEntityVal))
 		dnSummary := &pbds.DnSummary{
+			SockAddr:    diskNode.SockAddr,
 			Description: diskNode.DnConf.Description,
 		}
 		dnListVal, err := proto.Marshal(dnSummary)
@@ -431,8 +434,8 @@ func (po *portalServer) modifyDnHashCode(ctx context.Context, sockAddr string,
 		stm.Del(oldDnListKey)
 		newDnListKey := po.kf.DnListKey(hashCode, sockAddr)
 		stm.Put(newDnListKey, string(dnListVal))
-		if diskNode.DnInfo.ErrInfo.IsErr {
-			oldDnErrKey := po.kf.DnErrKey(oldHashCode, sockAddr)
+		oldDnErrKey := po.kf.DnErrKey(oldHashCode, sockAddr)
+		if len(stm.Get(oldDnErrKey)) > 0 {
 			stm.Del(oldDnErrKey)
 			dnErrVal, err := proto.Marshal(dnSummary)
 			if err != nil {
@@ -640,8 +643,18 @@ func (po *portalServer) listDnWithToken(ctx context.Context, limit int64,
 				},
 			}, nil
 		}
+		if dsDnSummary.SockAddr != sockAddr {
+			logger.Error("sockAddr mismatch: %v %s", dsDnSummary, sockAddr)
+			return &pbpo.ListDnReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: lib.PortalInternalErrCode,
+					ReplyMsg:  "sockAddr mismatch",
+				},
+			}, nil
+		}
 		poDnSummary := &pbpo.DnSummary{
-			SockAddr:    sockAddr,
+			SockAddr:    dsDnSummary.SockAddr,
 			Description: dsDnSummary.Description,
 		}
 		dnSummaryList = append(dnSummaryList, poDnSummary)

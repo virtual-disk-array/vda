@@ -433,9 +433,9 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 			stm.Put(dnEntityKey, string(newDnEntityVal))
 
 			dnErrKey := po.kf.DnErrKey(diskNode.DnConf.HashCode, diskNode.SockAddr)
-			dnErrVal := []byte(stm.Get(dnErrKey))
-			if len(dnErrVal) == 0 {
+			if len(stm.Get(dnErrKey)) == 0 {
 				dnSummary := &pbds.DnSummary{
+					SockAddr:    diskNode.SockAddr,
 					Description: diskNode.DnConf.Description,
 				}
 				dnErrVal, err := proto.Marshal(dnSummary)
@@ -513,9 +513,9 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 			stm.Put(cnEntityKey, string(newCnEntityVal))
 
 			cnErrKey := po.kf.CnErrKey(controllerNode.CnConf.HashCode, controllerNode.SockAddr)
-			cnErrVal := []byte(stm.Get(cnErrKey))
-			if len(cnErrVal) == 0 {
+			if len(stm.Get(cnErrKey)) == 0 {
 				cnSummary := &pbds.CnSummary{
+					SockAddr:    controllerNode.SockAddr,
 					Description: controllerNode.CnConf.Description,
 				}
 				cnErrVal, err := proto.Marshal(cnSummary)

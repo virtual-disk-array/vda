@@ -40,7 +40,7 @@ type capDiff struct {
 	val string
 }
 
-func setDnErrInfo(from *pbdn.ErrInfo, to *pbds.ErrInfo) {
+func setDnErrInfo(from *pbdn.ErrInfo, to *pbds.ErrInfo) bool {
 	if from == nil {
 		to.IsErr = true
 		to.ErrMsg = ResNoInfoMsg
@@ -50,9 +50,10 @@ func setDnErrInfo(from *pbdn.ErrInfo, to *pbds.ErrInfo) {
 		to.ErrMsg = from.ErrMsg
 		to.Timestamp = from.Timestamp
 	}
+	return to.IsErr
 }
 
-func setCnErrInfo(from *pbcn.ErrInfo, to *pbds.ErrInfo) {
+func setCnErrInfo(from *pbcn.ErrInfo, to *pbds.ErrInfo) bool {
 	if from == nil {
 		to.IsErr = true
 		to.ErrMsg = ResNoInfoMsg
@@ -62,6 +63,7 @@ func setCnErrInfo(from *pbcn.ErrInfo, to *pbds.ErrInfo) {
 		to.ErrMsg = from.ErrMsg
 		to.Timestamp = from.Timestamp
 	}
+	return to.IsErr
 }
 
 func (sm *SyncupManager) SyncupDn(sockAddr string, ctx context.Context) {
@@ -85,15 +87,15 @@ func (sm *SyncupManager) SyncupDn(sockAddr string, ctx context.Context) {
 	if err == nil {
 		if reply.ReplyInfo.ReplyCode == DnSucceedCode {
 			sm.getDnRsp(reply, idToRes)
-			capDiffList := sm.setDnInfo(diskNode, idToRes)
-			sm.writeDnInfo(diskNode, capDiffList, revision, ctx)
+			capDiffList, isErr := sm.setDnInfo(diskNode, idToRes)
+			sm.writeDnInfo(diskNode, capDiffList, isErr, revision, ctx)
 		} else {
 			logger.Warning("SyncupDn reply error: %v", reply.ReplyInfo)
 		}
 	} else {
 		logger.Warning("SyncupDn grpc error: %v", err)
-		capDiffList := sm.setDnInfo(diskNode, idToRes)
-		sm.writeDnInfo(diskNode, capDiffList, revision, ctx)
+		capDiffList, isErr := sm.setDnInfo(diskNode, idToRes)
+		sm.writeDnInfo(diskNode, capDiffList, isErr, revision, ctx)
 	}
 }
 
@@ -206,24 +208,33 @@ func (sm *SyncupManager) getDnRsp(reply *pbdn.SyncupDnReply, idToRes *dnIdToRes)
 	}
 }
 
-func (sm *SyncupManager) setDnInfo(diskNode *pbds.DiskNode, idToRes *dnIdToRes) []*capDiff {
+func (sm *SyncupManager) setDnInfo(diskNode *pbds.DiskNode, idToRes *dnIdToRes) ([]*capDiff, bool) {
 	capDiffList := make([]*capDiff, 0)
+	var isErr bool
 	dnRsp, ok := idToRes.idToDn[diskNode.DnId]
 	if ok {
-		setDnErrInfo(dnRsp.DnInfo.ErrInfo, diskNode.DnInfo.ErrInfo)
+		if setDnErrInfo(dnRsp.DnInfo.ErrInfo, diskNode.DnInfo.ErrInfo) {
+			isErr = true
+		}
 	} else {
-		setDnErrInfo(nil, diskNode.DnInfo.ErrInfo)
+		if setDnErrInfo(nil, diskNode.DnInfo.ErrInfo) {
+			isErr = true
+		}
 	}
 
 	for _, physicalDisk := range diskNode.PdList {
 		pdRsp, ok := idToRes.idToPd[physicalDisk.PdId]
 		oldFreeSize := physicalDisk.Capacity.FreeSize
 		if ok {
-			setDnErrInfo(pdRsp.PdInfo.ErrInfo, physicalDisk.PdInfo.ErrInfo)
+			if setDnErrInfo(pdRsp.PdInfo.ErrInfo, physicalDisk.PdInfo.ErrInfo) {
+				isErr = true
+			}
 			physicalDisk.Capacity.TotalSize = pdRsp.PdCapacity.TotalSize
 			physicalDisk.Capacity.FreeSize = pdRsp.PdCapacity.FreeSize
 		} else {
-			setDnErrInfo(nil, physicalDisk.PdInfo.ErrInfo)
+			if setDnErrInfo(nil, physicalDisk.PdInfo.ErrInfo) {
+				isErr = true
+			}
 			physicalDisk.Capacity.TotalSize = 0
 			physicalDisk.Capacity.FreeSize = 0
 		}
@@ -262,17 +273,21 @@ func (sm *SyncupManager) setDnInfo(diskNode *pbds.DiskNode, idToRes *dnIdToRes) 
 		for _, vdBackend := range physicalDisk.VdBeList {
 			vdBeRsp, ok := idToRes.idToVdBe[vdBackend.VdId]
 			if ok {
-				setDnErrInfo(vdBeRsp.VdBeInfo.ErrInfo, vdBackend.VdBeInfo.ErrInfo)
+				if setDnErrInfo(vdBeRsp.VdBeInfo.ErrInfo, vdBackend.VdBeInfo.ErrInfo) {
+					isErr = true
+				}
 			} else {
-				setDnErrInfo(nil, vdBackend.VdBeInfo.ErrInfo)
+				if setDnErrInfo(nil, vdBackend.VdBeInfo.ErrInfo) {
+					isErr = true
+				}
 			}
 		}
 	}
-	return capDiffList
+	return capDiffList, isErr
 }
 
 func (sm *SyncupManager) writeDnInfo(diskNode *pbds.DiskNode, capDiffList []*capDiff,
-	revision int64, ctx context.Context) {
+	isErr bool, revision int64, ctx context.Context) {
 
 	dnEntityKey := sm.kf.DnEntityKey(diskNode.SockAddr)
 	dnEntityVal, err := proto.Marshal(diskNode)
@@ -301,7 +316,7 @@ func (sm *SyncupManager) writeDnInfo(diskNode *pbds.DiskNode, capDiffList []*cap
 			return nil
 		}
 		stm.Put(dnEntityKey, dnEntityValStr)
-		if diskNode.DnInfo.ErrInfo.IsErr {
+		if isErr {
 			stm.Put(dnErrKey, dnErrValStr)
 		} else {
 			stm.Del(dnErrKey)
@@ -369,15 +384,15 @@ func (sm *SyncupManager) SyncupCn(sockAddr string, ctx context.Context) {
 	if err == nil {
 		if reply.ReplyInfo.ReplyCode == CnSucceedCode {
 			sm.getCnRsp(reply, idToRes)
-			capDiffList := sm.setCnInfo(controllerNode, idToRes)
-			sm.writeCnInfo(controllerNode, capDiffList, revision, ctx)
+			capDiffList, isErr := sm.setCnInfo(controllerNode, idToRes)
+			sm.writeCnInfo(controllerNode, capDiffList, isErr, revision, ctx)
 		} else {
 			logger.Warning("SyncupCn reply error: %v", reply.ReplyInfo)
 		}
 	} else {
 		logger.Warning("SyncupCn grpc error: %v", err)
-		capDiffList := sm.setCnInfo(controllerNode, idToRes)
-		sm.writeCnInfo(controllerNode, capDiffList, revision, ctx)
+		capDiffList, isErr := sm.setCnInfo(controllerNode, idToRes)
+		sm.writeCnInfo(controllerNode, capDiffList, isErr, revision, ctx)
 	}
 }
 
@@ -546,60 +561,85 @@ func (sm *SyncupManager) getCnRsp(reply *pbcn.SyncupCnReply, idToRes *cnIdToRes)
 }
 
 func (sm *SyncupManager) setCnInfo(controllerNode *pbds.ControllerNode,
-	idToRes *cnIdToRes) []*capDiff {
+	idToRes *cnIdToRes) ([]*capDiff, bool) {
+	var isErr bool
 	capDiffList := make([]*capDiff, 0)
 	cnRsp, ok := idToRes.idToCn[controllerNode.CnId]
 	if ok {
-		setCnErrInfo(cnRsp.CnInfo.ErrInfo, controllerNode.CnInfo.ErrInfo)
+		if setCnErrInfo(cnRsp.CnInfo.ErrInfo, controllerNode.CnInfo.ErrInfo) {
+			isErr = true
+		}
 	} else {
-		setCnErrInfo(nil, controllerNode.CnInfo.ErrInfo)
+		if setCnErrInfo(nil, controllerNode.CnInfo.ErrInfo) {
+			isErr = true
+		}
 	}
 
 	for _, cntlrFe := range controllerNode.CntlrFeList {
 		cntlrFeRsp, ok := idToRes.idToCntlrFe[cntlrFe.CntlrId]
 		if ok {
-			setCnErrInfo(cntlrFeRsp.CntlrFeInfo.ErrInfo, cntlrFe.CntlrFeInfo.ErrInfo)
+			if setCnErrInfo(cntlrFeRsp.CntlrFeInfo.ErrInfo, cntlrFe.CntlrFeInfo.ErrInfo) {
+				isErr = true
+			}
 		} else {
-			setCnErrInfo(nil, cntlrFe.CntlrFeInfo.ErrInfo)
+			if setCnErrInfo(nil, cntlrFe.CntlrFeInfo.ErrInfo) {
+				isErr = true
+			}
 		}
 		for _, grpFe := range cntlrFe.GrpFeList {
 			grpFeRsp, ok := idToRes.idToGrpFe[grpFe.GrpId]
 			if ok {
-				setCnErrInfo(grpFeRsp.GrpFeInfo.ErrInfo, grpFe.GrpFeInfo.ErrInfo)
+				if setCnErrInfo(grpFeRsp.GrpFeInfo.ErrInfo, grpFe.GrpFeInfo.ErrInfo) {
+					isErr = true
+				}
 			} else {
-				setCnErrInfo(nil, grpFe.GrpFeInfo.ErrInfo)
+				if setCnErrInfo(nil, grpFe.GrpFeInfo.ErrInfo) {
+					isErr = true
+				}
 			}
 			for _, vdFe := range grpFe.VdFeList {
 				vdFeRsp, ok := idToRes.idToVdFe[vdFe.VdId]
 				if ok {
-					setCnErrInfo(vdFeRsp.VdFeInfo.ErrInfo, vdFe.VdFeInfo.ErrInfo)
+					if setCnErrInfo(vdFeRsp.VdFeInfo.ErrInfo, vdFe.VdFeInfo.ErrInfo) {
+						isErr = true
+					}
 				} else {
-					setCnErrInfo(nil, vdFe.VdFeInfo.ErrInfo)
+					if setCnErrInfo(nil, vdFe.VdFeInfo.ErrInfo) {
+						isErr = true
+					}
 				}
 			}
 		}
 		for _, snapFe := range cntlrFe.SnapFeList {
 			snapFeRsp, ok := idToRes.idToSnapFe[snapFe.SnapId]
 			if ok {
-				setCnErrInfo(snapFeRsp.SnapFeInfo.ErrInfo, snapFe.SnapFeInfo.ErrInfo)
+				if setCnErrInfo(snapFeRsp.SnapFeInfo.ErrInfo, snapFe.SnapFeInfo.ErrInfo) {
+					isErr = true
+				}
 			} else {
-				setCnErrInfo(nil, snapFe.SnapFeInfo.ErrInfo)
+				if setCnErrInfo(nil, snapFe.SnapFeInfo.ErrInfo) {
+					isErr = true
+				}
 			}
 		}
 		for _, expFe := range cntlrFe.ExpFeList {
 			expFeRsp, ok := idToRes.idToExpFe[expFe.ExpId]
 			if ok {
-				setCnErrInfo(expFeRsp.ExpFeInfo.ErrInfo, expFe.ExpFeInfo.ErrInfo)
+				if setCnErrInfo(expFeRsp.ExpFeInfo.ErrInfo, expFe.ExpFeInfo.ErrInfo) {
+					isErr = true
+				}
 			} else {
-				setCnErrInfo(nil, expFe.ExpFeInfo.ErrInfo)
+				if setCnErrInfo(nil, expFe.ExpFeInfo.ErrInfo) {
+					isErr = true
+				}
 			}
 		}
 	}
-	return capDiffList
+	return capDiffList, isErr
 }
 
 func (sm *SyncupManager) writeCnInfo(controllerNode *pbds.ControllerNode,
-	capDiffList []*capDiff, revision int64, ctx context.Context) {
+	capDiffList []*capDiff, isErr bool, revision int64, ctx context.Context) {
 
 	cnEntityKey := sm.kf.CnEntityKey(controllerNode.SockAddr)
 	cnEntityVal, err := proto.Marshal(controllerNode)
@@ -628,7 +668,7 @@ func (sm *SyncupManager) writeCnInfo(controllerNode *pbds.ControllerNode,
 			return nil
 		}
 		stm.Put(cnEntityKey, cnEntityValStr)
-		if controllerNode.CnInfo.ErrInfo.IsErr {
+		if isErr {
 			stm.Put(cnErrKey, cnErrValStr)
 		} else {
 			stm.Del(cnErrKey)

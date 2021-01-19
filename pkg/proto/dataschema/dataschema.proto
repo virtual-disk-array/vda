@@ -326,16 +326,19 @@ message CnSearchAttr {
 // /{vda_prefix}/list/dn/{hash_code@sock_addr}
 // /{vda_prefix}/error/dn/{hash_code@sock_addr}
 message DnSummary {
-  string description = 1;
+  string sock_addr = 1;
+  string description = 2;
 }
 
 // /{vda_prefix}/list/cn/{hash_code@sock_addr}
 // /{vda_prefix}/error/cn/{hash_code@sock_addr}
 message CnSummary {
-  string description = 1;
+  string sock_addr = 1;
+  string description = 2;
 }
 
 // /{vda_prefix}/list/da/{da_name}
 message DaSummary {
-  string description = 1;
+  string da_name = 1;
+  string description = 2;
 }
