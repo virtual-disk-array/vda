@@ -2,6 +2,7 @@ package portal
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/coreos/etcd/clientv3/concurrency"
 	"github.com/golang/protobuf/proto"
@@ -162,6 +163,117 @@ func (po *portalServer) CreatePd(ctx context.Context, req *pbpo.CreatePdRequest)
 	po.sm.SyncupDn(req.SockAddr, ctx)
 
 	return &pbpo.CreatePdReply{
+		ReplyInfo: &pbpo.ReplyInfo{
+			ReqId:     lib.GetReqId(ctx),
+			ReplyCode: lib.PortalSucceedCode,
+			ReplyMsg:  lib.PortalSucceedMsg,
+		},
+	}, nil
+}
+
+func (po *portalServer) DeletePd(ctx context.Context, req *pbpo.DeletePdRequest) (
+	*pbpo.DeletePdReply, error) {
+	invalidParamMsg := ""
+	if req.SockAddr == "" {
+		invalidParamMsg = "SockAddr is empty"
+	} else if req.PdName == "" {
+		invalidParamMsg = "PdName is empty"
+	}
+	if invalidParamMsg != "" {
+		return &pbpo.DeletePdReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInvalidParamCode,
+				ReplyMsg:  invalidParamMsg,
+			},
+		}, nil
+	}
+
+	dnEntityKey := po.kf.DnEntityKey(req.SockAddr)
+	diskNode := &pbds.DiskNode{}
+
+	apply := func(stm concurrency.STM) error {
+		val := []byte(stm.Get(dnEntityKey))
+		if len(val) == 0 {
+			return &portalError{
+				lib.PortalUnknownResErrCode,
+				dnEntityKey,
+			}
+		}
+		if err := proto.Unmarshal(val, diskNode); err != nil {
+			logger.Error("Unmarshal diskNode err: %s %v", dnEntityKey, err)
+			return err
+		}
+
+		if diskNode.SockAddr != req.SockAddr {
+			logger.Error("SockAddr mismatch: %s %v", req.SockAddr, diskNode)
+			return &portalError{
+				lib.PortalInternalErrCode,
+				"DiskNode SockAddr mismatch",
+			}
+		}
+
+		var targetPd *pbds.PhysicalDisk
+		var targetIdx int
+		for i, pd := range diskNode.PdList {
+			if pd.PdName == req.PdName {
+				targetPd = pd
+				targetIdx = i
+				break
+			}
+		}
+		if targetPd == nil {
+			return &portalError{
+				lib.PortalUnknownResErrCode,
+				req.PdName,
+			}
+		}
+		if len(targetPd.VdBeList) > 0 {
+			return &portalError{
+				lib.PortalResBusyErrCode,
+				fmt.Sprintf("VdBe cnt: %d", len(targetPd.VdBeList)),
+			}
+		}
+		length := len(diskNode.PdList)
+		diskNode.PdList[targetIdx] = diskNode.PdList[length-1]
+		diskNode.PdList = diskNode.PdList[:length-1]
+		dnEntityVal, err := proto.Marshal(diskNode)
+		if err != nil {
+			logger.Error("Marshal diskNode err: %v %v", diskNode, err)
+			return err
+		}
+		dnEntityValStr := string(dnEntityVal)
+		stm.Put(dnEntityKey, dnEntityValStr)
+		cap := targetPd.Capacity
+		dnCapKey := po.kf.DnCapKey(cap.FreeSize, diskNode.SockAddr, targetPd.PdName)
+		stm.Del(dnCapKey)
+		return nil
+	}
+
+	err := po.sw.RunStm(apply, ctx, "DeletePd: "+req.SockAddr+" "+req.PdName)
+	if err != nil {
+		if serr, ok := err.(*portalError); ok {
+			return &pbpo.DeletePdReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: serr.code,
+					ReplyMsg:  serr.msg,
+				},
+			}, nil
+		} else {
+			return &pbpo.DeletePdReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: lib.PortalInternalErrCode,
+					ReplyMsg:  err.Error(),
+				},
+			}, nil
+		}
+	}
+
+	po.sm.SyncupDn(req.SockAddr, ctx)
+
+	return &pbpo.DeletePdReply{
 		ReplyInfo: &pbpo.ReplyInfo{
 			ReqId:     lib.GetReqId(ctx),
 			ReplyCode: lib.PortalSucceedCode,
