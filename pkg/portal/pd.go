@@ -281,3 +281,196 @@ func (po *portalServer) DeletePd(ctx context.Context, req *pbpo.DeletePdRequest)
 		},
 	}, nil
 }
+
+func (po *portalServer) modifyPdDescription(ctx context.Context, sockAddr string,
+	pdName string, description string) (*pbpo.ModifyPdReply, error) {
+	dnEntityKey := po.kf.DnEntityKey(sockAddr)
+	diskNode := &pbds.DiskNode{}
+
+	apply := func(stm concurrency.STM) error {
+		dnEntityVal := []byte(stm.Get(dnEntityKey))
+		if len(dnEntityVal) == 0 {
+			return &portalError{
+				lib.PortalUnknownResErrCode,
+				dnEntityKey,
+			}
+		}
+		if err := proto.Unmarshal(dnEntityVal, diskNode); err != nil {
+			logger.Error("Unmarshal diskNode err: %s", dnEntityKey)
+			return err
+		}
+
+		if diskNode.SockAddr != sockAddr {
+			logger.Error("SockAddr mismatch: %s %v", sockAddr, diskNode)
+			return &portalError{
+				lib.PortalInternalErrCode,
+				"DiskNode SockAddr mismatch",
+			}
+		}
+
+		var targetPd *pbds.PhysicalDisk
+		for _, pd := range diskNode.PdList {
+			if pd.PdName == pdName {
+				targetPd = pd
+				break
+			}
+		}
+		if targetPd == nil {
+			return &portalError{
+				lib.PortalUnknownResErrCode,
+				pdName,
+			}
+		}
+		targetPd.PdConf.Description = description
+		dnEntityVal, err := proto.Marshal(diskNode)
+		if err != nil {
+			logger.Error("Marshal diskNode err: %v %v", diskNode, err)
+			return err
+		}
+		dnEntityValStr := string(dnEntityVal)
+		stm.Put(dnEntityKey, dnEntityValStr)
+		return nil
+	}
+
+	err := po.sw.RunStm(apply, ctx, "ModifyPdDescription: "+sockAddr+" "+pdName)
+	if err != nil {
+		if serr, ok := err.(*portalError); ok {
+			return &pbpo.ModifyPdReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: serr.code,
+					ReplyMsg:  serr.msg,
+				},
+			}, nil
+		} else {
+			return &pbpo.ModifyPdReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: lib.PortalInternalErrCode,
+					ReplyMsg:  err.Error(),
+				},
+			}, nil
+		}
+	} else {
+		return &pbpo.ModifyPdReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalSucceedCode,
+				ReplyMsg:  lib.PortalSucceedMsg,
+			},
+		}, nil
+	}
+}
+
+func (po *portalServer) modifyPdIsOffline(ctx context.Context, sockAddr string,
+	pdName string, isOffline bool) (*pbpo.ModifyPdReply, error) {
+	dnEntityKey := po.kf.DnEntityKey(sockAddr)
+	diskNode := &pbds.DiskNode{}
+
+	apply := func(stm concurrency.STM) error {
+		dnEntityVal := []byte(stm.Get(dnEntityKey))
+		if len(dnEntityVal) == 0 {
+			return &portalError{
+				lib.PortalUnknownResErrCode,
+				dnEntityKey,
+			}
+		}
+		if err := proto.Unmarshal(dnEntityVal, diskNode); err != nil {
+			logger.Error("Unmarshal diskNode err: %s", dnEntityKey)
+			return err
+		}
+
+		if diskNode.SockAddr != sockAddr {
+			logger.Error("SockAddr mismatch: %s %v", sockAddr, diskNode)
+			return &portalError{
+				lib.PortalInternalErrCode,
+				"DiskNode SockAddr mismatch",
+			}
+		}
+
+		var targetPd *pbds.PhysicalDisk
+		for _, pd := range diskNode.PdList {
+			if pd.PdName == pdName {
+				targetPd = pd
+				break
+			}
+		}
+		if targetPd == nil {
+			return &portalError{
+				lib.PortalUnknownResErrCode,
+				pdName,
+			}
+		}
+		targetPd.PdConf.IsOffline = isOffline
+		dnEntityVal, err := proto.Marshal(diskNode)
+		if err != nil {
+			logger.Error("Marshal diskNode err: %v %v", diskNode, err)
+			return err
+		}
+		dnEntityValStr := string(dnEntityVal)
+		stm.Put(dnEntityKey, dnEntityValStr)
+		return nil
+	}
+
+	err := po.sw.RunStm(apply, ctx, "ModifyPdIsOffline: "+sockAddr+" "+pdName)
+	if err != nil {
+		if serr, ok := err.(*portalError); ok {
+			return &pbpo.ModifyPdReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: serr.code,
+					ReplyMsg:  serr.msg,
+				},
+			}, nil
+		} else {
+			return &pbpo.ModifyPdReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: lib.PortalInternalErrCode,
+					ReplyMsg:  err.Error(),
+				},
+			}, nil
+		}
+	} else {
+		return &pbpo.ModifyPdReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalSucceedCode,
+				ReplyMsg:  lib.PortalSucceedMsg,
+			},
+		}, nil
+	}
+}
+func (po *portalServer) ModifyPd(ctx context.Context, req *pbpo.ModifyPdRequest) (
+	*pbpo.ModifyPdReply, error) {
+	invalidParamMsg := ""
+	if req.SockAddr == "" {
+		invalidParamMsg = "SockAddr is empty"
+	} else if req.PdName == "" {
+		invalidParamMsg = "PdName is empty"
+	}
+	if invalidParamMsg != "" {
+		return &pbpo.ModifyPdReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInvalidParamCode,
+				ReplyMsg:  invalidParamMsg,
+			},
+		}, nil
+	}
+	switch x := req.Attr.(type) {
+	case *pbpo.ModifyPdRequest_Description:
+		return po.modifyPdDescription(ctx, req.SockAddr, req.PdName, x.Description)
+	case *pbpo.ModifyPdRequest_IsOffline:
+		return po.modifyPdIsOffline(ctx, req.SockAddr, req.PdName, x.IsOffline)
+	default:
+		logger.Error("Unknow attr: %v", x)
+		return &pbpo.ModifyPdReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInvalidParamCode,
+				ReplyMsg:  "Unknow attr",
+			},
+		}, nil
+	}
+}

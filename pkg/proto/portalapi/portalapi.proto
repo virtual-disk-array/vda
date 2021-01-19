@@ -369,7 +369,7 @@ message ModifyPdRequest {
   string sock_addr = 1;
   string pd_name = 2;
   oneof attr {
-    bool description = 3;
+    string description = 3;
     bool is_offline = 4;
   }
 }
