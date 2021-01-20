@@ -198,7 +198,7 @@ func (po *portalServer) DeleteDn(ctx context.Context, req *pbpo.DeleteDnRequest)
 			}
 		}
 		if err := proto.Unmarshal(dnEntityVal, diskNode); err != nil {
-			logger.Error("Unmarshal diskNode err: %s %v", dnEntityKey, diskNode)
+			logger.Error("Unmarshal diskNode err: %s %v", dnEntityKey, err)
 			return err
 		}
 		if len(diskNode.PdList) > 0 {
@@ -290,13 +290,13 @@ func (po *portalServer) modifyDnDescription(ctx context.Context, sockAddr string
 			}
 		}
 		if err := proto.Unmarshal(dnEntityVal, diskNode); err != nil {
-			logger.Error("Unmarshal diskNode err: %s", dnEntityKey)
+			logger.Error("Unmarshal diskNode err: %s %v", dnEntityKey, err)
 			return err
 		}
 		diskNode.DnConf.Description = description
 		newDnEntityVal, err := proto.Marshal(diskNode)
 		if err != nil {
-			logger.Error("Marshal diskNode err: %s %v", dnEntityKey, diskNode)
+			logger.Error("Marshal diskNode err: %v %v", diskNode, err)
 			return err
 		}
 		stm.Put(dnEntityKey, string(newDnEntityVal))

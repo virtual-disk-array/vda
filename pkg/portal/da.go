@@ -659,3 +659,286 @@ func (po *portalServer) CreateDa(ctx context.Context, req *pbpo.CreateDaRequest)
 		},
 	}, nil
 }
+
+func (po *portalServer) DeleteDa(ctx context.Context, req *pbpo.DeleteDaRequest) (
+	*pbpo.DeleteDaReply, error) {
+	invalidParamMsg := ""
+	if req.DaName == "" {
+		invalidParamMsg = "DnName is empty"
+	}
+	if invalidParamMsg != "" {
+		return &pbpo.DeleteDaReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInvalidParamCode,
+				ReplyMsg:  invalidParamMsg,
+			},
+		}, nil
+	}
+
+	daEntityKey := po.kf.DaEntityKey(req.DaName)
+	diskArray := &pbds.DiskArray{}
+
+	apply := func(stm concurrency.STM) error {
+		daEntityVal := []byte(stm.Get(daEntityKey))
+		if len(daEntityVal) == 0 {
+			return &portalError{
+				lib.PortalUnknownResErrCode,
+				daEntityKey,
+			}
+		}
+		if err := proto.Unmarshal(daEntityVal, diskArray); err != nil {
+			logger.Error("Unmarshal diskArray err: %s %v", daEntityKey, err)
+			return err
+		}
+		if len(diskArray.ExpList) > 0 {
+			return &portalError{
+				lib.PortalResBusyErrCode,
+				"diskArray has exporter(s)",
+			}
+		}
+		stm.Del(daEntityKey)
+
+		for _, cntlr := range diskArray.CntlrList {
+			cnEntityKey := po.kf.CnEntityKey(cntlr.CnSockAddr)
+			cnEntityVal := []byte(stm.Get(cnEntityKey))
+			if len(cnEntityVal) == 0 {
+				logger.Error("Can not find cn: %s", cnEntityKey)
+				return &portalError{
+					lib.PortalInternalErrCode,
+					fmt.Sprintf("Can not find cn: %s", cntlr.CnSockAddr),
+				}
+			}
+			controllerNode := &pbds.ControllerNode{}
+			if err := proto.Unmarshal(cnEntityVal, controllerNode); err != nil {
+				logger.Error("Unmarshal controllerNode err: %s %v", cnEntityKey, err)
+				return err
+			}
+			targetIdx := -1
+			for i, cntlrFe := range controllerNode.CntlrFeList {
+				if cntlrFe.CntlrId == cntlr.CntlrId {
+					targetIdx = i
+				}
+			}
+			if targetIdx == -1 {
+				logger.Error("Can not find cntlr: %v %v", controllerNode, cntlr)
+				return &portalError{
+					lib.PortalInternalErrCode,
+					"Can not find cntlr",
+				}
+			}
+			length := len(controllerNode.CntlrFeList)
+			controllerNode.CntlrFeList[targetIdx] = controllerNode.CntlrFeList[length-1]
+			controllerNode.CntlrFeList = controllerNode.CntlrFeList[:length-1]
+			cap := controllerNode.CnCapacity
+			if cap.CntlrCnt == 0 {
+				logger.Error("Invalid CnCapacity: %v", controllerNode)
+				return &portalError{
+					lib.PortalInternalErrCode,
+					"Invalid CnCapacity",
+				}
+			}
+			oldCnCapKey := po.kf.CnCapKey(cap.CntlrCnt, controllerNode.SockAddr)
+			cap.CntlrCnt -= 1
+			newCnCapKey := po.kf.CnCapKey(cap.CntlrCnt, controllerNode.SockAddr)
+			cnSearchAttr := &pbds.CnSearchAttr{
+				CnCapacity: cap,
+				Location:   controllerNode.CnConf.Location,
+			}
+			cnCapVal, err := proto.Marshal(cnSearchAttr)
+			if err != nil {
+				logger.Error("Marshal cnSearchAttr err: %v %v", cnSearchAttr, err)
+				return err
+			}
+			stm.Del(oldCnCapKey)
+			stm.Put(newCnCapKey, string(cnCapVal))
+
+			newCnEntityVal, err := proto.Marshal(controllerNode)
+			if err != nil {
+				logger.Error("Marshal controllerNode err: %v %v", controllerNode, err)
+				return err
+			}
+			stm.Put(cnEntityKey, string(newCnEntityVal))
+
+			cnErrKey := po.kf.CnErrKey(controllerNode.CnConf.HashCode, controllerNode.SockAddr)
+			if len(stm.Get(cnErrKey)) == 0 {
+				cnSummary := &pbds.CnSummary{
+					SockAddr:    controllerNode.SockAddr,
+					Description: controllerNode.CnConf.Description,
+				}
+				cnErrVal, err := proto.Marshal(cnSummary)
+				if err != nil {
+					logger.Error("Marshal cnSummary err: %v %v", cnSummary, err)
+					return err
+				}
+				stm.Put(cnErrKey, string(cnErrVal))
+			}
+		}
+
+		for _, grp := range diskArray.GrpList {
+			for _, vd := range grp.VdList {
+				dnEntityKey := po.kf.DnEntityKey(vd.DnSockAddr)
+				dnEntityVal := []byte(stm.Get(dnEntityKey))
+				if len(dnEntityVal) == 0 {
+					logger.Error("Can not find dn: %s", dnEntityKey)
+					return &portalError{
+						lib.PortalInternalErrCode,
+						fmt.Sprintf("Can not find dn: %s", vd.DnSockAddr),
+					}
+				}
+				diskNode := &pbds.DiskNode{}
+				if err := proto.Unmarshal(dnEntityVal, diskNode); err != nil {
+					logger.Error("Unmarshal diskNode err: %s %v", dnEntityVal, err)
+					return err
+				}
+				var targetPd *pbds.PhysicalDisk
+				for _, pd := range diskNode.PdList {
+					if pd.PdName == vd.PdName {
+						targetPd = pd
+						break
+					}
+				}
+				if targetPd == nil {
+					logger.Error("Can not find pd: %v %v", diskNode, vd)
+					return &portalError{
+						lib.PortalInternalErrCode,
+						"Can not find pd",
+					}
+				}
+				targetIdx := -1
+				for i, vdBe := range targetPd.VdBeList {
+					if vdBe.VdId == vd.VdId {
+						targetIdx = i
+						break
+					}
+				}
+				if targetIdx == -1 {
+					logger.Error("Can not find vd: %v %v", diskNode, vd)
+					return &portalError{
+						lib.PortalInternalErrCode,
+						"Can not find vd",
+					}
+				}
+				length := len(targetPd.VdBeList)
+				targetPd.VdBeList[targetIdx] = targetPd.VdBeList[length-1]
+				targetPd.VdBeList = targetPd.VdBeList[:length-1]
+
+				cap := targetPd.Capacity
+				oldDnCapKey := po.kf.DnCapKey(cap.FreeSize, diskNode.SockAddr, targetPd.PdName)
+				cap.FreeSize += vd.Size
+				cap.FreeQos.RwIosPerSec += vd.Qos.RwIosPerSec
+				cap.FreeQos.RwMbytesPerSec += vd.Qos.RwMbytesPerSec
+				cap.FreeQos.RMbytesPerSec += vd.Qos.RMbytesPerSec
+				cap.FreeQos.WMbytesPerSec += vd.Qos.WMbytesPerSec
+				newDnCapKey := po.kf.DnCapKey(cap.FreeSize, diskNode.SockAddr, targetPd.PdName)
+
+				dnSearchAttr := &pbds.DnSearchAttr{
+					PdCapacity: &pbds.PdCapacity{
+						TotalSize: cap.TotalSize,
+						FreeSize:  cap.FreeSize,
+						TotalQos: &pbds.BdevQos{
+							RwIosPerSec:    cap.TotalQos.RwIosPerSec,
+							RwMbytesPerSec: cap.TotalQos.RwMbytesPerSec,
+							RMbytesPerSec:  cap.TotalQos.RMbytesPerSec,
+							WMbytesPerSec:  cap.TotalQos.WMbytesPerSec,
+						},
+						FreeQos: &pbds.BdevQos{
+							RwIosPerSec:    cap.FreeQos.RwIosPerSec,
+							RwMbytesPerSec: cap.FreeQos.RwMbytesPerSec,
+							RMbytesPerSec:  cap.FreeQos.RMbytesPerSec,
+							WMbytesPerSec:  cap.FreeQos.WMbytesPerSec,
+						},
+					},
+					Location: diskNode.DnConf.Location,
+				}
+				dnCapVal, err := proto.Marshal(dnSearchAttr)
+				if err != nil {
+					logger.Error("marshal dnSearchAttr err: %v %v", dnSearchAttr, err)
+					return err
+				}
+				stm.Del(oldDnCapKey)
+				stm.Put(newDnCapKey, string(dnCapVal))
+				newDnEntityVal, err := proto.Marshal(diskNode)
+				if err != nil {
+					logger.Error("Marshal diskNode err: %s %v %v", dnEntityKey, diskNode, err)
+					return err
+				}
+				stm.Put(dnEntityKey, string(newDnEntityVal))
+
+				dnErrKey := po.kf.DnErrKey(diskNode.DnConf.HashCode, diskNode.SockAddr)
+				if len(stm.Get(dnErrKey)) == 0 {
+					dnSummary := &pbds.DnSummary{
+						SockAddr:    diskNode.SockAddr,
+						Description: diskNode.DnConf.Description,
+					}
+					dnErrVal, err := proto.Marshal(dnSummary)
+					if err != nil {
+						logger.Error("Marshal dnSummary err: %v %v", dnSummary, err)
+						return err
+					}
+					stm.Put(dnErrKey, string(dnErrVal))
+				}
+			}
+		}
+		return nil
+	}
+
+	session, err := concurrency.NewSession(po.etcdCli,
+		concurrency.WithTTL(lib.AllocLockTTL))
+	if err != nil {
+		logger.Error("Create session err: %v", err)
+		return &pbpo.DeleteDaReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInternalErrCode,
+				ReplyMsg:  err.Error(),
+			},
+		}, nil
+	}
+	defer session.Close()
+	mutex := concurrency.NewMutex(session, po.kf.AllocLockPath())
+	if err = mutex.Lock(ctx); err != nil {
+		logger.Error("Lock mutex err: %v", err)
+		return &pbpo.DeleteDaReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInternalErrCode,
+				ReplyMsg:  err.Error(),
+			},
+		}, nil
+	}
+	defer func() {
+		if err := mutex.Unlock(ctx); err != nil {
+			logger.Error("Unlock mutex err: %v", err)
+		}
+	}()
+
+	err = po.sw.RunStm(apply, ctx, "DeleteDa: "+req.DaName)
+	if err != nil {
+		if serr, ok := err.(*portalError); ok {
+			return &pbpo.DeleteDaReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: serr.code,
+					ReplyMsg:  serr.msg,
+				},
+			}, nil
+		} else {
+			return &pbpo.DeleteDaReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: lib.PortalInternalErrCode,
+					ReplyMsg:  err.Error(),
+				},
+			}, nil
+		}
+	} else {
+		return &pbpo.DeleteDaReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalSucceedCode,
+				ReplyMsg:  lib.PortalSucceedMsg,
+			},
+		}, nil
+	}
+}
