@@ -131,8 +131,6 @@ message VdBackend {
   uint64 size = 5;
   BdevQos qos = 6;
   ErrInfo err_info = 7;
-  BdevIostat bdev_iostat = 8;
-  BdevHistgram bdev_histgram = 9;
 }
 
 message PhysicalDisk {
@@ -150,8 +148,6 @@ message PhysicalDisk {
     BdevNvme bdev_nvme = 11;
   }
   ErrInfo err_info = 12;
-  BdevIostat bdev_iostat = 13;
-  BdevHistgram bdev_histgram = 14;
   repeated VdBackend vd_be_list = 15;
 }
 

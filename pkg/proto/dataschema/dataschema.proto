@@ -82,6 +82,9 @@ message Controller {
 }
 
 message VdBeConf {
+  string da_name = 1;
+  uint32 grp_idx = 2;
+  uint32 vd_idx = 3;
   uint64 size = 4;
   BdevQos qos = 5;
   string cntlr_id = 6;

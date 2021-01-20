@@ -557,3 +557,166 @@ func (po *portalServer) ListPd(ctx context.Context, req *pbpo.ListPdRequest) (
 		}, nil
 	}
 }
+
+func (po *portalServer) GetPd(ctx context.Context, req *pbpo.GetPdRequest) (
+	*pbpo.GetPdReply, error) {
+	invalidParamMsg := ""
+	if req.SockAddr == "" {
+		invalidParamMsg = "SockAddr is empty"
+	} else if req.PdName == "" {
+		invalidParamMsg = "PdName is empty"
+	}
+	if invalidParamMsg != "" {
+		return &pbpo.GetPdReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInvalidParamCode,
+				ReplyMsg:  invalidParamMsg,
+			},
+		}, nil
+	}
+
+	dnEntityKey := po.kf.DnEntityKey(req.SockAddr)
+	diskNode := &pbds.DiskNode{}
+	var targetPd *pbds.PhysicalDisk
+
+	apply := func(stm concurrency.STM) error {
+		val := []byte(stm.Get(dnEntityKey))
+		if len(val) == 0 {
+			return &portalError{
+				lib.PortalUnknownResErrCode,
+				dnEntityKey,
+			}
+		}
+		if err := proto.Unmarshal(val, diskNode); err != nil {
+			logger.Error("Unmarshal diskNode err: %s %v", dnEntityKey, err)
+			return err
+		}
+
+		if diskNode.SockAddr != req.SockAddr {
+			logger.Error("SockAddr mismatch: %s %v", req.SockAddr, diskNode)
+			return &portalError{
+				lib.PortalInternalErrCode,
+				"DiskNode SockAddr mismatch",
+			}
+		}
+
+		for _, pd := range diskNode.PdList {
+			if pd.PdName == req.PdName {
+				targetPd = pd
+				break
+			}
+		}
+		if targetPd == nil {
+			return &portalError{
+				lib.PortalUnknownResErrCode,
+				req.PdName,
+			}
+		}
+		return nil
+	}
+
+	err := po.sw.RunStm(apply, ctx, "GetPd: "+req.SockAddr+" "+req.PdName)
+	if err != nil {
+		if serr, ok := err.(*portalError); ok {
+			return &pbpo.GetPdReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: serr.code,
+					ReplyMsg:  serr.msg,
+				},
+			}, nil
+		} else {
+			return &pbpo.GetPdReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: lib.PortalInternalErrCode,
+					ReplyMsg:  err.Error(),
+				},
+			}, nil
+		}
+	} else {
+		var physicalDisk *pbpo.PhysicalDisk
+		physicalDisk.PdId = targetPd.PdId
+		physicalDisk.PdName = targetPd.PdName
+		physicalDisk.Description = targetPd.PdConf.Description
+		physicalDisk.IsOffline = targetPd.PdConf.IsOffline
+		physicalDisk.TotalSize = targetPd.Capacity.TotalSize
+		physicalDisk.FreeSize = targetPd.Capacity.FreeSize
+		physicalDisk.TotalQos = &pbpo.BdevQos{
+			RwIosPerSec:    targetPd.Capacity.TotalQos.RwIosPerSec,
+			RwMbytesPerSec: targetPd.Capacity.TotalQos.RwMbytesPerSec,
+			RMbytesPerSec:  targetPd.Capacity.TotalQos.RMbytesPerSec,
+			WMbytesPerSec:  targetPd.Capacity.TotalQos.WMbytesPerSec,
+		}
+		physicalDisk.FreeQos = &pbpo.BdevQos{
+			RwIosPerSec:    targetPd.Capacity.FreeQos.RwIosPerSec,
+			RwMbytesPerSec: targetPd.Capacity.FreeQos.RwMbytesPerSec,
+			RMbytesPerSec:  targetPd.Capacity.FreeQos.RMbytesPerSec,
+			WMbytesPerSec:  targetPd.Capacity.FreeQos.WMbytesPerSec,
+		}
+		switch x := targetPd.PdConf.BdevType.(type) {
+		case *pbds.PdConf_BdevMalloc:
+			physicalDisk.BdevType = &pbpo.PhysicalDisk_BdevMalloc{
+				BdevMalloc: &pbpo.BdevMalloc{
+					Size: x.BdevMalloc.Size,
+				},
+			}
+		case *pbds.PdConf_BdevAio:
+			physicalDisk.BdevType = &pbpo.PhysicalDisk_BdevAio{
+				BdevAio: &pbpo.BdevAio{
+					FileName: x.BdevAio.FileName,
+				},
+			}
+		case *pbds.PdConf_BdevNvme:
+			physicalDisk.BdevType = &pbpo.PhysicalDisk_BdevNvme{
+				BdevNvme: &pbpo.BdevNvme{
+					TrAddr: x.BdevNvme.TrAddr,
+				},
+			}
+		default:
+			logger.Error("Unknow BdevType: %v", diskNode)
+			return &pbpo.GetPdReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: lib.PortalInternalErrCode,
+					ReplyMsg:  "Unknow BdevType",
+				},
+			}, nil
+		}
+		physicalDisk.ErrInfo.IsErr = targetPd.PdInfo.ErrInfo.IsErr
+		physicalDisk.ErrInfo.ErrMsg = targetPd.PdInfo.ErrInfo.ErrMsg
+		physicalDisk.ErrInfo.Timestamp = targetPd.PdInfo.ErrInfo.Timestamp
+		vdBeList := make([]*pbpo.VdBackend, 0)
+		for _, dsVdBe := range targetPd.VdBeList {
+			poVdBe := &pbpo.VdBackend{
+				VdId:   dsVdBe.VdId,
+				DaName: dsVdBe.VdBeConf.DaName,
+				GrpIdx: dsVdBe.VdBeConf.GrpIdx,
+				VdIdx:  dsVdBe.VdBeConf.VdIdx,
+				Size:   dsVdBe.VdBeConf.Size,
+				Qos: &pbpo.BdevQos{
+					RwIosPerSec:    dsVdBe.VdBeConf.Qos.RwIosPerSec,
+					RwMbytesPerSec: dsVdBe.VdBeConf.Qos.RwMbytesPerSec,
+					RMbytesPerSec:  dsVdBe.VdBeConf.Qos.RMbytesPerSec,
+					WMbytesPerSec:  dsVdBe.VdBeConf.Qos.WMbytesPerSec,
+				},
+				ErrInfo: &pbpo.ErrInfo{
+					IsErr:     dsVdBe.VdBeInfo.ErrInfo.IsErr,
+					ErrMsg:    dsVdBe.VdBeInfo.ErrInfo.ErrMsg,
+					Timestamp: dsVdBe.VdBeInfo.ErrInfo.Timestamp,
+				},
+			}
+			vdBeList = append(vdBeList, poVdBe)
+		}
+		physicalDisk.VdBeList = vdBeList
+		return &pbpo.GetPdReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalSucceedCode,
+				ReplyMsg:  lib.PortalSucceedMsg,
+			},
+			PhysicalDisk: physicalDisk,
+		}, nil
+	}
+}

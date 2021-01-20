@@ -404,7 +404,10 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 			vdBe := &pbds.VdBackend{
 				VdId: vd.VdId,
 				VdBeConf: &pbds.VdBeConf{
-					Size: vd.Size,
+					DaName: req.DaName,
+					GrpIdx: uint32(0),
+					VdIdx:  uint32(i),
+					Size:   vd.Size,
 					Qos: &pbds.BdevQos{
 						RwIosPerSec:    qos.RwIosPerSec,
 						RwMbytesPerSec: qos.RwMbytesPerSec,

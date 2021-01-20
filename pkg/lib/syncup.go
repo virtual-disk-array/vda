@@ -152,10 +152,10 @@ func (sm *SyncupManager) buildSyncupDnRequest(
 				},
 			}
 		case nil:
-			logger.Error("BdevType is empty, %v", diskNode)
+			logger.Error("BdevType is empty: %v", diskNode)
 			return nil, fmt.Errorf("BdevType is empty")
 		default:
-			logger.Error("unknown BdevType, %v", diskNode)
+			logger.Error("Unknown BdevType: %v", diskNode)
 			return nil, fmt.Errorf("unknown BdevType")
 		}
 		vdBeReqList := []*pbdn.VdBeReq{}
