@@ -942,3 +942,91 @@ func (po *portalServer) DeleteDa(ctx context.Context, req *pbpo.DeleteDaRequest)
 		}, nil
 	}
 }
+
+func (po *portalServer) modifyDaDescription(ctx context.Context, daName string,
+	description string) (*pbpo.ModifyDaReply, error) {
+	daEntityKey := po.kf.DaEntityKey(daName)
+	diskArray := &pbds.DiskArray{}
+
+	apply := func(stm concurrency.STM) error {
+		daEntityVal := []byte(stm.Get(daEntityKey))
+		if len(daEntityVal) == 0 {
+			return &portalError{
+				lib.PortalUnknownResErrCode,
+				daEntityKey,
+			}
+		}
+		if err := proto.Unmarshal(daEntityVal, diskArray); err != nil {
+			logger.Error("Unmarshal diskArray err: %s %v", daEntityKey, err)
+			return err
+		}
+		diskArray.Description = description
+		newDaEntityVal, err := proto.Marshal(diskArray)
+		if err != nil {
+			logger.Error("Marshal diskArray err: %v %v", diskArray, err)
+			return err
+		}
+		stm.Put(daEntityKey, string(newDaEntityVal))
+		return nil
+	}
+
+	err := po.sw.RunStm(apply, ctx, "ModifyDaDescription: "+daName)
+	if err != nil {
+		if serr, ok := err.(*portalError); ok {
+			return &pbpo.ModifyDaReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: serr.code,
+					ReplyMsg:  serr.msg,
+				},
+			}, nil
+		} else {
+			return &pbpo.ModifyDaReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: lib.PortalInternalErrCode,
+					ReplyMsg:  err.Error(),
+				},
+			}, nil
+		}
+	} else {
+		return &pbpo.ModifyDaReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalSucceedCode,
+				ReplyMsg:  lib.PortalSucceedMsg,
+			},
+		}, nil
+	}
+}
+
+func (po *portalServer) ModifyDa(ctx context.Context, req *pbpo.ModifyDaRequest) (
+	*pbpo.ModifyDaReply, error) {
+	invalidParamMsg := ""
+	if req.DaName == "" {
+		invalidParamMsg = "DaName is empty"
+	}
+	if invalidParamMsg != "" {
+		return &pbpo.ModifyDaReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInvalidParamCode,
+				ReplyMsg:  invalidParamMsg,
+			},
+		}, nil
+	}
+
+	switch x := req.Attr.(type) {
+	case *pbpo.ModifyDaRequest_Description:
+		return po.modifyDaDescription(ctx, req.DaName, x.Description)
+	default:
+		logger.Error("Unknow attr: %v", x)
+		return &pbpo.ModifyDaReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInvalidParamCode,
+				ReplyMsg:  "Unknow attr",
+			},
+		}, nil
+	}
+}
