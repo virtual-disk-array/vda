@@ -222,11 +222,9 @@ message VirtualDisk {
   string sock_addr = 3;
   string pd_name = 4;
   uint64 size = 5;
-  BdevQos be_qos = 6;
+  BdevQos qos = 6;
   ErrInfo be_err_info = 7;
-  BdevIostat be_bdev_iostat = 8;
-  BdevHistgram be_bdev_histgram = 9;
-  ErrInfo fe_err_info = 10;
+  ErrInfo fe_err_info = 8;
 }
 
 message Group {
@@ -267,11 +265,17 @@ message ExpSummary {
   string description = 2;
 }
 
+message DaConf {
+  BdevQos qos = 1;
+  uint32 strip_cnt = 2;
+  uint32 strip_size_kb = 3;
+}
+
 message DiskArray {
   string da_id = 1;
   string da_name = 2;
   string description = 3;
-  uint32 strip_cnt = 4;
+  DaConf da_conf = 4;
   repeated Controller cntlr_list = 5;
   repeated Group grp_list = 6;
 }

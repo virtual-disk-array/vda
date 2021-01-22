@@ -1030,3 +1030,227 @@ func (po *portalServer) ModifyDa(ctx context.Context, req *pbpo.ModifyDaRequest)
 		}, nil
 	}
 }
+
+func (po *portalServer) GetDa(ctx context.Context, req *pbpo.GetDaRequest) (
+	*pbpo.GetDaReply, error) {
+	invalidParamMsg := ""
+	if req.DaName == "" {
+		invalidParamMsg = "DaName is empty"
+	}
+	if invalidParamMsg != "" {
+		return &pbpo.GetDaReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInvalidParamCode,
+				ReplyMsg:  invalidParamMsg,
+			},
+		}, nil
+	}
+
+	daEntityKey := po.kf.DaEntityKey(req.DaName)
+	diskArray := &pbds.DiskArray{}
+	addrToCn := make(map[string]*pbds.ControllerNode)
+	addrToDn := make(map[string]*pbds.DiskNode)
+
+	apply := func(stm concurrency.STM) error {
+		val := []byte(stm.Get(daEntityKey))
+		if len(val) == 0 {
+			return &portalError{
+				lib.PortalUnknownResErrCode,
+				daEntityKey,
+			}
+		}
+		if err := proto.Unmarshal(val, diskArray); err != nil {
+			logger.Error("Unmarshal diskArray err: %s %v", daEntityKey, err)
+			return err
+		}
+
+		for _, cntlr := range diskArray.CntlrList {
+			cnEntityKey := po.kf.CnEntityKey(cntlr.CnSockAddr)
+			cnEntityVal := []byte(stm.Get(cnEntityKey))
+			controllerNode := &pbds.ControllerNode{}
+			if err := proto.Unmarshal(cnEntityVal, controllerNode); err != nil {
+				logger.Error("Unmarshal controllerNode err: %s %v", cnEntityKey, err)
+				return err
+			}
+			addrToCn[cntlr.CnSockAddr] = controllerNode
+		}
+		for _, grp := range diskArray.GrpList {
+			for _, vd := range grp.VdList {
+				dnEntityKey := po.kf.DnEntityKey(vd.DnSockAddr)
+				dnEntityVal := []byte(stm.Get(dnEntityKey))
+				diskNode := &pbds.DiskNode{}
+				if err := proto.Unmarshal(dnEntityVal, diskNode); err != nil {
+					logger.Error("Unmarshal diskNode err: %s %v", dnEntityKey, err)
+					return err
+				}
+				addrToDn[vd.DnSockAddr] = diskNode
+			}
+		}
+		return nil
+	}
+
+	err := po.sw.RunStm(apply, ctx, "GetDa: "+req.DaName)
+	if err != nil {
+		if serr, ok := err.(*portalError); ok {
+			return &pbpo.GetDaReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: serr.code,
+					ReplyMsg:  serr.msg,
+				},
+			}, nil
+		} else {
+			return &pbpo.GetDaReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: lib.PortalInternalErrCode,
+					ReplyMsg:  err.Error(),
+				},
+			}, nil
+		}
+	} else {
+		cntlrList := make([]*pbpo.Controller, 0)
+		var primaryCntlr *pbds.Controller
+		for _, dsCntlr := range diskArray.CntlrList {
+			poCntlr := &pbpo.Controller{
+				CntlrId:   dsCntlr.CntlrId,
+				SockAddr:  dsCntlr.CnSockAddr,
+				CntlrIdx:  dsCntlr.CntlrIdx,
+				IsPrimary: dsCntlr.IsPrimary,
+			}
+			cntlrList = append(cntlrList, poCntlr)
+			if dsCntlr.IsPrimary {
+				primaryCntlr = dsCntlr
+			}
+		}
+		if primaryCntlr == nil {
+			return &pbpo.GetDaReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: lib.PortalInternalErrCode,
+					ReplyMsg:  "No primary Cntlr",
+				},
+			}, nil
+		}
+		controllerNode, ok := addrToCn[primaryCntlr.CnSockAddr]
+		if !ok {
+			return &pbpo.GetDaReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: lib.PortalInternalErrCode,
+					ReplyMsg:  "No primary controllerNode",
+				},
+			}, nil
+		}
+		idToVdFeInfo := make(map[string]*pbds.VdFeInfo)
+		for _, cntlrFe := range controllerNode.CntlrFeList {
+			for _, grpFe := range cntlrFe.GrpFeList {
+				for _, vdFe := range grpFe.VdFeList {
+					idToVdFeInfo[vdFe.VdId] = vdFe.VdFeInfo
+				}
+			}
+		}
+		grpList := make([]*pbpo.Group, 0)
+		for _, dsGrp := range diskArray.GrpList {
+			vdList := make([]*pbpo.VirtualDisk, 0)
+			for _, dsVd := range dsGrp.VdList {
+				dsVdFeInfo, ok := idToVdFeInfo[dsVd.VdId]
+				if !ok {
+					return &pbpo.GetDaReply{
+						ReplyInfo: &pbpo.ReplyInfo{
+							ReqId:     lib.GetReqId(ctx),
+							ReplyCode: lib.PortalInternalErrCode,
+							ReplyMsg:  "No vdFeInfo: " + dsVd.VdId,
+						},
+					}, nil
+				}
+				diskNode, ok := addrToDn[dsVd.DnSockAddr]
+				if !ok {
+					return &pbpo.GetDaReply{
+						ReplyInfo: &pbpo.ReplyInfo{
+							ReqId:     lib.GetReqId(ctx),
+							ReplyCode: lib.PortalInternalErrCode,
+							ReplyMsg:  "No diskNode: " + dsVd.DnSockAddr,
+						},
+					}, nil
+				}
+				var dsVdBeInfo *pbds.VdBeInfo
+				for _, pd := range diskNode.PdList {
+					if pd.PdName == dsVd.PdName {
+						for _, vdBe := range pd.VdBeList {
+							if vdBe.VdId == dsVd.VdId {
+								dsVdBeInfo = vdBe.VdBeInfo
+								break
+							}
+						}
+					}
+				}
+				if dsVdBeInfo == nil {
+					return &pbpo.GetDaReply{
+						ReplyInfo: &pbpo.ReplyInfo{
+							ReqId:     lib.GetReqId(ctx),
+							ReplyCode: lib.PortalInternalErrCode,
+							ReplyMsg:  "No dsVdBeInfo: " + dsVd.VdId,
+						},
+					}, nil
+				}
+				poVd := &pbpo.VirtualDisk{
+					VdId:     dsVd.VdId,
+					VdIdx:    dsVd.VdIdx,
+					SockAddr: dsVd.DnSockAddr,
+					PdName:   dsVd.PdName,
+					Size:     dsVd.Size,
+					Qos: &pbpo.BdevQos{
+						RwIosPerSec:    dsVd.Qos.RwIosPerSec,
+						RwMbytesPerSec: dsVd.Qos.RwMbytesPerSec,
+						RMbytesPerSec:  dsVd.Qos.RMbytesPerSec,
+						WMbytesPerSec:  dsVd.Qos.WMbytesPerSec,
+					},
+					BeErrInfo: &pbpo.ErrInfo{
+						IsErr:     dsVdBeInfo.ErrInfo.IsErr,
+						ErrMsg:    dsVdBeInfo.ErrInfo.ErrMsg,
+						Timestamp: dsVdBeInfo.ErrInfo.Timestamp,
+					},
+					FeErrInfo: &pbpo.ErrInfo{
+						IsErr:     dsVdFeInfo.ErrInfo.IsErr,
+						ErrMsg:    dsVdFeInfo.ErrInfo.ErrMsg,
+						Timestamp: dsVdFeInfo.ErrInfo.Timestamp,
+					},
+				}
+				vdList = append(vdList, poVd)
+			}
+			poGrp := &pbpo.Group{
+				GrpId:  dsGrp.GrpId,
+				GrpIdx: dsGrp.GrpIdx,
+				Size:   dsGrp.Size,
+				VdList: vdList,
+			}
+			grpList = append(grpList, poGrp)
+		}
+		return &pbpo.GetDaReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalSucceedCode,
+				ReplyMsg:  lib.PortalSucceedMsg,
+			},
+			DiskArray: &pbpo.DiskArray{
+				DaId:        diskArray.DaId,
+				DaName:      diskArray.DaName,
+				Description: diskArray.Description,
+				DaConf: &pbpo.DaConf{
+					Qos: &pbpo.BdevQos{
+						RwIosPerSec:    diskArray.DaConf.Qos.RwIosPerSec,
+						RwMbytesPerSec: diskArray.DaConf.Qos.RwMbytesPerSec,
+						RMbytesPerSec:  diskArray.DaConf.Qos.RMbytesPerSec,
+						WMbytesPerSec:  diskArray.DaConf.Qos.WMbytesPerSec,
+					},
+					StripCnt:    diskArray.DaConf.StripCnt,
+					StripSizeKb: diskArray.DaConf.StripSizeKb,
+				},
+				CntlrList: cntlrList,
+				GrpList:   grpList,
+			},
+		}, nil
+	}
+}

@@ -710,6 +710,20 @@ func (po *portalServer) ListCn(ctx context.Context, req *pbpo.ListCnRequest) (
 
 func (po *portalServer) GetCn(ctx context.Context, req *pbpo.GetCnRequest) (
 	*pbpo.GetCnReply, error) {
+	invalidParamMsg := ""
+	if req.SockAddr == "" {
+		invalidParamMsg = "SockAddr is empty"
+	}
+	if invalidParamMsg != "" {
+		return &pbpo.GetCnReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInvalidParamCode,
+				ReplyMsg:  invalidParamMsg,
+			},
+		}, nil
+	}
+
 	cnEntityKey := po.kf.CnEntityKey(req.SockAddr)
 	controllerNode := &pbds.ControllerNode{}
 
