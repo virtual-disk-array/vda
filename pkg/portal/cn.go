@@ -524,6 +524,20 @@ func (po *portalServer) ModifyCn(ctx context.Context, req *pbpo.ModifyCnRequest)
 	case *pbpo.ModifyCnRequest_IsOffline:
 		return po.modifyCnIsOffline(ctx, req.SockAddr, x.IsOffline)
 	case *pbpo.ModifyCnRequest_HashCode:
+		if x.HashCode == 0 {
+			invalidParamMsg = "HashCode can not be 0"
+		} else if x.HashCode > lib.MaxHashCode {
+			invalidParamMsg = fmt.Sprintf("HashCode is larger than %d", lib.MaxHashCode)
+		}
+		if invalidParamMsg != "" {
+			return &pbpo.ModifyCnReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: lib.PortalInvalidParamCode,
+					ReplyMsg:  invalidParamMsg,
+				},
+			}, nil
+		}
 		return po.modifyCnHashCode(ctx, req.SockAddr, x.HashCode)
 	default:
 		logger.Error("Unknow attr: %v", x)

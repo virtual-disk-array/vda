@@ -500,6 +500,20 @@ func (po *portalServer) ModifyDn(ctx context.Context, req *pbpo.ModifyDnRequest)
 	case *pbpo.ModifyDnRequest_IsOffline:
 		return po.modifyDnIsOffline(ctx, req.SockAddr, x.IsOffline)
 	case *pbpo.ModifyDnRequest_HashCode:
+		if x.HashCode == 0 {
+			invalidParamMsg = "HashCode can not be 0"
+		} else if x.HashCode > lib.MaxHashCode {
+			invalidParamMsg = fmt.Sprintf("HashCode is larger than %d", lib.MaxHashCode)
+		}
+		if invalidParamMsg != "" {
+			return &pbpo.ModifyDnReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: lib.PortalInvalidParamCode,
+					ReplyMsg:  invalidParamMsg,
+				},
+			}, nil
+		}
 		return po.modifyDnHashCode(ctx, req.SockAddr, x.HashCode)
 	default:
 		logger.Error("Unknow attr: %v", x)
