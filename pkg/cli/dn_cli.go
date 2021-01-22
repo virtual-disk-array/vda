@@ -128,7 +128,6 @@ func init() {
 		"dn socket address")
 	dnGetCmd.MarkFlagRequired("sock-addr")
 	dnCmd.AddCommand(dnGetCmd)
-
 }
 
 func (cli *client) createDn(args *dnCreateArgsStruct) string {
