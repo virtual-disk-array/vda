@@ -1,7 +1,7 @@
 package cli
 
 import (
-	"fmt"
+	"strconv"
 
 	"github.com/spf13/cobra"
 
@@ -22,6 +22,17 @@ type dnCreateArgsStruct struct {
 
 type dnDeleteArgsStruct struct {
 	sockAddr string
+}
+
+type dnModifyArgsStruct struct {
+	sockAddr string
+	key      string
+	value    string
+}
+
+type dnListArgsStruct struct {
+	limit int64
+	token string
 }
 
 type dnGetArgsStruct struct {
@@ -46,6 +57,20 @@ var (
 		Run:  dnDeleteFunc,
 	}
 	dnDeleteArgs = &dnDeleteArgsStruct{}
+
+	dnModifyCmd = &cobra.Command{
+		Use:  "modify",
+		Args: cobra.MaximumNArgs(0),
+		Run:  dnModifyFunc,
+	}
+	dnModifyArgs = &dnModifyArgsStruct{}
+
+	dnListCmd = &cobra.Command{
+		Use:  "list",
+		Args: cobra.MaximumNArgs(0),
+		Run:  dnListFunc,
+	}
+	dnListArgs = &dnListArgsStruct{}
 
 	dnGetCmd = &cobra.Command{
 		Use:  "get",
@@ -82,6 +107,23 @@ func init() {
 	dnDeleteCmd.MarkFlagRequired("sock-addr")
 	dnCmd.AddCommand(dnDeleteCmd)
 
+	dnModifyCmd.Flags().StringVarP(&dnModifyArgs.sockAddr, "sock-addr", "", "",
+		"dn socket address")
+	dnModifyCmd.MarkFlagRequired("sock-addr")
+	dnModifyCmd.Flags().StringVarP(&dnModifyArgs.key, "key", "", "",
+		"key to modify, one of: description, isOffline, hashCode")
+	dnModifyCmd.MarkFlagRequired("key")
+	dnModifyCmd.Flags().StringVarP(&dnModifyArgs.value, "value", "", "",
+		"value of of the key")
+	dnModifyCmd.MarkFlagRequired("value")
+	dnCmd.AddCommand(dnModifyCmd)
+
+	dnListCmd.Flags().Int64VarP(&dnListArgs.limit, "limit", "", 0,
+		"max return items")
+	dnListCmd.Flags().StringVarP(&dnListArgs.token, "token", "", "",
+		"the token returned by previous list cmd")
+	dnCmd.AddCommand(dnListCmd)
+
 	dnGetCmd.Flags().StringVarP(&dnGetArgs.sockAddr, "sock-addr", "", "",
 		"dn socket address")
 	dnGetCmd.MarkFlagRequired("sock-addr")
@@ -91,17 +133,17 @@ func init() {
 
 func (cli *client) createDn(args *dnCreateArgsStruct) string {
 	req := &pbpo.CreateDnRequest{
-		SockAddr:    dnCreateArgs.sockAddr,
-		Description: dnCreateArgs.description,
+		SockAddr:    args.sockAddr,
+		Description: args.description,
 		NvmfListener: &pbpo.NvmfListener{
-			TrType:  dnCreateArgs.trType,
-			AdrFam:  dnCreateArgs.adrFam,
-			TrAddr:  dnCreateArgs.trAddr,
-			TrSvcId: dnCreateArgs.trSvcId,
+			TrType:  args.trType,
+			AdrFam:  args.adrFam,
+			TrAddr:  args.trAddr,
+			TrSvcId: args.trSvcId,
 		},
-		Location:  dnCreateArgs.location,
-		IsOffline: dnCreateArgs.isOffline,
-		HashCode:  dnCreateArgs.hashCode,
+		Location:  args.location,
+		IsOffline: args.isOffline,
+		HashCode:  args.hashCode,
 	}
 	reply, err := cli.c.CreateDn(cli.ctx, req)
 	if err != nil {
@@ -111,14 +153,63 @@ func (cli *client) createDn(args *dnCreateArgsStruct) string {
 	}
 }
 
-func dnCreateFunc(cmd *cobra.Command, args []string) {
-	cli := newClient(rootArgs)
-	defer cli.close()
-	output := cli.createDn(dnCreateArgs)
-	fmt.Println(output)
+func (cli *client) deleteDn(args *dnDeleteArgsStruct) string {
+	req := &pbpo.DeleteDnRequest{
+		SockAddr: args.sockAddr,
+	}
+	reply, err := cli.c.DeleteDn(cli.ctx, req)
+	if err != nil {
+		return err.Error()
+	} else {
+		return cli.serialize(reply)
+	}
 }
 
-func dnDeleteFunc(cmd *cobra.Command, args []string) {
+func (cli *client) modifyDn(args *dnModifyArgsStruct) string {
+	req := &pbpo.ModifyDnRequest{}
+	req.SockAddr = args.sockAddr
+	if args.key == "description" {
+		req.Attr = &pbpo.ModifyDnRequest_Description{
+			Description: args.value,
+		}
+	} else if args.key == "isOffline" {
+		isOffline, err := strconv.ParseBool(args.value)
+		if err != nil {
+			return "Can not convert isOffline to bool: " + err.Error()
+		}
+		req.Attr = &pbpo.ModifyDnRequest_IsOffline{
+			IsOffline: isOffline,
+		}
+	} else if args.key == "hashCode" {
+		hashCode, err := strconv.ParseUint(args.value, 10, 32)
+		if err != nil {
+			return "Can not convert hashCode to uint32: " + err.Error()
+		}
+		req.Attr = &pbpo.ModifyDnRequest_HashCode{
+			HashCode: uint32(hashCode),
+		}
+	} else {
+		return "Unknonw key"
+	}
+	reply, err := cli.c.ModifyDn(cli.ctx, req)
+	if err != nil {
+		return err.Error()
+	} else {
+		return cli.serialize(reply)
+	}
+}
+
+func (cli *client) listDn(args *dnListArgsStruct) string {
+	req := &pbpo.ListDnRequest{
+		Limit: args.limit,
+		Token: args.token,
+	}
+	reply, err := cli.c.ListDn(cli.ctx, req)
+	if err != nil {
+		return err.Error()
+	} else {
+		return cli.serialize(reply)
+	}
 }
 
 func (cli *client) getDn(args *dnGetArgsStruct) string {
@@ -133,9 +224,37 @@ func (cli *client) getDn(args *dnGetArgsStruct) string {
 	}
 }
 
+func dnCreateFunc(cmd *cobra.Command, args []string) {
+	cli := newClient(rootArgs)
+	defer cli.close()
+	output := cli.createDn(dnCreateArgs)
+	cli.show(output)
+}
+
+func dnDeleteFunc(cmd *cobra.Command, args []string) {
+	cli := newClient(rootArgs)
+	defer cli.close()
+	output := cli.deleteDn(dnDeleteArgs)
+	cli.show(output)
+}
+
+func dnModifyFunc(cmd *cobra.Command, args []string) {
+	cli := newClient(rootArgs)
+	defer cli.close()
+	output := cli.modifyDn(dnModifyArgs)
+	cli.show(output)
+}
+
+func dnListFunc(cmd *cobra.Command, args []string) {
+	cli := newClient(rootArgs)
+	defer cli.close()
+	output := cli.listDn(dnListArgs)
+	cli.show(output)
+}
+
 func dnGetFunc(cmd *cobra.Command, args []string) {
 	cli := newClient(rootArgs)
 	defer cli.close()
 	output := cli.getDn(dnGetArgs)
-	fmt.Println(output)
+	cli.show(output)
 }

@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -59,6 +60,10 @@ func (cli *client) serialize(reply interface{}) string {
 	} else {
 		return string(output)
 	}
+}
+
+func (cli *client) show(output string) {
+	fmt.Println(output)
 }
 
 func newClient(args *rootArgsStruct) *client {
