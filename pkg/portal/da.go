@@ -28,7 +28,7 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 	daId := lib.NewHexStrUuid()
 	grpId := lib.NewHexStrUuid()
 	snapId := lib.NewHexStrUuid()
-	grpSize := vdSize * uint64(req.StripCnt)
+	grpSize := vdSize * uint64(req.DaConf.StripCnt)
 
 	apply := func(stm concurrency.STM) error {
 		dnList := make([]*pbds.DiskNode, 0)
@@ -233,13 +233,13 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 			Description: req.Description,
 			DaConf: &pbds.DaConf{
 				Qos: &pbds.BdevQos{
-					RwIosPerSec:    req.RwIosPerSec,
-					RwMbytesPerSec: req.RwMbytesPerSec,
-					RMbytesPerSec:  req.RMbytesPerSec,
-					WMbytesPerSec:  req.WMbytesPerSec,
+					RwIosPerSec:    req.DaConf.Qos.RwIosPerSec,
+					RwMbytesPerSec: req.DaConf.Qos.RwMbytesPerSec,
+					RMbytesPerSec:  req.DaConf.Qos.RMbytesPerSec,
+					WMbytesPerSec:  req.DaConf.Qos.WMbytesPerSec,
 				},
-				StripCnt:    req.StripCnt,
-				StripSizeKb: req.StripSizeKb,
+				StripCnt:    req.DaConf.StripCnt,
+				StripSizeKb: req.DaConf.StripSizeKb,
 			},
 			CntlrList: cntlrList,
 			GrpList:   grpList,
@@ -490,7 +490,7 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 				CntlrFeConf: &pbds.CntlrFeConf{
 					DaId:        daId,
 					DaName:      req.DaName,
-					StripSizeKb: req.StripSizeKb,
+					StripSizeKb: req.DaConf.StripSizeKb,
 					CntlrList:   cntlrList,
 				},
 				CntlrFeInfo: &pbds.CntlrFeInfo{
@@ -561,12 +561,12 @@ func (po *portalServer) createNewDa(ctx context.Context, req *pbpo.CreateDaReque
 		}
 	}()
 
-	vdSize := lib.DivCeil(req.PhysicalSize, uint64(req.StripCnt))
+	vdSize := lib.DivCeil(req.PhysicalSize, uint64(req.DaConf.StripCnt))
 	qos := &lib.BdevQos{
-		RwIosPerSec:    lib.DivCeil(req.RwIosPerSec, uint64(req.StripCnt)),
-		RwMbytesPerSec: lib.DivCeil(req.RwMbytesPerSec, uint64(req.StripCnt)),
-		RMbytesPerSec:  lib.DivCeil(req.RMbytesPerSec, uint64(req.StripCnt)),
-		WMbytesPerSec:  lib.DivCeil(req.WMbytesPerSec, uint64(req.StripCnt)),
+		RwIosPerSec:    lib.DivCeil(req.DaConf.Qos.RwIosPerSec, uint64(req.DaConf.StripCnt)),
+		RwMbytesPerSec: lib.DivCeil(req.DaConf.Qos.RwMbytesPerSec, uint64(req.DaConf.StripCnt)),
+		RMbytesPerSec:  lib.DivCeil(req.DaConf.Qos.RMbytesPerSec, uint64(req.DaConf.StripCnt)),
+		WMbytesPerSec:  lib.DivCeil(req.DaConf.Qos.WMbytesPerSec, uint64(req.DaConf.StripCnt)),
 	}
 
 	retryCnt := 0
@@ -577,7 +577,7 @@ func (po *portalServer) createNewDa(ctx context.Context, req *pbpo.CreateDaReque
 			logger.Error("Exceed max retry cnt")
 			return dnList, cnList, err
 		}
-		dnPdCandList, err := po.alloc.AllocDnPd(ctx, req.StripCnt, vdSize, qos)
+		dnPdCandList, err := po.alloc.AllocDnPd(ctx, req.DaConf.StripCnt, vdSize, qos)
 		if err != nil {
 			logger.Error("AllocateDnPd err: %v", err)
 			return dnList, cnList, err
@@ -619,9 +619,13 @@ func (po *portalServer) CreateDa(ctx context.Context, req *pbpo.CreateDaRequest)
 		invalidParamMsg = "PhysicalSize is zero"
 	} else if req.CntlrCnt == 0 {
 		invalidParamMsg = "CntlrCnt is zero"
-	} else if req.StripCnt == 0 {
+	} else if req.DaConf == nil {
+		invalidParamMsg = "DaConf is empty"
+	} else if req.DaConf.Qos == nil {
+		invalidParamMsg = "Qos is empty"
+	} else if req.DaConf.StripCnt == 0 {
 		invalidParamMsg = "StripCnt is zero"
-	} else if req.StripSizeKb == 0 {
+	} else if req.DaConf.StripSizeKb == 0 {
 		invalidParamMsg = "StripSizeKb is zero"
 	}
 	if invalidParamMsg != "" {

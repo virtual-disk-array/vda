@@ -457,12 +457,7 @@ message CreateDaRequest {
   uint64 size = 3;
   uint64 physical_size = 4;
   uint32 cntlr_cnt = 5;
-  uint32 strip_cnt = 6;
-  uint32 strip_size_kb = 7;
-  uint64 rw_ios_per_sec = 8;
-  uint64 rw_mbytes_per_sec = 9;
-  uint64 r_mbytes_per_sec = 10;
-  uint64 w_mbytes_per_sec = 11;
+  DaConf daConf = 6;
 }
 
 message CreateDaReply {
