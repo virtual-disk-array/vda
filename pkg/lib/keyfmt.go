@@ -110,7 +110,7 @@ func (kf *KeyFmt) DnListKey(hashCode uint32, sockAddr string) string {
 func (kf *KeyFmt) DecodeDnListKey(key string) (uint32, string, error) {
 	prefix := kf.DnListPrefix()
 	if !strings.HasPrefix(key, prefix) {
-		msg := fmt.Sprintf("Invalid DnListkey: %s", key)
+		msg := fmt.Sprintf("Invalid DnListKey: %s", key)
 		return uint32(0), "", &InvalidKeyError{msg}
 	}
 	items := strings.Split(key[len(prefix):], "@")
@@ -135,7 +135,7 @@ func (kf *KeyFmt) CnListKey(hashCode uint32, sockAddr string) string {
 func (kf *KeyFmt) DecodeCnListKey(key string) (uint32, string, error) {
 	prefix := kf.CnListPrefix()
 	if !strings.HasPrefix(key, prefix) {
-		msg := fmt.Sprintf("Invalid CnListkey: %s", key)
+		msg := fmt.Sprintf("Invalid CnListKey: %s", key)
 		return uint32(0), "", &InvalidKeyError{msg}
 	}
 	items := strings.Split(key[len(prefix):], "@")
@@ -149,8 +149,21 @@ func (kf *KeyFmt) DecodeCnListKey(key string) (uint32, string, error) {
 	return uint32(hashCode), items[1], nil
 }
 
+func (kf *KeyFmt) DaListPrefix() string {
+	return fmt.Sprintf("/%s/list/da/", kf.prefix)
+}
+
 func (kf *KeyFmt) DaListKey(daName string) string {
-	return fmt.Sprintf("/%s/list/da/%s", kf.prefix, daName)
+	return fmt.Sprintf("%s%s", kf.DaListPrefix(), daName)
+}
+
+func (kf *KeyFmt) DecodeDaListKey(key string) (string, error) {
+	prefix := kf.DaListPrefix()
+	if !strings.HasPrefix(key, prefix) {
+		msg := fmt.Sprintf("Invalid DaListKey: %s", key)
+		return "", &InvalidKeyError{msg}
+	}
+	return key[len(prefix):], nil
 }
 
 func (kf *KeyFmt) DnErrKey(hashCode uint32, sockAddr string) string {

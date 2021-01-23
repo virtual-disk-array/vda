@@ -2,8 +2,10 @@ package portal
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 
+	"github.com/coreos/etcd/clientv3"
 	"github.com/coreos/etcd/clientv3/concurrency"
 	"github.com/golang/protobuf/proto"
 
@@ -1032,6 +1034,186 @@ func (po *portalServer) ModifyDa(ctx context.Context, req *pbpo.ModifyDaRequest)
 				ReplyMsg:  "Unknow attr",
 			},
 		}, nil
+	}
+}
+
+func (po *portalServer) listDaWithoutToken(ctx context.Context, limit int64) (
+	*pbpo.ListDaReply, error) {
+	opts := []clientv3.OpOption{
+		clientv3.WithSort(clientv3.SortByKey, clientv3.SortAscend),
+		clientv3.WithLimit(limit),
+		clientv3.WithPrefix(),
+	}
+	kv := clientv3.NewKV(po.etcdCli)
+	prefix := po.kf.DaListPrefix()
+	gr, err := kv.Get(ctx, prefix, opts...)
+	if err != nil {
+		return &pbpo.ListDaReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInternalErrCode,
+				ReplyMsg:  err.Error(),
+			},
+		}, nil
+	}
+	daSummaryList := make([]*pbpo.DaSummary, 0)
+	for _, item := range gr.Kvs {
+		daName, err := po.kf.DecodeDaListKey(string(item.Key))
+		if err != nil {
+			return &pbpo.ListDaReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: lib.PortalInternalErrCode,
+					ReplyMsg:  err.Error(),
+				},
+			}, nil
+		}
+		dsDaSummary := &pbds.DaSummary{}
+		if err := proto.Unmarshal(item.Value, dsDaSummary); err != nil {
+			return &pbpo.ListDaReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: lib.PortalInternalErrCode,
+					ReplyMsg:  err.Error(),
+				},
+			}, nil
+		}
+		poDaSummary := &pbpo.DaSummary{
+			DaName:      daName,
+			Description: dsDaSummary.Description,
+		}
+		daSummaryList = append(daSummaryList, poDaSummary)
+	}
+	token := ""
+	if len(gr.Kvs) > 0 {
+		lastKey := gr.Kvs[len(gr.Kvs)-1].Key
+		token = base64.StdEncoding.EncodeToString(lastKey)
+	}
+	return &pbpo.ListDaReply{
+		ReplyInfo: &pbpo.ReplyInfo{
+			ReqId:     lib.GetReqId(ctx),
+			ReplyCode: lib.PortalSucceedCode,
+			ReplyMsg:  lib.PortalSucceedMsg,
+		},
+		Token:         token,
+		DaSummaryList: daSummaryList,
+	}, nil
+}
+
+func (po *portalServer) listDaWithToken(ctx context.Context, limit int64,
+	token string) (*pbpo.ListDaReply, error) {
+	opts := []clientv3.OpOption{
+		clientv3.WithSort(clientv3.SortByKey, clientv3.SortAscend),
+		clientv3.WithLimit(limit),
+		clientv3.WithFromKey(),
+	}
+	kv := clientv3.NewKV(po.etcdCli)
+	lastKey, err := base64.StdEncoding.DecodeString(token)
+	if err != nil {
+		return &pbpo.ListDaReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInvalidParamCode,
+				ReplyMsg:  err.Error(),
+			},
+		}, nil
+	}
+	gr, err := kv.Get(ctx, string(lastKey), opts...)
+	if err != nil {
+		return &pbpo.ListDaReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInternalErrCode,
+				ReplyMsg:  err.Error(),
+			},
+		}, nil
+	}
+	daSummaryList := make([]*pbpo.DaSummary, 0)
+	if len(gr.Kvs) <= 1 {
+		return &pbpo.ListDaReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalSucceedCode,
+				ReplyMsg:  lib.PortalSucceedMsg,
+			},
+			Token:         "",
+			DaSummaryList: daSummaryList,
+		}, nil
+	}
+	for _, item := range gr.Kvs[1:] {
+		daName, err := po.kf.DecodeDaListKey(string(item.Key))
+		if err != nil {
+			if serr, ok := err.(*lib.InvalidKeyError); ok {
+				logger.Info("listDaWithToken InvalidKeyError: %v", serr)
+				break
+			} else {
+				return &pbpo.ListDaReply{
+					ReplyInfo: &pbpo.ReplyInfo{
+						ReqId:     lib.GetReqId(ctx),
+						ReplyCode: lib.PortalInternalErrCode,
+						ReplyMsg:  err.Error(),
+					},
+				}, nil
+			}
+		}
+		dsDaSummary := &pbds.DaSummary{}
+		if err := proto.Unmarshal(item.Value, dsDaSummary); err != nil {
+			return &pbpo.ListDaReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: lib.PortalInternalErrCode,
+					ReplyMsg:  err.Error(),
+				},
+			}, nil
+		}
+		if dsDaSummary.DaName != daName {
+			logger.Error("daName mismatch: %v %s", dsDaSummary, daName)
+			return &pbpo.ListDaReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: lib.PortalInternalErrCode,
+					ReplyMsg:  "daName mismatch",
+				},
+			}, nil
+		}
+		poDaSummary := &pbpo.DaSummary{
+			DaName:      dsDaSummary.DaName,
+			Description: dsDaSummary.Description,
+		}
+		daSummaryList = append(daSummaryList, poDaSummary)
+	}
+	nextToken := base64.StdEncoding.EncodeToString(gr.Kvs[len(gr.Kvs)-1].Key)
+	return &pbpo.ListDaReply{
+		ReplyInfo: &pbpo.ReplyInfo{
+			ReqId:     lib.GetReqId(ctx),
+			ReplyCode: lib.PortalSucceedCode,
+			ReplyMsg:  lib.PortalSucceedMsg,
+		},
+		Token:         nextToken,
+		DaSummaryList: daSummaryList,
+	}, nil
+}
+
+func (po *portalServer) ListDa(ctx context.Context, req *pbpo.ListDaRequest) (
+	*pbpo.ListDaReply, error) {
+	limit := lib.PortalDefaultListLimit
+	if req.Limit > lib.PortalMaxListLimit {
+		invalidParamMsg := fmt.Sprintf("Limit is larger than %d",
+			lib.PortalMaxListLimit)
+		return &pbpo.ListDaReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInvalidParamCode,
+				ReplyMsg:  invalidParamMsg,
+			},
+		}, nil
+	} else if req.Limit != 0 {
+		limit = req.Limit
+	}
+	if req.Token == "" {
+		return po.listDaWithoutToken(ctx, limit)
+	} else {
+		return po.listDaWithToken(ctx, limit, req.Token)
 	}
 }
 
