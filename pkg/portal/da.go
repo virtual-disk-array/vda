@@ -1104,7 +1104,7 @@ func (po *portalServer) listDaWithToken(ctx context.Context, limit int64,
 	token string) (*pbpo.ListDaReply, error) {
 	opts := []clientv3.OpOption{
 		clientv3.WithSort(clientv3.SortByKey, clientv3.SortAscend),
-		clientv3.WithLimit(limit),
+		clientv3.WithLimit(limit + 1),
 		clientv3.WithFromKey(),
 	}
 	kv := clientv3.NewKV(po.etcdCli)

@@ -6,11 +6,16 @@ import (
 )
 
 var (
+	debugLogger   *log.Logger
 	infoLogger    *log.Logger
 	warningLogger *log.Logger
 	errorLogger   *log.Logger
 	fatalLogger   *log.Logger
 )
+
+func Debug(format string, v ...interface{}) {
+	debugLogger.Printf(format, v...)
+}
 
 func Info(format string, v ...interface{}) {
 	infoLogger.Printf(format, v...)
@@ -30,6 +35,7 @@ func Fatal(format string, v ...interface{}) {
 
 func init() {
 	flags := log.Ldate | log.Ltime | log.Lmicroseconds | log.LUTC | log.Lmsgprefix
+	debugLogger = log.New(os.Stderr, "D | ", flags)
 	infoLogger = log.New(os.Stderr, "I | ", flags)
 	warningLogger = log.New(os.Stderr, "W | ", flags)
 	errorLogger = log.New(os.Stderr, "E | ", flags)

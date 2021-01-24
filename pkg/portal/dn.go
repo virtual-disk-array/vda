@@ -595,7 +595,7 @@ func (po *portalServer) listDnWithToken(ctx context.Context, limit int64,
 	token string) (*pbpo.ListDnReply, error) {
 	opts := []clientv3.OpOption{
 		clientv3.WithSort(clientv3.SortByKey, clientv3.SortAscend),
-		clientv3.WithLimit(limit),
+		clientv3.WithLimit(limit + 1),
 		clientv3.WithFromKey(),
 	}
 	kv := clientv3.NewKV(po.etcdCli)
