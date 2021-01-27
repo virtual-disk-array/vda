@@ -10,6 +10,7 @@ service Portal {
   rpc ModifyDn(ModifyDnRequest) returns(ModifyDnReply) {}
   rpc ListDn(ListDnRequest) returns(ListDnReply) {}
   rpc GetDn(GetDnRequest) returns(GetDnReply) {}
+  rpc SyncupDn(SyncupDnRequest) returns (SyncupDnReply) {}
   rpc CreatePd(CreatePdRequest) returns(CreatePdReply) {}
   rpc DeletePd(DeletePdRequest) returns(DeletePdReply) {}
   rpc ModifyPd(ModifyPdRequest) returns(ModifyPdReply) {}
@@ -20,6 +21,7 @@ service Portal {
   rpc ModifyCn(ModifyCnRequest) returns(ModifyCnReply) {}
   rpc ListCn(ListCnRequest) returns (ListCnReply) {}
   rpc GetCn(GetCnRequest) returns (GetCnReply) {}
+  rpc SyncupCn(SyncupCnRequest) returns (SyncupCnReply) {}
   rpc CreateDa(CreateDaRequest) returns (CreateDaReply) {}
   rpc DeleteDa(DeleteDaRequest) returns (DeleteDaReply) {}
   rpc ModifyDa(ModifyDaRequest) returns (ModifyDaReply) {}
@@ -36,6 +38,22 @@ message ReplyInfo {
   string req_id = 1;
   uint32 reply_code = 2;
   string reply_msg = 3;
+}
+
+message SyncupDnRequest {
+  string sock_addr = 1;
+}
+
+message SyncupDnReply {
+  ReplyInfo reply_info = 1;
+}
+
+message SyncupCnRequest {
+  string sock_addr = 1;
+}
+
+message SyncupCnReply {
+  ReplyInfo reply_info = 1;
 }
 
 message ErrInfo {

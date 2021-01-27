@@ -889,3 +889,30 @@ func (po *portalServer) GetCn(ctx context.Context, req *pbpo.GetCnRequest) (
 		}, nil
 	}
 }
+
+func (po *portalServer) SyncupCn(ctx context.Context, req *pbpo.SyncupCnRequest) (
+	*pbpo.SyncupCnReply, error) {
+	invalidParamMsg := ""
+	if req.SockAddr == "" {
+		invalidParamMsg = "SockAddr is empty"
+	}
+	if invalidParamMsg != "" {
+		return &pbpo.SyncupCnReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInvalidParamCode,
+				ReplyMsg:  invalidParamMsg,
+			},
+		}, nil
+	}
+
+	po.sm.SyncupCn(req.SockAddr, ctx)
+
+	return &pbpo.SyncupCnReply{
+		ReplyInfo: &pbpo.ReplyInfo{
+			ReqId:     lib.GetReqId(ctx),
+			ReplyCode: lib.PortalSucceedCode,
+			ReplyMsg:  lib.PortalSucceedMsg,
+		},
+	}, nil
+}

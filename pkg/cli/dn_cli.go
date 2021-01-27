@@ -39,6 +39,10 @@ type dnGetArgsStruct struct {
 	sockAddr string
 }
 
+type dnSyncupArgsStruct struct {
+	sockAddr string
+}
+
 var (
 	dnCmd = &cobra.Command{
 		Use: "dn",
@@ -78,6 +82,13 @@ var (
 		Run:  dnGetFunc,
 	}
 	dnGetArgs = &dnGetArgsStruct{}
+
+	dnSyncupCmd = &cobra.Command{
+		Use:  "syncup",
+		Args: cobra.MaximumNArgs(0),
+		Run:  dnSyncupFunc,
+	}
+	dnSyncupArgs = &dnSyncupArgsStruct{}
 )
 
 func init() {
@@ -128,6 +139,11 @@ func init() {
 		"dn socket address")
 	dnGetCmd.MarkFlagRequired("sock-addr")
 	dnCmd.AddCommand(dnGetCmd)
+
+	dnSyncupCmd.Flags().StringVarP(&dnSyncupArgs.sockAddr, "sock-addr", "", "",
+		"dn socket address")
+	dnSyncupCmd.MarkFlagRequired("sock-addr")
+	dnCmd.AddCommand(dnSyncupCmd)
 }
 
 func (cli *client) createDn(args *dnCreateArgsStruct) string {
@@ -213,9 +229,21 @@ func (cli *client) listDn(args *dnListArgsStruct) string {
 
 func (cli *client) getDn(args *dnGetArgsStruct) string {
 	req := &pbpo.GetDnRequest{
-		SockAddr: dnGetArgs.sockAddr,
+		SockAddr: args.sockAddr,
 	}
 	reply, err := cli.c.GetDn(cli.ctx, req)
+	if err != nil {
+		return err.Error()
+	} else {
+		return cli.serialize(reply)
+	}
+}
+
+func (cli *client) syncupDn(args *dnSyncupArgsStruct) string {
+	req := &pbpo.SyncupDnRequest{
+		SockAddr: args.sockAddr,
+	}
+	reply, err := cli.c.SyncupDn(cli.ctx, req)
 	if err != nil {
 		return err.Error()
 	} else {
@@ -255,5 +283,12 @@ func dnGetFunc(cmd *cobra.Command, args []string) {
 	cli := newClient(rootArgs)
 	defer cli.close()
 	output := cli.getDn(dnGetArgs)
+	cli.show(output)
+}
+
+func dnSyncupFunc(cmd *cobra.Command, args []string) {
+	cli := newClient(rootArgs)
+	defer cli.close()
+	output := cli.syncupDn(dnSyncupArgs)
 	cli.show(output)
 }

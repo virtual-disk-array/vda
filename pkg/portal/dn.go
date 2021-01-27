@@ -773,3 +773,30 @@ func (po *portalServer) GetDn(ctx context.Context, req *pbpo.GetDnRequest) (
 		}, nil
 	}
 }
+
+func (po *portalServer) SyncupDn(ctx context.Context, req *pbpo.SyncupDnRequest) (
+	*pbpo.SyncupDnReply, error) {
+	invalidParamMsg := ""
+	if req.SockAddr == "" {
+		invalidParamMsg = "SockAddr is empty"
+	}
+	if invalidParamMsg != "" {
+		return &pbpo.SyncupDnReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInvalidParamCode,
+				ReplyMsg:  invalidParamMsg,
+			},
+		}, nil
+	}
+
+	po.sm.SyncupDn(req.SockAddr, ctx)
+
+	return &pbpo.SyncupDnReply{
+		ReplyInfo: &pbpo.ReplyInfo{
+			ReqId:     lib.GetReqId(ctx),
+			ReplyCode: lib.PortalSucceedCode,
+			ReplyMsg:  lib.PortalSucceedMsg,
+		},
+	}, nil
+}
