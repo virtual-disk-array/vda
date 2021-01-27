@@ -23,7 +23,7 @@ func (ci connInterceptor) Read(b []byte) (n int, err error) {
 		logger.Error("SPDk read err: %v", err)
 	} else {
 		logger.Info("SPDK read bytes: %d", n)
-		logger.Info("SPDK read data: %s", b)
+		logger.Info("SPDK read data: %s", b[:n])
 	}
 	return n, err
 }
