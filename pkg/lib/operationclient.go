@@ -598,7 +598,7 @@ func (oc *OperationClient) GetLvsInfo(lvsName string) (*LvsInfo, error) {
 			BaseBdev          string `json:"base_bdev"`
 			FreeClusters      uint64 `json:"free_clusters"`
 			ClusterSize       uint64 `json:"cluster_size"`
-			TotalDataClusters uint64 `json:"total_data_cluster"`
+			TotalDataClusters uint64 `json:"total_data_clusters"`
 			BlockSize         uint64 `json:"block_size"`
 			Name              string `json:"name"`
 		}

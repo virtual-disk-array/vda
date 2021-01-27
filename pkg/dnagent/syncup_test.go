@@ -42,13 +42,13 @@ func mockBdevGetBdevs(params interface{}) (*mockspdk.SpdkErr, interface{}) {
 func mockBdevLvolGetLvstores(params interface{}) (*mockspdk.SpdkErr, interface{}) {
 	return nil, []map[string]interface{}{
 		map[string]interface{}{
-			"uuid":               "xxx",
-			"base_bdev":          "xxx",
-			"free_clusters":      freeCluster,
-			"cluster_size":       clusterSize,
-			"total_data_cluster": totalDataCluster,
-			"block_size":         blockSize,
-			"name":               "xxx",
+			"uuid":                "xxx",
+			"base_bdev":           "xxx",
+			"free_clusters":       freeCluster,
+			"cluster_size":        clusterSize,
+			"total_data_clusters": totalDataCluster,
+			"block_size":          blockSize,
+			"name":                "xxx",
 		},
 	}
 }
