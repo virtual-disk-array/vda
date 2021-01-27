@@ -344,7 +344,7 @@ message CreatePdRequest {
   string pd_name = 2;
   string description = 3;
   bool is_offline = 4;
-  BdevQos bdev_qos = 5;
+  BdevQos qos = 5;
   oneof bdev_type {
     BdevMalloc bdev_malloc = 6;
     BdevAio bdev_aio = 7;

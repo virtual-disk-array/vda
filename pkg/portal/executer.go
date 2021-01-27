@@ -42,13 +42,13 @@ func launchPortal(cmd *cobra.Command, args []string) {
 	etcdEndpoints := strings.Split(portalArgs.etcdEndpoints, ",")
 	etcdCli, err := clientv3.New(clientv3.Config{Endpoints: etcdEndpoints})
 	if err != nil {
-		logger.Fatal("Create etcd client failed: %v", err)
+		logger.Fatal("Create etcd client err: %v", err)
 	}
 	defer etcdCli.Close()
 
 	lis, err := net.Listen(portalArgs.portalNetwork, portalArgs.portalAddress)
 	if err != nil {
-		logger.Fatal("listen %v %v failed: %v",
+		logger.Fatal("listen %v %v err: %v",
 			portalArgs.portalNetwork, portalArgs.portalAddress, err)
 	}
 
@@ -61,12 +61,12 @@ func launchPortal(cmd *cobra.Command, args []string) {
 	pbpo.RegisterPortalServer(s, po)
 	logger.Info("Launch portal server")
 	if err := s.Serve(lis); err != nil {
-		logger.Fatal("Launch portal server failed: %v", err)
+		logger.Fatal("Launch portal server err: %v", err)
 	}
 }
 
 func Execute() {
 	if err := portalCmd.Execute(); err != nil {
-		logger.Fatal("Cmd execute failed: %v", err)
+		logger.Fatal("Cmd execute err: %v", err)
 	}
 }

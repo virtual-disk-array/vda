@@ -23,16 +23,27 @@ type KeyFmt struct {
 	prefix string
 }
 
+func (kf *KeyFmt) DnEntityPrefix() string {
+	return fmt.Sprintf("/%s/dn/", kf.prefix)
+}
 func (kf *KeyFmt) DnEntityKey(sockAddr string) string {
-	return fmt.Sprintf("/%s/dn/%s", kf.prefix, sockAddr)
+	return fmt.Sprintf("%s%s", kf.DnEntityPrefix(), sockAddr)
+}
+
+func (kf *KeyFmt) CnEntityPrefix() string {
+	return fmt.Sprintf("/%s/cn/", kf.prefix)
 }
 
 func (kf *KeyFmt) CnEntityKey(sockAddr string) string {
-	return fmt.Sprintf("/%s/cn/%s", kf.prefix, sockAddr)
+	return fmt.Sprintf("%s%s", kf.CnEntityPrefix(), sockAddr)
+}
+
+func (kf *KeyFmt) DaEntityPrefix(sockAddr string) string {
+	return fmt.Sprintf("/%s/da/", kf.prefix)
 }
 
 func (kf *KeyFmt) DaEntityKey(daName string) string {
-	return fmt.Sprintf("/%s/da/%s", kf.prefix, daName)
+	return fmt.Sprintf("%s%s", kf.DnEntityPrefix(), daName)
 }
 
 func (kf *KeyFmt) DnCapPrefix() string {
@@ -166,12 +177,20 @@ func (kf *KeyFmt) DecodeDaListKey(key string) (string, error) {
 	return key[len(prefix):], nil
 }
 
+func (kf *KeyFmt) DnErrPrefix() string {
+	return fmt.Sprintf("/%s/error/dn/", kf.prefix)
+}
+
 func (kf *KeyFmt) DnErrKey(hashCode uint32, sockAddr string) string {
-	return fmt.Sprintf("/%s/error/dn/%08x@%s", kf.prefix, hashCode, sockAddr)
+	return fmt.Sprintf("%s%08x@%s", kf.DnErrPrefix(), hashCode, sockAddr)
+}
+
+func (kf *KeyFmt) CnErrPrefix() string {
+	return fmt.Sprintf("/%s/error/cn/", kf.prefix)
 }
 
 func (kf *KeyFmt) CnErrKey(hashCode uint32, sockAddr string) string {
-	return fmt.Sprintf("/%s/error/cn/%08x@%s", kf.prefix, hashCode, sockAddr)
+	return fmt.Sprintf("%s%08x@%s", kf.CnErrPrefix(), hashCode, sockAddr)
 }
 
 func (kf *KeyFmt) AllocLockPath() string {

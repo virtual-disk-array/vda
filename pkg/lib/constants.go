@@ -3,13 +3,17 @@ package lib
 const (
 	DefaultEtcdPrefix = "vda"
 
-	PortalSucceedCode       = 1
-	PortalSucceedMsg        = "succeed"
-	PortalInternalErrCode   = 2
-	PortalDupResErrCode     = 3
-	PortalUnknownResErrCode = 4
-	PortalInvalidParamCode  = 5
-	PortalResBusyErrCode    = 6
+	PortalSucceedCode          = 1
+	PortalSucceedMsg           = "succeed"
+	PortalInternalErrCode      = 2
+	PortalDupResErrCode        = 3
+	PortalUnknownResErrCode    = 4
+	PortalInvalidParamCode     = 5
+	PortalResBusyErrCode       = 6
+	PortalResRevErrCode        = 7
+	PortalUnknownKeyTypeCode   = 8
+	PortalJsonToMessageErrCode = 9
+	PortalMessageToByteErrCode = 10
 
 	DnSucceedCode   = 1
 	DnSucceedMsg    = "succeed"

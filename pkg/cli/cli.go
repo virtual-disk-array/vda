@@ -20,7 +20,7 @@ type rootArgsStruct struct {
 
 var (
 	rootCmd = &cobra.Command{
-		Use:   "vdacli",
+		Use:   "vda_cli",
 		Short: "vda cli",
 		Long:  `vda cli`,
 	}
@@ -33,6 +33,9 @@ func init() {
 	rootCmd.PersistentFlags().IntVarP(
 		&rootArgs.portalTimeout, "portal-timeout", "", 30, "portal timeout")
 	rootCmd.AddCommand(dnCmd)
+	rootCmd.AddCommand(pdCmd)
+	rootCmd.AddCommand(cnCmd)
+	rootCmd.AddCommand(daCmd)
 }
 
 func Execute() {

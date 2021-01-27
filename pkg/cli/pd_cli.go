@@ -152,7 +152,7 @@ func (cli *client) createPd(args *pdCreateArgsStruct) string {
 		PdName:      args.pdName,
 		Description: args.description,
 		IsOffline:   args.isOffline,
-		BdevQos: &pbpo.BdevQos{
+		Qos: &pbpo.BdevQos{
 			RwIosPerSec:    args.rwIosPerSec,
 			RwMbytesPerSec: args.rwMbytesPerSec,
 			RMbytesPerSec:  args.rMbytesPerSec,

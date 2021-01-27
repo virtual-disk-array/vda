@@ -74,11 +74,32 @@ func (po *portalServer) CreatePd(ctx context.Context, req *pbpo.CreatePdRequest)
 		},
 	}
 
+	cap := &pbds.PdCapacity{
+		TotalSize: uint64(0),
+		FreeSize:  uint64(0),
+		TotalQos: &pbds.BdevQos{
+			RwIosPerSec:    req.Qos.RwIosPerSec,
+			RwMbytesPerSec: req.Qos.RwMbytesPerSec,
+			RMbytesPerSec:  req.Qos.RMbytesPerSec,
+			WMbytesPerSec:  req.Qos.WMbytesPerSec,
+		},
+		FreeQos: &pbds.BdevQos{
+			RwIosPerSec:    req.Qos.RwIosPerSec,
+			RwMbytesPerSec: req.Qos.RwMbytesPerSec,
+			RMbytesPerSec:  req.Qos.RMbytesPerSec,
+			WMbytesPerSec:  req.Qos.WMbytesPerSec,
+		},
+	}
+
+	vdBeList := make([]*pbds.VdBackend, 0)
+
 	physicalDisk := &pbds.PhysicalDisk{
-		PdId:   pdId,
-		PdName: req.PdName,
-		PdConf: pdConf,
-		PdInfo: pdInfo,
+		PdId:     pdId,
+		PdName:   req.PdName,
+		PdConf:   pdConf,
+		PdInfo:   pdInfo,
+		Capacity: cap,
+		VdBeList: vdBeList,
 	}
 
 	dnEntityKey := po.kf.DnEntityKey(req.SockAddr)
