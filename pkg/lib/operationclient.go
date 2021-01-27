@@ -749,7 +749,7 @@ func (oc *OperationClient) CreatePdMalloc(name string, size uint64) error {
 	params := &struct {
 		Name      string `json:"name"`
 		BlockSize uint64 `json:"block_size"`
-		NumBlocks uint64
+		NumBlocks uint64 `json:"num_blocks"`
 	}{
 		Name:      name,
 		BlockSize: blockSize,
