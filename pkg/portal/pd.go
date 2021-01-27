@@ -657,24 +657,53 @@ func (po *portalServer) GetPd(ctx context.Context, req *pbpo.GetPdRequest) (
 			}, nil
 		}
 	} else {
-		var physicalDisk *pbpo.PhysicalDisk
-		physicalDisk.PdId = targetPd.PdId
-		physicalDisk.PdName = targetPd.PdName
-		physicalDisk.Description = targetPd.PdConf.Description
-		physicalDisk.IsOffline = targetPd.PdConf.IsOffline
-		physicalDisk.TotalSize = targetPd.Capacity.TotalSize
-		physicalDisk.FreeSize = targetPd.Capacity.FreeSize
-		physicalDisk.TotalQos = &pbpo.BdevQos{
-			RwIosPerSec:    targetPd.Capacity.TotalQos.RwIosPerSec,
-			RwMbytesPerSec: targetPd.Capacity.TotalQos.RwMbytesPerSec,
-			RMbytesPerSec:  targetPd.Capacity.TotalQos.RMbytesPerSec,
-			WMbytesPerSec:  targetPd.Capacity.TotalQos.WMbytesPerSec,
+		vdBeList := make([]*pbpo.VdBackend, 0)
+		for _, dsVdBe := range targetPd.VdBeList {
+			poVdBe := &pbpo.VdBackend{
+				VdId:   dsVdBe.VdId,
+				DaName: dsVdBe.VdBeConf.DaName,
+				GrpIdx: dsVdBe.VdBeConf.GrpIdx,
+				VdIdx:  dsVdBe.VdBeConf.VdIdx,
+				Size:   dsVdBe.VdBeConf.Size,
+				Qos: &pbpo.BdevQos{
+					RwIosPerSec:    dsVdBe.VdBeConf.Qos.RwIosPerSec,
+					RwMbytesPerSec: dsVdBe.VdBeConf.Qos.RwMbytesPerSec,
+					RMbytesPerSec:  dsVdBe.VdBeConf.Qos.RMbytesPerSec,
+					WMbytesPerSec:  dsVdBe.VdBeConf.Qos.WMbytesPerSec,
+				},
+				ErrInfo: &pbpo.ErrInfo{
+					IsErr:     dsVdBe.VdBeInfo.ErrInfo.IsErr,
+					ErrMsg:    dsVdBe.VdBeInfo.ErrInfo.ErrMsg,
+					Timestamp: dsVdBe.VdBeInfo.ErrInfo.Timestamp,
+				},
+			}
+			vdBeList = append(vdBeList, poVdBe)
 		}
-		physicalDisk.FreeQos = &pbpo.BdevQos{
-			RwIosPerSec:    targetPd.Capacity.FreeQos.RwIosPerSec,
-			RwMbytesPerSec: targetPd.Capacity.FreeQos.RwMbytesPerSec,
-			RMbytesPerSec:  targetPd.Capacity.FreeQos.RMbytesPerSec,
-			WMbytesPerSec:  targetPd.Capacity.FreeQos.WMbytesPerSec,
+		physicalDisk := &pbpo.PhysicalDisk{
+			PdId:        targetPd.PdId,
+			PdName:      targetPd.PdName,
+			Description: targetPd.PdConf.Description,
+			IsOffline:   targetPd.PdConf.IsOffline,
+			TotalSize:   targetPd.Capacity.TotalSize,
+			FreeSize:    targetPd.Capacity.FreeSize,
+			TotalQos: &pbpo.BdevQos{
+				RwIosPerSec:    targetPd.Capacity.TotalQos.RwIosPerSec,
+				RwMbytesPerSec: targetPd.Capacity.TotalQos.RwMbytesPerSec,
+				RMbytesPerSec:  targetPd.Capacity.TotalQos.RMbytesPerSec,
+				WMbytesPerSec:  targetPd.Capacity.TotalQos.WMbytesPerSec,
+			},
+			FreeQos: &pbpo.BdevQos{
+				RwIosPerSec:    targetPd.Capacity.FreeQos.RwIosPerSec,
+				RwMbytesPerSec: targetPd.Capacity.FreeQos.RwMbytesPerSec,
+				RMbytesPerSec:  targetPd.Capacity.FreeQos.RMbytesPerSec,
+				WMbytesPerSec:  targetPd.Capacity.FreeQos.WMbytesPerSec,
+			},
+			ErrInfo: &pbpo.ErrInfo{
+				IsErr:     targetPd.PdInfo.ErrInfo.IsErr,
+				ErrMsg:    targetPd.PdInfo.ErrInfo.ErrMsg,
+				Timestamp: targetPd.PdInfo.ErrInfo.Timestamp,
+			},
+			VdBeList: vdBeList,
 		}
 		switch x := targetPd.PdConf.BdevType.(type) {
 		case *pbds.PdConf_BdevMalloc:
@@ -705,32 +734,6 @@ func (po *portalServer) GetPd(ctx context.Context, req *pbpo.GetPdRequest) (
 				},
 			}, nil
 		}
-		physicalDisk.ErrInfo.IsErr = targetPd.PdInfo.ErrInfo.IsErr
-		physicalDisk.ErrInfo.ErrMsg = targetPd.PdInfo.ErrInfo.ErrMsg
-		physicalDisk.ErrInfo.Timestamp = targetPd.PdInfo.ErrInfo.Timestamp
-		vdBeList := make([]*pbpo.VdBackend, 0)
-		for _, dsVdBe := range targetPd.VdBeList {
-			poVdBe := &pbpo.VdBackend{
-				VdId:   dsVdBe.VdId,
-				DaName: dsVdBe.VdBeConf.DaName,
-				GrpIdx: dsVdBe.VdBeConf.GrpIdx,
-				VdIdx:  dsVdBe.VdBeConf.VdIdx,
-				Size:   dsVdBe.VdBeConf.Size,
-				Qos: &pbpo.BdevQos{
-					RwIosPerSec:    dsVdBe.VdBeConf.Qos.RwIosPerSec,
-					RwMbytesPerSec: dsVdBe.VdBeConf.Qos.RwMbytesPerSec,
-					RMbytesPerSec:  dsVdBe.VdBeConf.Qos.RMbytesPerSec,
-					WMbytesPerSec:  dsVdBe.VdBeConf.Qos.WMbytesPerSec,
-				},
-				ErrInfo: &pbpo.ErrInfo{
-					IsErr:     dsVdBe.VdBeInfo.ErrInfo.IsErr,
-					ErrMsg:    dsVdBe.VdBeInfo.ErrInfo.ErrMsg,
-					Timestamp: dsVdBe.VdBeInfo.ErrInfo.Timestamp,
-				},
-			}
-			vdBeList = append(vdBeList, poVdBe)
-		}
-		physicalDisk.VdBeList = vdBeList
 		return &pbpo.GetPdReply{
 			ReplyInfo: &pbpo.ReplyInfo{
 				ReqId:     lib.GetReqId(ctx),
