@@ -145,22 +145,239 @@ func (adm *admin) dump(args *dumpArgsStruct) {
 	logger.Info("Done")
 }
 
-func (adm *admin) getDnEntity(value interface{}) (proto.Message, error) {
-	diskNode := &pbds.DiskNode{}
+type mapObject struct {
+	m map[string]interface{}
+}
+
+func (mapObj *mapObject) hasKey(key string) bool {
+	_, ok := mapObj.m[key]
+	return ok
+}
+
+func (mapObj *mapObject) getStr(key string) string {
+	valRaw, ok := mapObj.m[key]
+	if !ok {
+		return ""
+	}
+	val, ok := valRaw.(string)
+	if !ok {
+		logger.Fatal("Can not convert %s to string: %v", key, valRaw)
+	}
+	return val
+}
+
+func (mapObj *mapObject) getUint32(key string) uint32 {
+	valRaw, ok := mapObj.m[key]
+	if !ok {
+		return uint32(0)
+	}
+	valNum, ok := valRaw.(json.Number)
+	if !ok {
+		logger.Fatal("Can not convert %s to json.Number: %v", key, valRaw)
+	}
+	val, err := valNum.Int64()
+	if err != nil {
+		logger.Fatal("Can not convert %s to int32: %v", key, valNum)
+	}
+	return uint32(val)
+}
+
+func (mapObj *mapObject) getUint64(key string) uint64 {
+	valRaw, ok := mapObj.m[key]
+	if !ok {
+		return uint64(0)
+	}
+	valNum, ok := valRaw.(json.Number)
+	if !ok {
+		logger.Fatal("Can not convert %s to json.Number: %v", key, valRaw)
+	}
+	val, err := valNum.Int64()
+	if err != nil {
+		logger.Fatal("Can not convert %s to int64: %v", key, valNum)
+	}
+	return uint64(val)
+}
+
+func (mapObj *mapObject) getBool(key string) bool {
+	valRaw, ok := mapObj.m[key]
+	if !ok {
+		return false
+	}
+	val, ok := valRaw.(bool)
+	if !ok {
+		logger.Fatal("Can not convert %s to bool: %v", key, valRaw)
+	}
+	return val
+}
+
+func (mapObj *mapObject) getMapObj(key string) *mapObject {
+	valRaw, ok := mapObj.m[key]
+	if !ok {
+		return &mapObject{make(map[string]interface{})}
+	}
+	val, ok := valRaw.(map[string]interface{})
+	if !ok {
+		logger.Fatal("Can not convert %s to map[string]interface{}: %v", key, valRaw)
+	}
+	return &mapObject{val}
+}
+
+func (mapObj *mapObject) getMapObjList(key string) []*mapObject {
+	valRaw, ok := mapObj.m[key]
+	if !ok {
+		return make([]*mapObject, 0)
+	}
+	items, ok := valRaw.([]interface{})
+	if !ok {
+		logger.Fatal("Can not convert %s to []interface{}: %v", key, valRaw)
+	}
+	mapObjList := make([]*mapObject, 0)
+	for _, itemRaw := range items {
+		item, ok := itemRaw.(map[string]interface{})
+		if !ok {
+			logger.Fatal("Can not convert %v to map[string]interface{}", item)
+		}
+		mapObj := &mapObject{item}
+		mapObjList = append(mapObjList, mapObj)
+	}
+	return mapObjList
+}
+
+func (adm *admin) getDnEntity(value interface{}) proto.Message {
 	dnMap, ok := value.(map[string]interface{})
 	if !ok {
-		return nil, fmt.Errorf("Can not convert to dnMap map[string]interface{}")
+		logger.Fatal("Can not convert to dnMap map[string]interface{}")
 	}
-	dnIdRaw, ok := dnMap["dn_id"]
-	if !ok {
-		return nil, fmt.Errorf("Can not find dn_id")
+
+	dnObj := mapObject{dnMap}
+	dnConfObj := dnObj.getMapObj("dn_conf")
+	nvmfLisObj := dnConfObj.getMapObj("nvmf_listener")
+	dnInfoObj := dnObj.getMapObj("dn_info")
+	dnErrObj := dnInfoObj.getMapObj("err_info")
+
+	pdList := make([]*pbds.PhysicalDisk, 0)
+	for _, pdObj := range dnObj.getMapObjList("pd_list") {
+		pdConfObj := pdObj.getMapObj("pd_conf")
+		pdInfoObj := pdObj.getMapObj("pd_info")
+		pdErrInfoObj := pdInfoObj.getMapObj("err_info")
+		capObj := pdObj.getMapObj("capacity")
+		totalQosObj := capObj.getMapObj("total_qos")
+		freeQosObj := capObj.getMapObj("free_qos")
+		vdBeList := make([]*pbds.VdBackend, 0)
+		for _, vdBeObj := range pdObj.getMapObjList("vd_be_list") {
+			vdBeConfObj := vdBeObj.getMapObj("vd_be_conf")
+			qosObj := vdBeConfObj.getMapObj("qos")
+			vdBeInfoObj := vdBeObj.getMapObj("vd_be_info")
+			vdBeErrInfoObj := vdBeInfoObj.getMapObj("err_info")
+			vdBe := &pbds.VdBackend{
+				VdId: vdBeObj.getStr("vd_id"),
+				VdBeConf: &pbds.VdBeConf{
+					DaName: vdBeConfObj.getStr("da_name"),
+					GrpIdx: vdBeConfObj.getUint32("grp_idx"),
+					VdIdx:  vdBeConfObj.getUint32("vd_idx"),
+					Size:   vdBeConfObj.getUint64("size"),
+					Qos: &pbds.BdevQos{
+						RwIosPerSec:    qosObj.getUint64("rw_ios_per_sec"),
+						RwMbytesPerSec: qosObj.getUint64("rw_mbytes_per_sec"),
+						RMbytesPerSec:  qosObj.getUint64("r_mbytes_per_sec"),
+						WMbytesPerSec:  qosObj.getUint64("w_mbytes_per_sec"),
+					},
+				},
+				VdBeInfo: &pbds.VdBeInfo{
+					ErrInfo: &pbds.ErrInfo{
+						IsErr:     vdBeErrInfoObj.getBool("is_err"),
+						ErrMsg:    vdBeErrInfoObj.getStr("err_msg"),
+						Timestamp: vdBeErrInfoObj.getStr("timestamp"),
+					},
+				},
+			}
+			vdBeList = append(vdBeList, vdBe)
+		}
+		pd := &pbds.PhysicalDisk{
+			PdId:   pdObj.getStr("pd_id"),
+			PdName: pdObj.getStr("pd_name"),
+			PdConf: &pbds.PdConf{
+				Description: pdConfObj.getStr("description"),
+				IsOffline:   pdConfObj.getBool("is_offline"),
+			},
+			PdInfo: &pbds.PdInfo{
+				ErrInfo: &pbds.ErrInfo{
+					IsErr:     pdErrInfoObj.getBool("is_err"),
+					ErrMsg:    pdErrInfoObj.getStr("err_msg"),
+					Timestamp: pdErrInfoObj.getStr("timestamp"),
+				},
+			},
+			Capacity: &pbds.PdCapacity{
+				TotalSize: capObj.getUint64("total_size"),
+				FreeSize:  capObj.getUint64("free_size"),
+				TotalQos: &pbds.BdevQos{
+					RwIosPerSec:    totalQosObj.getUint64("rw_ios_per_sec"),
+					RwMbytesPerSec: totalQosObj.getUint64("rw_mbytes_per_sec"),
+					RMbytesPerSec:  totalQosObj.getUint64("r_mbytes_per_sec"),
+					WMbytesPerSec:  totalQosObj.getUint64("w_mbytes_per_sec"),
+				},
+				FreeQos: &pbds.BdevQos{
+					RwIosPerSec:    freeQosObj.getUint64("rw_ios_per_sec"),
+					RwMbytesPerSec: freeQosObj.getUint64("rw_mbytes_per_sec"),
+					RMbytesPerSec:  freeQosObj.getUint64("r_mbytes_per_sec"),
+					WMbytesPerSec:  freeQosObj.getUint64("w_mbytes_per_sec"),
+				},
+			},
+			VdBeList: vdBeList,
+		}
+		bdevTypeObj := pdConfObj.getMapObj("BdevType")
+		if bdevTypeObj.hasKey("BdevMalloc") {
+			bdevMallocObj := bdevTypeObj.getMapObj("BdevMalloc")
+			pd.PdConf.BdevType = &pbds.PdConf_BdevMalloc{
+				BdevMalloc: &pbds.BdevMalloc{
+					Size: bdevMallocObj.getUint64("size"),
+				},
+			}
+		} else if bdevTypeObj.hasKey("BdevAio") {
+			bdevAioObj := bdevTypeObj.getMapObj("BdevAio")
+			pd.PdConf.BdevType = &pbds.PdConf_BdevAio{
+				BdevAio: &pbds.BdevAio{
+					FileName: bdevAioObj.getStr("file_name"),
+				},
+			}
+		} else if bdevTypeObj.hasKey("BdevNvme") {
+			bdevNvmeObj := bdevTypeObj.getMapObj("BdevNvme")
+			pd.PdConf.BdevType = &pbds.PdConf_BdevNvme{
+				BdevNvme: &pbds.BdevNvme{
+					TrAddr: bdevNvmeObj.getStr("tr_addr"),
+				},
+			}
+		} else {
+			logger.Fatal("Unknow BdevType: %v", bdevTypeObj)
+		}
+		pdList = append(pdList, pd)
 	}
-	dnId, ok := dnIdRaw.(string)
-	if !ok {
-		return nil, fmt.Errorf("Can not convert dnId string")
+
+	diskNode := &pbds.DiskNode{
+		DnId:     dnObj.getStr("dn_id"),
+		SockAddr: dnObj.getStr("sock_addr"),
+		DnConf: &pbds.DnConf{
+			Description: dnConfObj.getStr("description"),
+			NvmfListener: &pbds.NvmfListener{
+				TrType:  nvmfLisObj.getStr("tr_type"),
+				AdrFam:  nvmfLisObj.getStr("adr_fam"),
+				TrAddr:  nvmfLisObj.getStr("tr_addr"),
+				TrSvcId: nvmfLisObj.getStr("tr_svc_id"),
+			},
+			Location:  dnConfObj.getStr("location"),
+			IsOffline: dnConfObj.getBool("is_offline"),
+			HashCode:  dnConfObj.getUint32("hash_code"),
+		},
+		DnInfo: &pbds.DnInfo{
+			ErrInfo: &pbds.ErrInfo{
+				IsErr:     dnErrObj.getBool("is_err"),
+				ErrMsg:    dnErrObj.getStr("err_msg"),
+				Timestamp: dnErrObj.getStr("timestamp"),
+			},
+		},
+		PdList: pdList,
 	}
-	diskNode.DnId = dnId
-	return diskNode, nil
+	return diskNode
 }
 
 func (adm *admin) load(args *loadArgsStruct) {
@@ -169,14 +386,19 @@ func (adm *admin) load(args *loadArgsStruct) {
 		logger.Fatal("ReadFile err: %v", err)
 	}
 	keyPairList := make([]*KeyPair, 0)
-	if err := json.Unmarshal(data, &keyPairList); err != nil {
-		logger.Fatal("Unmarshal keyPairList err: %v", err)
+	d := json.NewDecoder(strings.NewReader(string(data)))
+	d.UseNumber()
+	if err := d.Decode(&keyPairList); err != nil {
+		logger.Fatal("Decode err: %v", err)
 	}
+	// if err := json.Unmarshal(data, &keyPairList); err != nil {
+	// 	logger.Fatal("Unmarshal keyPairList err: %v", err)
+	// }
 	apply := func(stm concurrency.STM) error {
 		for _, keyPair := range keyPairList {
 			revision := stm.Rev(keyPair.Key)
 			if revision != keyPair.Revision {
-				return fmt.Errorf("Key has new revision: %s %v", keyPair.Key, revision)
+				logger.Fatal("Key has new revision: %s %v", keyPair.Key, revision)
 			}
 			if keyPair.Value == nil {
 				stm.Del(keyPair.Key)
@@ -184,16 +406,13 @@ func (adm *admin) load(args *loadArgsStruct) {
 				var m proto.Message
 				var err error
 				if strings.HasPrefix(keyPair.Key, adm.kf.DnEntityPrefix()) {
-					m, err = adm.getDnEntity(keyPair.Value)
+					m = adm.getDnEntity(keyPair.Value)
 				} else {
-					return fmt.Errorf("Unknow key: %s", keyPair.Key)
-				}
-				if err != nil {
-					return fmt.Errorf("Decode err: %s %v", keyPair.Key, err)
+					logger.Fatal("Unknow key: %s", keyPair.Key)
 				}
 				value, err := proto.Marshal(m)
 				if err != nil {
-					return fmt.Errorf("Marshal err: %s %v", keyPair.Key, err)
+					logger.Fatal("Marshal err: %s %v", keyPair.Key, err)
 				}
 				stm.Put(keyPair.Key, string(value))
 			}
