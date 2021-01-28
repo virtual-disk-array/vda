@@ -228,6 +228,9 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 				},
 			}
 			cntlrList = append(cntlrList, cntlr)
+			if isPrimary {
+				primCntlr = cntlr
+			}
 		}
 		diskArray := &pbds.DiskArray{
 			DaId:        daId,
@@ -252,16 +255,26 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 		daEntityVal := stm.Get(daEntityKey)
 		if len(daEntityVal) != 0 {
 			logger.Error("Duplicate DaName: %s", diskArray.DaName)
-			msg := fmt.Sprintf("Duplicate DaName: %s", diskArray.DaName)
-			return fmt.Errorf(msg)
+			return fmt.Errorf("Duplicate DaName: %s", diskArray.DaName)
 		}
 		newDaEntityVal, err := proto.Marshal(diskArray)
 		if err != nil {
 			logger.Error("Marshal diskArray err: %v %v", diskArray, err)
-			msg := fmt.Sprintf("Marshal diskArray err: %s %v", diskArray.DaName, err)
-			return fmt.Errorf(msg)
+			return fmt.Errorf("Marshal diskArray err: %s %v", diskArray.DaName, err)
 		}
 		stm.Put(daEntityKey, string(newDaEntityVal))
+
+		daSummary := &pbds.DaSummary{
+			DaName:      req.DaName,
+			Description: req.Description,
+		}
+		daListKey := po.kf.DaListKey(req.DaName)
+		daListVal, err := proto.Marshal(daSummary)
+		if err != nil {
+			logger.Error("Marshal daSummary err: %v %v", daSummary, err)
+			return fmt.Errorf("Marshal daSummary err: %s %v", diskArray.DaName, err)
+		}
+		stm.Put(daListKey, string(daListVal))
 
 		for i, cand := range dnPdCandList {
 			var targetPd *pbds.PhysicalDisk
@@ -294,9 +307,8 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 			oldDnCapVal := stm.Get(oldDnCapKey)
 			if len(oldDnCapVal) == 0 {
 				logger.Warning("Can not find dn cap: %s %v", oldDnCapKey, diskNode)
-				msg := fmt.Sprintf("Can not find dn cap: %s %s",
+				return fmt.Errorf("Can not find dn cap: %s %s",
 					oldDnCapKey, diskNode.SockAddr)
-				return fmt.Errorf(msg)
 			}
 			stm.Del(oldDnCapKey)
 
@@ -397,8 +409,7 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 			if err != nil {
 				logger.Error("Marshal dnSearchAttr err: %v %v %v %v",
 					diskNode, targetPd, dnSearchAttr, err)
-				msg := fmt.Sprintf("Marshal dnSearchAttr err: %v", err)
-				return fmt.Errorf(msg)
+				return fmt.Errorf("Marshal dnSearchAttr err: %v", err)
 			}
 			stm.Put(newDnCapKey, string(newDnCapVal))
 
@@ -430,9 +441,8 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 			newDnEntityVal, err := proto.Marshal(diskNode)
 			if err != nil {
 				logger.Error("Marshal diskNode err: %v %v", diskNode, err)
-				msg := fmt.Sprintf("Marshal diskNode err: %s %v",
+				return fmt.Errorf("Marshal diskNode err: %s %v",
 					diskNode.SockAddr, err)
-				return fmt.Errorf(msg)
 			}
 			dnEntityKey := po.kf.DnEntityKey(cand.SockAddr)
 			stm.Put(dnEntityKey, string(newDnEntityVal))
@@ -446,9 +456,8 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 				dnErrVal, err := proto.Marshal(dnSummary)
 				if err != nil {
 					logger.Error("Marshal dnSummary err: %v %v", dnSummary, err)
-					msg := fmt.Sprintf("Marshal dnSummary err: %s %v",
+					return fmt.Errorf("Marshal dnSummary err: %s %v",
 						diskNode.SockAddr, err)
-					return fmt.Errorf(msg)
 				}
 				stm.Put(dnErrKey, string(dnErrVal))
 			}
@@ -462,9 +471,8 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 			oldCnCapVal := stm.Get(oldCnCapKey)
 			if len(oldCnCapVal) == 0 {
 				logger.Warning("Can not find cn cap: %s %v", oldCnCapKey, controllerNode)
-				msg := fmt.Sprintf("Can not find cn cap: %s %s",
+				return fmt.Errorf("Can not find cn cap: %s %s",
 					oldCnCapKey, controllerNode.SockAddr)
-				return fmt.Errorf(msg)
 			}
 			stm.Del(oldCnCapKey)
 
@@ -481,8 +489,7 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 			if err != nil {
 				logger.Error("Marshal cnSearchAttr err: %v %v %v",
 					controllerNode, cnSearchAttr, err)
-				msg := fmt.Sprintf("Marshal cnSearchAttr err: %v", err)
-				return fmt.Errorf(msg)
+				return fmt.Errorf("Marshal cnSearchAttr err: %v", err)
 			}
 			stm.Put(newCnCapKey, string(newCnCapVal))
 
@@ -510,9 +517,8 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 			newCnEntityVal, err := proto.Marshal(controllerNode)
 			if err != nil {
 				logger.Error("Marshal controllerNode err: %v %v", controllerNode, err)
-				msg := fmt.Sprintf("Marshal controllerNode err: %s %v",
+				return fmt.Errorf("Marshal controllerNode err: %s %v",
 					controllerNode.SockAddr, err)
-				return fmt.Errorf(msg)
 			}
 			cnEntityKey := po.kf.CnEntityKey(cand.SockAddr)
 			stm.Put(cnEntityKey, string(newCnEntityVal))
@@ -526,9 +532,8 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 				cnErrVal, err := proto.Marshal(cnSummary)
 				if err != nil {
 					logger.Error("Marshal cnSummary err: %v %v", cnSummary, err)
-					msg := fmt.Sprintf("Marshal cnSummary err: %s %v",
+					return fmt.Errorf("Marshal cnSummary err: %s %v",
 						controllerNode.SockAddr, err)
-					return fmt.Errorf(msg)
 				}
 				stm.Put(cnErrKey, string(cnErrVal))
 			}
@@ -683,6 +688,7 @@ func (po *portalServer) DeleteDa(ctx context.Context, req *pbpo.DeleteDaRequest)
 	}
 
 	daEntityKey := po.kf.DaEntityKey(req.DaName)
+	daListKey := po.kf.DaListKey(req.DaName)
 	diskArray := &pbds.DiskArray{}
 
 	apply := func(stm concurrency.STM) error {
@@ -704,6 +710,7 @@ func (po *portalServer) DeleteDa(ctx context.Context, req *pbpo.DeleteDaRequest)
 			}
 		}
 		stm.Del(daEntityKey)
+		stm.Del(daListKey)
 
 		for _, cntlr := range diskArray.CntlrList {
 			cnEntityKey := po.kf.CnEntityKey(cntlr.CnSockAddr)

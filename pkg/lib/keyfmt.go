@@ -38,12 +38,12 @@ func (kf *KeyFmt) CnEntityKey(sockAddr string) string {
 	return fmt.Sprintf("%s%s", kf.CnEntityPrefix(), sockAddr)
 }
 
-func (kf *KeyFmt) DaEntityPrefix(sockAddr string) string {
+func (kf *KeyFmt) DaEntityPrefix() string {
 	return fmt.Sprintf("/%s/da/", kf.prefix)
 }
 
 func (kf *KeyFmt) DaEntityKey(daName string) string {
-	return fmt.Sprintf("%s%s", kf.DnEntityPrefix(), daName)
+	return fmt.Sprintf("%s%s", kf.DaEntityPrefix(), daName)
 }
 
 func (kf *KeyFmt) DnCapPrefix() string {

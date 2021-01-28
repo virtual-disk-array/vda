@@ -32,6 +32,12 @@ type loadArgsStruct struct {
 	filePath string
 }
 
+type listArgsStruct struct {
+	prefix string
+	from   string
+	limit  int64
+}
+
 var (
 	adminCmd = &cobra.Command{
 		Use:   "vda_admin",
@@ -53,6 +59,13 @@ var (
 		Run:  keyLoadFunc,
 	}
 	loadArgs = &loadArgsStruct{}
+
+	listCmd = &cobra.Command{
+		Use:  "list",
+		Args: cobra.MaximumNArgs(0),
+		Run:  keyListFunc,
+	}
+	listArgs = &listArgsStruct{}
 )
 
 func init() {
@@ -75,6 +88,14 @@ func init() {
 		"json file that contains the keyPairs")
 	loadCmd.MarkFlagRequired("file-path")
 	adminCmd.AddCommand(loadCmd)
+
+	listCmd.Flags().StringVarP(&listArgs.prefix, "prefix", "", "",
+		"list keys with the same prefix")
+	listCmd.Flags().StringVarP(&listArgs.from, "from", "", "",
+		"list keys from this key")
+	listCmd.Flags().Int64VarP(&listArgs.limit, "limit", "", 100,
+		"max items to return")
+	adminCmd.AddCommand(listCmd)
 }
 
 type KeyPair struct {
@@ -115,6 +136,20 @@ func (adm *admin) dump(args *dumpArgsStruct) {
 				var m proto.Message
 				if strings.HasPrefix(key, adm.kf.DnEntityPrefix()) {
 					m = &pbds.DiskNode{}
+				} else if strings.HasPrefix(key, adm.kf.DnListPrefix()) {
+					m = &pbds.DnSummary{}
+				} else if strings.HasPrefix(key, adm.kf.DnErrPrefix()) {
+					m = &pbds.DnSummary{}
+				} else if strings.HasPrefix(key, adm.kf.CnEntityPrefix()) {
+					m = &pbds.ControllerNode{}
+				} else if strings.HasPrefix(key, adm.kf.CnListPrefix()) {
+					m = &pbds.CnSummary{}
+				} else if strings.HasPrefix(key, adm.kf.CnErrPrefix()) {
+					m = &pbds.CnSummary{}
+				} else if strings.HasPrefix(key, adm.kf.DaEntityPrefix()) {
+					m = &pbds.DiskArray{}
+				} else if strings.HasPrefix(key, adm.kf.DaListPrefix()) {
+					m = &pbds.DaSummary{}
 				} else {
 					return fmt.Errorf("Unknow key: %s", key)
 				}
@@ -380,6 +415,26 @@ func (adm *admin) getDnEntity(value interface{}) proto.Message {
 	return diskNode
 }
 
+func (adm *admin) getDnSummary(value interface{}) proto.Message {
+	return nil
+}
+
+func (adm *admin) getCnEntity(value interface{}) proto.Message {
+	return nil
+}
+
+func (adm *admin) getCnSummary(value interface{}) proto.Message {
+	return nil
+}
+
+func (adm *admin) getDaEntity(value interface{}) proto.Message {
+	return nil
+}
+
+func (adm *admin) getDaSummary(value interface{}) proto.Message {
+	return nil
+}
+
 func (adm *admin) load(args *loadArgsStruct) {
 	data, err := ioutil.ReadFile(args.filePath)
 	if err != nil {
@@ -391,9 +446,6 @@ func (adm *admin) load(args *loadArgsStruct) {
 	if err := d.Decode(&keyPairList); err != nil {
 		logger.Fatal("Decode err: %v", err)
 	}
-	// if err := json.Unmarshal(data, &keyPairList); err != nil {
-	// 	logger.Fatal("Unmarshal keyPairList err: %v", err)
-	// }
 	apply := func(stm concurrency.STM) error {
 		for _, keyPair := range keyPairList {
 			revision := stm.Rev(keyPair.Key)
@@ -407,6 +459,20 @@ func (adm *admin) load(args *loadArgsStruct) {
 				var err error
 				if strings.HasPrefix(keyPair.Key, adm.kf.DnEntityPrefix()) {
 					m = adm.getDnEntity(keyPair.Value)
+				} else if strings.HasPrefix(keyPair.Key, adm.kf.DnListPrefix()) {
+					m = adm.getDnSummary(keyPair.Value)
+				} else if strings.HasPrefix(keyPair.Key, adm.kf.DnErrPrefix()) {
+					m = adm.getDnSummary(keyPair.Value)
+				} else if strings.HasPrefix(keyPair.Key, adm.kf.CnEntityPrefix()) {
+					m = adm.getCnEntity(keyPair.Value)
+				} else if strings.HasPrefix(keyPair.Key, adm.kf.CnListPrefix()) {
+					m = adm.getCnSummary(keyPair.Value)
+				} else if strings.HasPrefix(keyPair.Key, adm.kf.CnErrPrefix()) {
+					m = adm.getCnSummary(keyPair.Value)
+				} else if strings.HasPrefix(keyPair.Key, adm.kf.DaEntityPrefix()) {
+					m = adm.getDaEntity(keyPair.Value)
+				} else if strings.HasPrefix(keyPair.Key, adm.kf.DaListPrefix()) {
+					m = adm.getDaSummary(keyPair.Value)
 				} else {
 					logger.Fatal("Unknow key: %s", keyPair.Key)
 				}
@@ -424,6 +490,35 @@ func (adm *admin) load(args *loadArgsStruct) {
 		logger.Fatal("LoadKey err: %v", err)
 	}
 	logger.Info("Done")
+}
+
+func (adm *admin) list(args *listArgsStruct) {
+	if args.prefix != "" && args.from != "" {
+		logger.Fatal("Can not set prefix and from at the same time")
+	}
+	if args.prefix == "" && args.from == "" {
+		logger.Fatal("Should provide either prefix or from")
+	}
+	opts := []clientv3.OpOption{
+		clientv3.WithSort(clientv3.SortByKey, clientv3.SortAscend),
+		clientv3.WithLimit(args.limit),
+	}
+	var key string
+	if args.prefix != "" {
+		opts = append(opts, clientv3.WithPrefix())
+		key = args.prefix
+	} else {
+		opts = append(opts, clientv3.WithFromKey())
+		key = args.from
+	}
+	kv := clientv3.NewKV(adm.etcdCli)
+	gr, err := kv.Get(adm.ctx, key, opts...)
+	if err != nil {
+		logger.Fatal("kv.Get err: %v", err)
+	}
+	for _, item := range gr.Kvs {
+		fmt.Println(string(item.Key))
+	}
 }
 
 func newAdmin(args *adminArgsStruct) *admin {
@@ -455,6 +550,12 @@ func keyLoadFunc(cmd *cobra.Command, args []string) {
 	adm := newAdmin(adminArgs)
 	defer adm.close()
 	adm.load(loadArgs)
+}
+
+func keyListFunc(cmd *cobra.Command, args []string) {
+	adm := newAdmin(adminArgs)
+	defer adm.close()
+	adm.list(listArgs)
 }
 
 func Execute() {

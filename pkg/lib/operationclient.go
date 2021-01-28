@@ -332,7 +332,7 @@ func (oc *OperationClient) createNvmfListener(nqn string, lisConf *LisConf) erro
 			TrAddr  string `json:"traddr"`
 			AdrFam  string `json:"adrfam"`
 			TrSvcId string `json:"trsvcid"`
-		}
+		} `json:"listen_address"`
 	}{
 		Nqn: nqn,
 		ListenAddress: struct {
@@ -1343,7 +1343,7 @@ func (oc *OperationClient) bdevPassthruCreate(name, baseBdevName string) error {
 		return nil
 	}
 	params := &struct {
-		Name         string `json:"Name"`
+		Name         string `json:"name"`
 		BaseBdevName string `json:"base_bdev_name"`
 	}{
 		Name:         name,
@@ -1539,7 +1539,7 @@ func (oc *OperationClient) ExamineBdev(bdevName string) error {
 		logger.Error("bdev_examine failed: %v", err)
 		return err
 	}
-	if rsp.Error != nil {
+	if rsp.Error != nil && rsp.Error.Code != -17 {
 		logger.Error("bdev_examine rsp err: %v", *rsp.Error)
 		return fmt.Errorf("bdev_examine rsp err: %d %s",
 			rsp.Error.Code, rsp.Error.Message)
