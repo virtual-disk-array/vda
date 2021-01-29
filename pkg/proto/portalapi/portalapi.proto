@@ -232,6 +232,7 @@ message Controller {
   string sock_addr = 2;
   uint32 cntlr_idx = 3;
   bool is_primary = 4;
+  ErrInfo err_info = 5;
 }
 
 message VirtualDisk {
@@ -267,15 +268,18 @@ message SnapSummary {
   string description = 2;
 }
 
+message ExpInfo {
+  uint32 cntlr_idx = 1;
+  ErrInfo err_info = 2;
+}
+
 message Exporter {
   string exp_id = 1;
   string exp_name = 2;
   string description = 3;
   string initiator_nqn = 4;
   string snap_name = 5;
-  ErrInfo err_info = 6;
-  BdevIostat bdev_iostat = 7;
-  BdevHistgram bdev_histgram = 8;
+  repeated ExpInfo exp_info_list = 6;
 }
 
 message ExpSummary {

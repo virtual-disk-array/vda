@@ -515,7 +515,7 @@ func (po *portalServer) ListPd(ctx context.Context, req *pbpo.ListPdRequest) (
 	dnEntityKey := po.kf.DnEntityKey(req.SockAddr)
 	diskNode := &pbds.DiskNode{}
 
-	var pdSummaryList []*pbpo.PdSummary
+	pdSummaryList := make([]*pbpo.PdSummary, 0)
 	apply := func(stm concurrency.STM) error {
 		val := []byte(stm.Get(dnEntityKey))
 		if len(val) == 0 {
@@ -537,7 +537,6 @@ func (po *portalServer) ListPd(ctx context.Context, req *pbpo.ListPdRequest) (
 			}
 		}
 
-		pdSummaryList = make([]*pbpo.PdSummary, 0)
 		for _, pd := range diskNode.PdList {
 			pdSummary := &pbpo.PdSummary{
 				PdName:      pd.PdName,
