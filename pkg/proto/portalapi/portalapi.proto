@@ -250,7 +250,8 @@ message Group {
   string grp_id = 1;
   uint32 grp_idx = 2;
   uint64 size = 3;
-  repeated VirtualDisk vd_list = 4;
+  ErrInfo err_info = 4;
+  repeated VirtualDisk vd_list = 5;
 }
 
 message Snap {

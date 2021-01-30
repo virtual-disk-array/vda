@@ -546,7 +546,7 @@ func (po *portalServer) GetExp(ctx context.Context, req *pbpo.GetExpRequest) (
 
 	daEntityKey := po.kf.DaEntityKey(req.DaName)
 	diskArray := &pbds.DiskArray{}
-	var targetExp *pbds.Exporter
+	var exporter *pbpo.Exporter
 
 	apply := func(stm concurrency.STM) error {
 		dnEntityVal := []byte(stm.Get(daEntityKey))
@@ -560,6 +560,7 @@ func (po *portalServer) GetExp(ctx context.Context, req *pbpo.GetExpRequest) (
 			logger.Error("Unmarshal diskArray err: %s %v", daEntityKey, err)
 			return err
 		}
+		var targetExp *pbds.Exporter
 		for _, exp := range diskArray.ExpList {
 			if exp.ExpName == req.ExpName {
 				targetExp = exp
@@ -571,6 +572,58 @@ func (po *portalServer) GetExp(ctx context.Context, req *pbpo.GetExpRequest) (
 				lib.PortalUnknownResErrCode,
 				req.ExpName,
 			}
+		}
+
+		exp_info_list := make([]*pbpo.ExpInfo, 0)
+		for _, cntlr := range diskArray.CntlrList {
+			controllerNode := &pbds.ControllerNode{}
+			cnEntityKey := po.kf.CnEntityKey(cntlr.CnSockAddr)
+			cnEntityVal := []byte(stm.Get(cnEntityKey))
+			if err := proto.Unmarshal(cnEntityVal, controllerNode); err != nil {
+				logger.Error("Unmarshal controllerNode err: %s %v", cnEntityKey, err)
+				return err
+			}
+			var targetCntlrFe *pbds.CntlrFrontend
+			for _, cntlrFe := range controllerNode.CntlrFeList {
+				if cntlrFe.CntlrId == cntlr.CntlrId {
+					targetCntlrFe = cntlrFe
+					break
+				}
+			}
+			if targetCntlrFe == nil {
+				logger.Error("Can not find cntlr: %v %v", cntlr, controllerNode)
+				return fmt.Errorf("Can not find cntlr: %s %s",
+					cntlr.CntlrId, controllerNode.SockAddr)
+			}
+			var targetExpFe *pbds.ExpFrontend
+			for _, expFe := range targetCntlrFe.ExpFeList {
+				if expFe.ExpId == targetExp.ExpId {
+					targetExpFe = expFe
+					break
+				}
+			}
+			if targetExpFe == nil {
+				logger.Error("Can not find expFe: %v %v", targetExp, controllerNode)
+				return fmt.Errorf("Can not find expFe: %s %s",
+					targetExp.ExpName, controllerNode.SockAddr)
+			}
+			exp_info := &pbpo.ExpInfo{
+				CntlrIdx: cntlr.CntlrIdx,
+				ErrInfo: &pbpo.ErrInfo{
+					IsErr:     targetExpFe.ExpFeInfo.ErrInfo.IsErr,
+					ErrMsg:    targetExpFe.ExpFeInfo.ErrInfo.ErrMsg,
+					Timestamp: targetExpFe.ExpFeInfo.ErrInfo.Timestamp,
+				},
+			}
+			exp_info_list = append(exp_info_list, exp_info)
+		}
+		exporter = &pbpo.Exporter{
+			ExpId:        targetExp.ExpId,
+			ExpName:      targetExp.ExpName,
+			Description:  targetExp.Description,
+			InitiatorNqn: targetExp.InitiatorNqn,
+			SnapName:     targetExp.ExpName,
+			ExpInfoList:  exp_info_list,
 		}
 		return nil
 	}
@@ -595,13 +648,6 @@ func (po *portalServer) GetExp(ctx context.Context, req *pbpo.GetExpRequest) (
 			}, nil
 		}
 	} else {
-		exporter := &pbpo.Exporter{
-			ExpId:        targetExp.ExpId,
-			ExpName:      targetExp.ExpName,
-			Description:  targetExp.Description,
-			InitiatorNqn: targetExp.InitiatorNqn,
-			SnapName:     targetExp.SnapName,
-		}
 		return &pbpo.GetExpReply{
 			ReplyInfo: &pbpo.ReplyInfo{
 				ReqId:     lib.GetReqId(ctx),
