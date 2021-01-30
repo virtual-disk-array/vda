@@ -1304,45 +1304,53 @@ func (po *portalServer) GetDa(ctx context.Context, req *pbpo.GetDaRequest) (
 		}
 	} else {
 		cntlrList := make([]*pbpo.Controller, 0)
-		var primaryCntlr *pbds.Controller
+		idToGrpFeInfo := make(map[string]*pbds.GrpFeInfo)
+		idToVdFeInfo := make(map[string]*pbds.VdFeInfo)
 		for _, dsCntlr := range diskArray.CntlrList {
+			controllerNode, ok := addrToCn[dsCntlr.CnSockAddr]
+			if !ok {
+				return &pbpo.GetDaReply{
+					ReplyInfo: &pbpo.ReplyInfo{
+						ReqId:     lib.GetReqId(ctx),
+						ReplyCode: lib.PortalInternalErrCode,
+						ReplyMsg:  "No controllerNode: " + dsCntlr.CnSockAddr,
+					},
+				}, nil
+			}
+			var dsCntlrFeInfo *pbds.CntlrFeInfo
+			for _, cntlrFe := range controllerNode.CntlrFeList {
+				if cntlrFe.CntlrId == dsCntlr.CntlrId {
+					dsCntlrFeInfo = cntlrFe.CntlrFeInfo
+					for _, grpFe := range cntlrFe.GrpFeList {
+						idToGrpFeInfo[grpFe.GrpId] = grpFe.GrpFeInfo
+						for _, vdFe := range grpFe.VdFeList {
+							idToVdFeInfo[vdFe.VdId] = vdFe.VdFeInfo
+						}
+					}
+					break
+				}
+			}
+			if dsCntlrFeInfo == nil {
+				return &pbpo.GetDaReply{
+					ReplyInfo: &pbpo.ReplyInfo{
+						ReqId:     lib.GetReqId(ctx),
+						ReplyCode: lib.PortalInternalErrCode,
+						ReplyMsg:  "No cntlrInfo: " + dsCntlr.CntlrId,
+					},
+				}, nil
+			}
 			poCntlr := &pbpo.Controller{
 				CntlrId:   dsCntlr.CntlrId,
 				SockAddr:  dsCntlr.CnSockAddr,
 				CntlrIdx:  dsCntlr.CntlrIdx,
 				IsPrimary: dsCntlr.IsPrimary,
+				ErrInfo: &pbpo.ErrInfo{
+					IsErr:     dsCntlrFeInfo.ErrInfo.IsErr,
+					ErrMsg:    dsCntlrFeInfo.ErrInfo.ErrMsg,
+					Timestamp: dsCntlrFeInfo.ErrInfo.Timestamp,
+				},
 			}
 			cntlrList = append(cntlrList, poCntlr)
-			if dsCntlr.IsPrimary {
-				primaryCntlr = dsCntlr
-			}
-		}
-		if primaryCntlr == nil {
-			return &pbpo.GetDaReply{
-				ReplyInfo: &pbpo.ReplyInfo{
-					ReqId:     lib.GetReqId(ctx),
-					ReplyCode: lib.PortalInternalErrCode,
-					ReplyMsg:  "No primary Cntlr",
-				},
-			}, nil
-		}
-		controllerNode, ok := addrToCn[primaryCntlr.CnSockAddr]
-		if !ok {
-			return &pbpo.GetDaReply{
-				ReplyInfo: &pbpo.ReplyInfo{
-					ReqId:     lib.GetReqId(ctx),
-					ReplyCode: lib.PortalInternalErrCode,
-					ReplyMsg:  "No primary controllerNode",
-				},
-			}, nil
-		}
-		idToVdFeInfo := make(map[string]*pbds.VdFeInfo)
-		for _, cntlrFe := range controllerNode.CntlrFeList {
-			for _, grpFe := range cntlrFe.GrpFeList {
-				for _, vdFe := range grpFe.VdFeList {
-					idToVdFeInfo[vdFe.VdId] = vdFe.VdFeInfo
-				}
-			}
 		}
 		grpList := make([]*pbpo.Group, 0)
 		for _, dsGrp := range diskArray.GrpList {
@@ -1413,10 +1421,25 @@ func (po *portalServer) GetDa(ctx context.Context, req *pbpo.GetDaRequest) (
 				}
 				vdList = append(vdList, poVd)
 			}
+			dsGrpFeInfo, ok := idToGrpFeInfo[dsGrp.GrpId]
+			if !ok {
+				return &pbpo.GetDaReply{
+					ReplyInfo: &pbpo.ReplyInfo{
+						ReqId:     lib.GetReqId(ctx),
+						ReplyCode: lib.PortalInternalErrCode,
+						ReplyMsg:  "No grpFeInfo: " + dsGrp.GrpId,
+					},
+				}, nil
+			}
 			poGrp := &pbpo.Group{
 				GrpId:  dsGrp.GrpId,
 				GrpIdx: dsGrp.GrpIdx,
 				Size:   dsGrp.Size,
+				ErrInfo: &pbpo.ErrInfo{
+					IsErr:     dsGrpFeInfo.ErrInfo.IsErr,
+					ErrMsg:    dsGrpFeInfo.ErrInfo.ErrMsg,
+					Timestamp: dsGrpFeInfo.ErrInfo.Timestamp,
+				},
 				VdList: vdList,
 			}
 			grpList = append(grpList, poGrp)
