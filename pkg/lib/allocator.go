@@ -114,9 +114,11 @@ func (alloc *Allocator) allocDnPdByBoundary(dnPdCtx *dnPdContext,
 			if attr.PdCapacity.FreeQos.WMbytesPerSec < dnPdCtx.qos.WMbytesPerSec {
 				continue
 			}
-			_, ok := dnPdCtx.locMap[attr.Location]
-			if ok {
-				continue
+			if attr.Location != "" {
+				_, ok := dnPdCtx.locMap[attr.Location]
+				if ok {
+					continue
+				}
 			}
 			diskNode := &pbds.DiskNode{}
 			dnEntityKey := alloc.kf.DnEntityKey(sockAddr)
@@ -161,7 +163,9 @@ func (alloc *Allocator) allocDnPdByBoundary(dnPdCtx *dnPdContext,
 				PdName:   pdName,
 			}
 			dnPdCtx.candList = append(dnPdCtx.candList, cand)
-			dnPdCtx.locMap[attr.Location] = true
+			if attr.Location != "" {
+				dnPdCtx.locMap[attr.Location] = true
+			}
 			if uint32(len(dnPdCtx.candList)) >= dnPdCtx.cnt {
 				return nil
 			}
@@ -236,9 +240,11 @@ func (alloc *Allocator) allocCn(cnCtx *cnContext) error {
 				logger.Warning("Unmarshal CnSearchAttr err: %s %v", key, err)
 				continue
 			}
-			_, ok := cnCtx.locMap[attr.Location]
-			if ok {
-				continue
+			if attr.Location != "" {
+				_, ok := cnCtx.locMap[attr.Location]
+				if ok {
+					continue
+				}
 			}
 			controllerNode := &pbds.ControllerNode{}
 			cnEntityKey := alloc.kf.CnEntityKey(sockAddr)
@@ -265,7 +271,9 @@ func (alloc *Allocator) allocCn(cnCtx *cnContext) error {
 				SockAddr: sockAddr,
 			}
 			cnCtx.candList = append(cnCtx.candList, cand)
-			cnCtx.locMap[attr.Location] = true
+			if attr.Location != "" {
+				cnCtx.locMap[attr.Location] = true
+			}
 			if uint32(len(cnCtx.candList)) >= cnCtx.cnt {
 				return nil
 			}
