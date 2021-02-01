@@ -170,6 +170,7 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 			vdFeList = append(vdFeList, vdFe)
 		}
 		grpFeList := make([]*pbds.GrpFrontend, 0)
+		emptyGrpFeList := make([]*pbds.GrpFrontend, 0)
 		grpFe := &pbds.GrpFrontend{
 			GrpId: grp.GrpId,
 			GrpFeConf: &pbds.GrpFeConf{
@@ -188,6 +189,7 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 		grpFeList = append(grpFeList, grpFe)
 
 		snapFeList := make([]*pbds.SnapFrontend, 0)
+		emptySnapFeList := make([]*pbds.SnapFrontend, 0)
 		snapFe := &pbds.SnapFrontend{
 			SnapId: snap.SnapId,
 			SnapFeConf: &pbds.SnapFeConf{
@@ -494,6 +496,15 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 			stm.Put(newCnCapKey, string(newCnCapVal))
 
 			cntlr := cntlrList[i]
+			var thisGrpFeList []*pbds.GrpFrontend
+			var thisSnapFeList []*pbds.SnapFrontend
+			if cntlr.IsPrimary {
+				thisGrpFeList = grpFeList
+				thisSnapFeList = snapFeList
+			} else {
+				thisGrpFeList = emptyGrpFeList
+				thisSnapFeList = emptySnapFeList
+			}
 			cntlrFe := &pbds.CntlrFrontend{
 				CntlrId: cntlr.CntlrId,
 				CntlrFeConf: &pbds.CntlrFeConf{
@@ -509,8 +520,8 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 						Timestamp: lib.ResTimestamp(),
 					},
 				},
-				GrpFeList:  grpFeList,
-				SnapFeList: snapFeList,
+				GrpFeList:  thisGrpFeList,
+				SnapFeList: thisSnapFeList,
 				ExpFeList:  expFeList,
 			}
 			controllerNode.CntlrFeList = append(controllerNode.CntlrFeList, cntlrFe)
