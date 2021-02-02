@@ -13,6 +13,7 @@ proto:
 compile:
 	mkdir -p $(OUT_DIR)/linux_amd64/
 	env GOOS=linux GOARCH=amd64 go build -o $(OUT_DIR)/linux_amd64/vda_portal ./cmd/portal
+	env GOOS=linux GOARCH=amd64 go build -o $(OUT_DIR)/linux_amd64/vda_monitor ./cmd/monitor
 	env GOOS=linux GOARCH=amd64 go build -o $(OUT_DIR)/linux_amd64/vda_dn_agent ./cmd/dnagent
 	env GOOS=linux GOARCH=amd64 go build -o $(OUT_DIR)/linux_amd64/vda_cn_agent ./cmd/cnagent
 	env GOOS=linux GOARCH=amd64 go build -o $(OUT_DIR)/linux_amd64/vda_cli ./cmd/cli
