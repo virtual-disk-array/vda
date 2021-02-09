@@ -39,4 +39,6 @@ const (
 
 	PortalDefaultListLimit = int64(100)
 	PortalMaxListLimit     = int64(1000)
+
+	MonitorLeaseTimeout = 10
 )
