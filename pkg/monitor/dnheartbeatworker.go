@@ -6,16 +6,11 @@ import (
 
 type dnHeartbeatWorker struct {
 	name          string
-	regPath       string
 	backlogPrefix string
 }
 
 func (dhw *dnHeartbeatWorker) getName() string {
 	return dhw.name
-}
-
-func (dhw *dnHeartbeatWorker) getRegPath() string {
-	return dhw.regPath
 }
 
 func (dhw *dnHeartbeatWorker) getBacklogPrefix() string {
@@ -29,7 +24,6 @@ func (dhw *dnHeartbeatWorker) processBacklog(key string) {
 func newDnHeartbeatWorker() *dnHeartbeatWorker {
 	return &dnHeartbeatWorker{
 		name:          "DnHeartbeatWorker",
-		regPath:       "/a/b/c",
 		backlogPrefix: "/a/b/d",
 	}
 }

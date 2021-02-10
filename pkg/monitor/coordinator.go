@@ -3,18 +3,18 @@ package monitor
 import (
 	"context"
 	"fmt"
-	// "os"
-	// "os/signal"
-	// "strings"
 	"sync"
-	// "syscall"
-	// "time"
+	"time"
 
 	"github.com/coreos/etcd/clientv3"
 	"github.com/google/uuid"
 
 	"github.com/virtual-disk-array/vda/pkg/lib"
 	"github.com/virtual-disk-array/vda/pkg/logger"
+)
+
+const (
+	timeoutSeconds = 10 * time.Second
 )
 
 type coordinator struct {
@@ -43,8 +43,11 @@ func (coord *coordinator) getTotalAndCurrent() (int, int) {
 }
 
 func (coord *coordinator) close() {
+	logger.Info("Closing coordinator")
 	coord.mu.Lock()
 	defer coord.mu.Unlock()
+	close(coord.quit)
+	coord.wg.Wait()
 	ctx := context.Background()
 	if coord.leaseId != clientv3.NoLease {
 		_, err := coord.etcdCli.Revoke(ctx, coord.leaseId)
@@ -52,38 +55,73 @@ func (coord *coordinator) close() {
 			logger.Warning("Revoke err: %v", err)
 		}
 	}
-	close(coord.quit)
-	coord.wg.Wait()
+	logger.Info("Closed coordinator")
+}
+
+func (coord *coordinator) updateTotalAndCurrent() {
+	coord.mu.Lock()
+	defer coord.mu.Unlock()
+	coord.total = 0
+	coord.current = -1
+	ctx, cancel := context.WithTimeout(context.Background(), timeoutSeconds)
+	opts := []clientv3.OpOption{
+		clientv3.WithPrefix(),
+		clientv3.WithSort(clientv3.SortByKey, clientv3.SortAscend),
+		clientv3.WithLimit(lib.MaxHashCode + 1),
+	}
+	resp, err := coord.etcdCli.Get(ctx, coord.prefix, opts...)
+	cancel()
+	if err != nil {
+		logger.Error("updateTotalAndCurrent err: %v", err)
+		return
+	}
+	total := len(resp.Kvs)
+	current := -1
+	key := fmt.Sprintf("%s/%s", coord.prefix, coord.id)
+	for i, ev := range resp.Kvs {
+		if string(ev.Key) == key {
+			current = i
+		}
+	}
+	coord.total = total
+	coord.current = current
+	logger.Info("updateTotalAndCurrent: total=%d current=%d", total, current)
 }
 
 func (coord *coordinator) initLease() error {
 	coord.mu.Lock()
 	defer coord.mu.Unlock()
 
-	ctx := context.Background()
-
 	if coord.leaseId != clientv3.NoLease {
+		ctx, cancel := context.WithTimeout(context.Background(), timeoutSeconds)
 		_, err := coord.etcdCli.Revoke(ctx, coord.leaseId)
 		if err != nil {
 			logger.Warning("Revoke err: %v", err)
 		}
 		coord.leaseId = clientv3.NoLease
+		cancel()
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), timeoutSeconds)
 	resp, err := coord.etcdCli.Grant(ctx, lib.MonitorLeaseTimeout)
+	cancel()
 	if err != nil {
 		logger.Error("Grant err: %v", err)
 		return err
 	}
 
-	if _, err := coord.etcdCli.KeepAlive(ctx, resp.ID); err != nil {
+	keepAliveCtx := context.Background()
+	if _, err := coord.etcdCli.KeepAlive(keepAliveCtx, resp.ID); err != nil {
 		logger.Error("KeepAlive err: %v", err)
-		coord.etcdCli.Revoke(ctx, resp.ID)
+		coord.etcdCli.Revoke(keepAliveCtx, resp.ID)
 		return err
 	}
 
+	ctx, cancel = context.WithTimeout(context.Background(), timeoutSeconds)
 	key := fmt.Sprintf("%s/%s", coord.prefix, coord.id)
-	if _, err := coord.etcdCli.Put(ctx, key, coord.id, clientv3.WithLease(resp.ID)); err != nil {
+	_, err = coord.etcdCli.Put(ctx, key, coord.id, clientv3.WithLease(resp.ID))
+	cancel()
+	if err != nil {
 		logger.Error("Put err: %v", err)
 		coord.etcdCli.Revoke(ctx, resp.ID)
 		return err
@@ -103,14 +141,15 @@ func (coord *coordinator) initWatch() {
 	coord.wg.Add(1)
 	go func() {
 		defer coord.wg.Done()
-		select {
-		case <-ch:
-			logger.Info("Coordiantor update")
-			// logger.Info("Coordiantor update: %v", wrsep)
-			// coord.UpdateTotalAndCurrent()
-		case <-coord.quit:
-			logger.Info("Coordinator Watch exit")
-			return
+		for {
+			select {
+			case <-ch:
+				logger.Info("Coordinator update")
+				coord.updateTotalAndCurrent()
+			case <-coord.quit:
+				logger.Info("Coordinator Watch exit")
+				return
+			}
 		}
 	}()
 }
@@ -127,5 +166,6 @@ func newCoordinator(etcdCli *clientv3.Client, prefix string) *coordinator {
 	}
 	coord.initLease()
 	coord.initWatch()
+	coord.updateTotalAndCurrent()
 	return coord
 }
