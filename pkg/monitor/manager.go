@@ -7,6 +7,7 @@ import (
 
 	"github.com/coreos/etcd/clientv3"
 
+	"github.com/virtual-disk-array/vda/pkg/lib"
 	"github.com/virtual-disk-array/vda/pkg/logger"
 )
 
@@ -27,6 +28,8 @@ type manager struct {
 }
 
 func (man *manager) process() {
+	name := man.worker.getName()
+	// prefix := man.worker.getBacklogPrefix()
 	total, current := man.coord.getTotalAndCurrent()
 	if current == -1 {
 		man.coord.initLease()
@@ -34,10 +37,16 @@ func (man *manager) process() {
 		total, current = man.coord.getTotalAndCurrent()
 	}
 	if current == -1 {
-		logger.Error("Can not get current, skip")
+		logger.Error("%s can not get current, skip", name)
 		return
 	}
-	logger.Info("Process: total=%d current=%d", total, current)
+	step := (lib.MaxHashCode + total) / total
+	begin := step * current
+	end := begin + step
+	if end > lib.MaxHashCode {
+		end = lib.MaxHashCode
+	}
+	logger.Info("%s: total=%d current=%d begin=%d end=%d", name, total, current, begin, end)
 }
 
 func (man *manager) run() {

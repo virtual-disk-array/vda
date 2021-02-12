@@ -197,6 +197,10 @@ func (kf *KeyFmt) AllocLockPath() string {
 	return fmt.Sprintf("%s/lock/alloc", kf.prefix)
 }
 
+func (kf *KeyFmt) MonitorPrefix() string {
+	return fmt.Sprintf("%s/monitor", kf.prefix)
+}
+
 func NewKeyFmt(prefix string) *KeyFmt {
 	return &KeyFmt{
 		prefix: prefix,

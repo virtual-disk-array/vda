@@ -1,6 +1,7 @@
 package monitor
 
 import (
+	"github.com/virtual-disk-array/vda/pkg/lib"
 	"github.com/virtual-disk-array/vda/pkg/logger"
 )
 
@@ -21,9 +22,9 @@ func (dhw *dnHeartbeatWorker) processBacklog(key string) {
 	logger.Info("process key: %s", key)
 }
 
-func newDnHeartbeatWorker() *dnHeartbeatWorker {
+func newDnHeartbeatWorker(kf *lib.KeyFmt) *dnHeartbeatWorker {
 	return &dnHeartbeatWorker{
 		name:          "DnHeartbeatWorker",
-		backlogPrefix: "/a/b/d",
+		backlogPrefix: kf.DnListPrefix(),
 	}
 }

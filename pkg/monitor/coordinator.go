@@ -155,10 +155,10 @@ func (coord *coordinator) initWatch() {
 	}()
 }
 
-func newCoordinator(etcdCli *clientv3.Client, prefix string) *coordinator {
+func newCoordinator(etcdCli *clientv3.Client, kf *lib.KeyFmt) *coordinator {
 	coord := &coordinator{
 		etcdCli: etcdCli,
-		prefix:  prefix,
+		prefix:  kf.MonitorPrefix(),
 		id:      uuid.New().String(),
 		leaseId: clientv3.NoLease,
 		total:   0,

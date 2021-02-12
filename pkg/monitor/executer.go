@@ -1,23 +1,16 @@
 package monitor
 
 import (
-	// "context"
-	// "fmt"
 	"os"
 	"os/signal"
 	"strings"
-	// "sync"
 	"syscall"
-	// "time"
 
 	"github.com/coreos/etcd/clientv3"
 	"github.com/spf13/cobra"
-	// "google.golang.org/grpc"
-	// "github.com/google/uuid"
 
-	// "github.com/virtual-disk-array/vda/pkg/lib"
+	"github.com/virtual-disk-array/vda/pkg/lib"
 	"github.com/virtual-disk-array/vda/pkg/logger"
-	// pbpo "github.com/virtual-disk-array/vda/pkg/proto/portalapi"
 )
 
 type monitorArgsStruct struct {
@@ -81,7 +74,8 @@ func launchMonitor(cmd *cobra.Command, args []string) {
 	}
 	defer etcdCli.Close()
 
-	coord := newCoordinator(etcdCli, "/vda/monitor")
+	kf := lib.NewKeyFmt(lib.DefaultEtcdPrefix)
+	coord := newCoordinator(etcdCli, kf)
 	logger.Info("coord: %v", coord)
 	total, current := coord.getTotalAndCurrent()
 	logger.Info("total=%d current=%d", total, current)
@@ -89,7 +83,7 @@ func launchMonitor(cmd *cobra.Command, args []string) {
 	managerList := make([]*manager, 0)
 
 	if monitorArgs.dnHeartbeatConcurrency > 0 && monitorArgs.dnHeartbeatInterval > 0 {
-		dhw := newDnHeartbeatWorker()
+		dhw := newDnHeartbeatWorker(kf)
 		man := newManager(coord, dhw,
 			monitorArgs.dnHeartbeatConcurrency, monitorArgs.dnHeartbeatInterval, etcdCli)
 		man.run()
