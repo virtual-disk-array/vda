@@ -48,9 +48,10 @@ func (coord *coordinator) close() {
 	defer coord.mu.Unlock()
 	close(coord.quit)
 	coord.wg.Wait()
-	ctx := context.Background()
 	if coord.leaseId != clientv3.NoLease {
+		ctx, cancel := context.WithTimeout(context.Background(), timeoutSeconds)
 		_, err := coord.etcdCli.Revoke(ctx, coord.leaseId)
+		cancel()
 		if err != nil {
 			logger.Warning("Revoke err: %v", err)
 		}
