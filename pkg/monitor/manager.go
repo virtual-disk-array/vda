@@ -1,7 +1,7 @@
 package monitor
 
 import (
-	// "context"
+	"context"
 	"sync"
 	"time"
 
@@ -11,10 +11,15 @@ import (
 	"github.com/virtual-disk-array/vda/pkg/logger"
 )
 
+type task struct {
+	ctx context.Context
+	key string
+}
+
 type workerI interface {
 	getName() string
-	getBacklogPrefix() string
-	processBacklog(key string)
+	getRange(begin, end int) (string, string)
+	processBacklog(ctx context.Context, key string)
 }
 
 type manager struct {
@@ -24,12 +29,12 @@ type manager struct {
 	interval    int
 	etcdCli     *clientv3.Client
 	quit        chan bool
+	taskCh      chan *task
 	wg          sync.WaitGroup
 }
 
 func (man *manager) process() {
 	name := man.worker.getName()
-	// prefix := man.worker.getBacklogPrefix()
 	total, current := man.coord.getTotalAndCurrent()
 	if current == -1 {
 		man.coord.initLease()
@@ -47,6 +52,25 @@ func (man *manager) process() {
 		end = lib.MaxHashCode
 	}
 	logger.Info("%s: total=%d current=%d begin=%d end=%d", name, total, current, begin, end)
+	key, endKey := man.worker.getRange(begin, end)
+	opts := []clientv3.OpOption{
+		clientv3.WithRange(endKey),
+	}
+	ctx, _ := context.WithTimeout(context.Background(),
+		time.Duration(man.interval)*time.Second)
+	resp, err := man.etcdCli.Get(ctx, key, opts...)
+	if err != nil {
+		logger.Error("manager get err: %s %v", name, err)
+		return
+	}
+	logger.Info("backlog count: %s %d", name, len(resp.Kvs))
+	for _, ev := range resp.Kvs {
+		t := &task{
+			ctx: ctx,
+			key: string(ev.Key),
+		}
+		man.taskCh <- t
+	}
 }
 
 func (man *manager) run() {
@@ -63,6 +87,21 @@ func (man *manager) run() {
 			}
 		}
 	}()
+
+	for i := 0; i < man.concurrency; i++ {
+		man.wg.Add(1)
+		go func() {
+			defer man.wg.Done()
+			for {
+				select {
+				case t := <-man.taskCh:
+					man.worker.processBacklog(t.ctx, t.key)
+				case <-man.quit:
+					return
+				}
+			}
+		}()
+	}
 }
 
 func (man *manager) close() {
@@ -81,5 +120,6 @@ func newManager(coord *coordinator, worker workerI,
 		interval:    interval,
 		etcdCli:     etcdCli,
 		quit:        make(chan bool),
+		taskCh:      make(chan *task),
 	}
 }

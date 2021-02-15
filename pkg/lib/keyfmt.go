@@ -114,8 +114,12 @@ func (kf *KeyFmt) DnListPrefix() string {
 	return fmt.Sprintf("/%s/list/dn/", kf.prefix)
 }
 
+func (kf *KeyFmt) DnListWithHash(hashCode uint32) string {
+	return fmt.Sprintf("%s%08x", kf.DnListPrefix(), hashCode)
+}
+
 func (kf *KeyFmt) DnListKey(hashCode uint32, sockAddr string) string {
-	return fmt.Sprintf("%s%08x@%s", kf.DnListPrefix(), hashCode, sockAddr)
+	return fmt.Sprintf("%s@%s", kf.DnListWithHash(hashCode), sockAddr)
 }
 
 func (kf *KeyFmt) DecodeDnListKey(key string) (uint32, string, error) {
