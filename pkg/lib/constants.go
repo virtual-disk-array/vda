@@ -41,4 +41,8 @@ const (
 	PortalMaxListLimit     = int64(1000)
 
 	MonitorLeaseTimeout = 10
+
+	GrpcCacheTTL      = 600
+	GrpcCacheStep     = 10
+	GrpcCacheInterval = 10
 )

@@ -336,7 +336,7 @@ func (sm *SyncupManager) writeDnInfo(diskNode *pbds.DiskNode, capDiffList []*cap
 
 func (sm *SyncupManager) syncupDn(sockAddr string, ctx context.Context,
 	req *pbdn.SyncupDnRequest) (*pbdn.SyncupDnReply, error) {
-	conn, err := grpc.Dial(sockAddr, grpc.WithInsecure(), grpc.WithBlock())
+	conn, err := grpc.Dial(sockAddr, grpc.WithInsecure())
 	logger.Info("syncupDn: %v %v", conn, err)
 	if err != nil {
 		logger.Warning("Create conn err: %s %v", sockAddr, err)
@@ -524,7 +524,7 @@ func (sm *SyncupManager) buildSyncupCnRequest(
 
 func (sm *SyncupManager) syncupCn(sockAddr string, ctx context.Context,
 	req *pbcn.SyncupCnRequest) (*pbcn.SyncupCnReply, error) {
-	conn, err := grpc.Dial(sockAddr, grpc.WithInsecure(), grpc.WithBlock())
+	conn, err := grpc.Dial(sockAddr, grpc.WithInsecure())
 	if err != nil {
 		logger.Warning("Create conn err: %s %v", sockAddr, err)
 		return nil, err

@@ -80,12 +80,14 @@ func launchMonitor(cmd *cobra.Command, args []string) {
 	total, current := coord.getTotalAndCurrent()
 	logger.Info("total=%d current=%d", total, current)
 
+	gc := lib.NewGrpcCache(lib.GrpcCacheTTL, lib.GrpcCacheStep, lib.GrpcCacheInterval)
+
 	managerList := make([]*manager, 0)
 
 	if monitorArgs.dnHeartbeatConcurrency > 0 && monitorArgs.dnHeartbeatInterval > 0 {
-		dhw := newDnHeartbeatWorker(kf)
-		man := newManager(coord, dhw,
-			monitorArgs.dnHeartbeatConcurrency, monitorArgs.dnHeartbeatInterval, etcdCli)
+		dhw := newDnHeartbeatWorker(kf, gc)
+		man := newManager(coord, dhw, etcdCli,
+			monitorArgs.dnHeartbeatConcurrency, monitorArgs.dnHeartbeatInterval)
 		man.run()
 		managerList = append(managerList, man)
 	} else {
@@ -102,6 +104,7 @@ func launchMonitor(cmd *cobra.Command, args []string) {
 			man.close()
 		}
 		coord.close()
+		gc.Close()
 	}
 	logger.Info("Monitor stop")
 }

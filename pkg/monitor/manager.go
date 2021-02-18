@@ -111,8 +111,8 @@ func (man *manager) close() {
 	logger.Info("Closed %s", man.worker.getName())
 }
 
-func newManager(coord *coordinator, worker workerI,
-	concurrency int, interval int, etcdCli *clientv3.Client) *manager {
+func newManager(coord *coordinator, worker workerI, etcdCli *clientv3.Client,
+	concurrency int, interval int) *manager {
 	return &manager{
 		worker:      worker,
 		coord:       coord,
