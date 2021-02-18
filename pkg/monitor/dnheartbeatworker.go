@@ -3,6 +3,7 @@ package monitor
 import (
 	"context"
 
+	"github.com/coreos/etcd/clientv3"
 	"github.com/google/uuid"
 
 	"github.com/virtual-disk-array/vda/pkg/lib"
@@ -11,9 +12,10 @@ import (
 )
 
 type dnHeartbeatWorker struct {
-	name string
-	kf   *lib.KeyFmt
-	gc   *lib.GrpcCache
+	name    string
+	etcdCli *clientv3.Client
+	kf      *lib.KeyFmt
+	gc      *lib.GrpcCache
 }
 
 func (dhw *dnHeartbeatWorker) getName() string {
@@ -47,10 +49,12 @@ func (dhw *dnHeartbeatWorker) processBacklog(ctx context.Context, key string) {
 	logger.Info("err: %v", err)
 }
 
-func newDnHeartbeatWorker(kf *lib.KeyFmt, gc *lib.GrpcCache) *dnHeartbeatWorker {
+func newDnHeartbeatWorker(etcdCli *clientv3.Client, kf *lib.KeyFmt,
+	gc *lib.GrpcCache) *dnHeartbeatWorker {
 	return &dnHeartbeatWorker{
-		name: "DnHeartbeatWorker",
-		kf:   kf,
-		gc:   gc,
+		name:    "DnHeartbeatWorker",
+		etcdCli: etcdCli,
+		kf:      kf,
+		gc:      gc,
 	}
 }
