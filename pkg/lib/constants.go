@@ -15,13 +15,15 @@ const (
 	PortalJsonToMessageErrCode = 8
 	PortalMessageToByteErrCode = 9
 
-	DnSucceedCode   = 1
-	DnSucceedMsg    = "succeed"
-	DnOldRevErrCode = 2
+	DnSucceedCode      = 1
+	DnSucceedMsg       = "succeed"
+	DnOldRevErrCode    = 2
+	DnOutOfSyncErrCode = 3
 
-	CnSucceedCode   = 1
-	CnSucceedMsg    = "succeed"
-	CnOldRevErrCode = 2
+	CnSucceedCode      = 1
+	CnSucceedMsg       = "succeed"
+	CnOldRevErrCode    = 2
+	CnOutOfSyncErrCode = 3
 
 	ResUninitMsg = "uninit"
 	ResNoInfoMsg = "no info"

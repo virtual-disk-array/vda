@@ -56,8 +56,12 @@ func (man *manager) process() {
 	opts := []clientv3.OpOption{
 		clientv3.WithRange(endKey),
 	}
-	ctx, _ := context.WithTimeout(context.Background(),
+	ctx, cancel := context.WithTimeout(context.Background(),
 		time.Duration(man.interval)*time.Second)
+	go func() {
+		time.Sleep(time.Duration(man.interval) * time.Second)
+		cancel()
+	}()
 	resp, err := man.etcdCli.Get(ctx, key, opts...)
 	if err != nil {
 		logger.Error("manager get err: %s %v", name, err)

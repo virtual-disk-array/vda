@@ -85,7 +85,7 @@ func launchMonitor(cmd *cobra.Command, args []string) {
 	managerList := make([]*manager, 0)
 
 	if monitorArgs.dnHeartbeatConcurrency > 0 && monitorArgs.dnHeartbeatInterval > 0 {
-		dhw := newDnHeartbeatWorker(etcdCli, kf, gc)
+		dhw := newDnHeartbeatWorker(etcdCli, kf, gc, 10, 10, 5)
 		man := newManager(coord, dhw, etcdCli,
 			monitorArgs.dnHeartbeatConcurrency, monitorArgs.dnHeartbeatInterval)
 		man.run()

@@ -1,11 +1,17 @@
 package dnagent
 
 import (
+	"sync"
 	"time"
 
 	"github.com/virtual-disk-array/vda/pkg/lib"
 	"github.com/virtual-disk-array/vda/pkg/logger"
 	pbdn "github.com/virtual-disk-array/vda/pkg/proto/dnagentapi"
+)
+
+var (
+	dnMutex sync.Mutex
+	lastRev int64
 )
 
 type dnAgentServer struct {

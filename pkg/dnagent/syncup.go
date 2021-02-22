@@ -3,16 +3,11 @@ package dnagent
 import (
 	"context"
 	"fmt"
-	"sync"
+	"sync/atomic"
 
 	"github.com/virtual-disk-array/vda/pkg/lib"
 	"github.com/virtual-disk-array/vda/pkg/logger"
 	pbdn "github.com/virtual-disk-array/vda/pkg/proto/dnagentapi"
-)
-
-var (
-	mu      sync.Mutex
-	lastReq *pbdn.SyncupDnRequest
 )
 
 func newErrInfo(err error) *pbdn.ErrInfo {
@@ -236,18 +231,19 @@ func newSyncupHelper(lisConf *lib.LisConf, nf *lib.NameFmt, sc *lib.SpdkClient) 
 
 func (dnAgent *dnAgentServer) SyncupDn(ctx context.Context, req *pbdn.SyncupDnRequest) (
 	*pbdn.SyncupDnReply, error) {
-	mu.Lock()
-	defer mu.Unlock()
-	if lastReq != nil && req.Revision < lastReq.Revision {
+	dnMutex.Lock()
+	defer dnMutex.Unlock()
+	currRev := atomic.LoadInt64(&lastRev)
+	if req.Revision < currRev {
 		return &pbdn.SyncupDnReply{
 			ReplyInfo: &pbdn.ReplyInfo{
 				ReplyCode: lib.DnOldRevErrCode,
 				ReplyMsg: fmt.Sprintf("received rev: %d, current rev: %d",
-					req.Revision, lastReq.Revision),
+					req.Revision, currRev),
 			},
 		}, nil
 	}
-	lastReq = req
+	atomic.StoreInt64(&lastRev, req.Revision)
 	sh := newSyncupHelper(dnAgent.lisConf, dnAgent.nf, dnAgent.sc)
 
 	dnRsp := sh.syncupDn(req.DnReq)
