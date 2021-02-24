@@ -7,13 +7,13 @@ import (
 
 	"github.com/coreos/etcd/clientv3"
 	"github.com/coreos/etcd/clientv3/concurrency"
-	// "github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/proto"
 	"github.com/google/uuid"
 
 	"github.com/virtual-disk-array/vda/pkg/lib"
 	"github.com/virtual-disk-array/vda/pkg/logger"
 	pbcn "github.com/virtual-disk-array/vda/pkg/proto/cnagentapi"
-	// pbds "github.com/virtual-disk-array/vda/pkg/proto/dataschema"
+	pbds "github.com/virtual-disk-array/vda/pkg/proto/dataschema"
 )
 
 type cnHeartbeatWorker struct {
@@ -40,7 +40,55 @@ func (chw *cnHeartbeatWorker) getRange(begin, end int) (string, string) {
 	return key, endKey
 }
 
+func (chw *cnHeartbeatWorker) setErr(ctx context.Context, sockAddr string) {
+	cnEntityKey := chw.kf.CnEntityKey(sockAddr)
+	apply := func(stm concurrency.STM) error {
+		controllerNode := &pbds.ControllerNode{}
+		cnEntityVal := []byte(stm.Get(cnEntityKey))
+		if len(cnEntityVal) == 0 {
+			logger.Warning("Can not find controllerNode: %s %s", chw.name, sockAddr)
+			return nil
+		}
+		err := proto.Unmarshal(cnEntityVal, controllerNode)
+		if err != nil {
+			logger.Error("Unmarshal controllerNode err: %s %s %v", chw.name, sockAddr, err)
+			return nil
+		}
+		cnErrKey := chw.kf.CnErrKey(controllerNode.CnConf.HashCode, controllerNode.SockAddr)
+		cnSummary := &pbds.CnSummary{
+			Description: controllerNode.CnConf.Description,
+		}
+		cnErrVal, err := proto.Marshal(cnSummary)
+		if err != nil {
+			logger.Error("Marshal cnSummary err: %s %v %v", chw.name, cnSummary, err)
+			return nil
+		}
+		cnErrValStr := string(cnErrVal)
+		stm.Put(cnErrKey, cnErrValStr)
+		return nil
+	}
+	err := chw.sw.RunStm(apply, ctx, "setErr: "+sockAddr)
+	if err != nil {
+		logger.Error("RunStm err: %s %v", chw.name, err)
+	}
+}
+
 func (chw *cnHeartbeatWorker) checkAndSetErr(ctx context.Context, sockAddr string) {
+	now := time.Now().Unix()
+	chw.mu.Lock()
+	if now-chw.timestamp > chw.errBurstDuration {
+		chw.timestamp = now
+		chw.errCounter = 0
+	}
+	chw.errCounter++
+	errCounter := chw.errCounter
+	chw.mu.Unlock()
+	if errCounter > chw.errBurstLimit {
+		logger.Warning("errCounter is larger than errBurstLimit: %s %d %d",
+			chw.name, errCounter, chw.errBurstLimit)
+	} else {
+		chw.setErr(ctx, sockAddr)
+	}
 }
 
 func (chw *cnHeartbeatWorker) processBacklog(ctx context.Context, key string) {
