@@ -185,8 +185,29 @@ func (kf *KeyFmt) DnErrPrefix() string {
 	return fmt.Sprintf("/%s/error/dn/", kf.prefix)
 }
 
+func (kf *KeyFmt) DnErrWithHash(hashCode uint32) string {
+	return fmt.Sprintf("%s%08x", kf.DnErrPrefix(), hashCode)
+}
+
 func (kf *KeyFmt) DnErrKey(hashCode uint32, sockAddr string) string {
-	return fmt.Sprintf("%s%08x@%s", kf.DnErrPrefix(), hashCode, sockAddr)
+	return fmt.Sprintf("%s@%s", kf.DnErrWithHash(hashCode), sockAddr)
+}
+
+func (kf *KeyFmt) DecodeDnErrKey(key string) (uint32, string, error) {
+	prefix := kf.DnErrPrefix()
+	if !strings.HasPrefix(key, prefix) {
+		msg := fmt.Sprintf("Invalid DnErrKey: %s", key)
+		return uint32(0), "", &InvalidKeyError{msg}
+	}
+	items := strings.Split(key[len(prefix):], "@")
+	if len(items) != 2 {
+		return uint32(0), "", fmt.Errorf("DnErrKey less than 2")
+	}
+	hashCode, err := strconv.ParseUint(items[0], 16, 32)
+	if err != nil {
+		return uint32(0), "", err
+	}
+	return uint32(hashCode), items[1], nil
 }
 
 func (kf *KeyFmt) CnErrPrefix() string {

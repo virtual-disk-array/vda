@@ -46,12 +46,12 @@ func (dhw *dnHeartbeatWorker) setErr(ctx context.Context, sockAddr string) {
 		diskNode := &pbds.DiskNode{}
 		dnEntityVal := []byte(stm.Get(dnEntityKey))
 		if len(dnEntityVal) == 0 {
-			logger.Warning("Can not find diskNode: %s", sockAddr)
+			logger.Warning("Can not find diskNode: %s %s", dhw.name, sockAddr)
 			return nil
 		}
 		err := proto.Unmarshal(dnEntityVal, diskNode)
 		if err != nil {
-			logger.Error("Unmarshal diskNode err: %s %v", sockAddr, err)
+			logger.Error("Unmarshal diskNode err: %s %s %v", dhw.name, sockAddr, err)
 			return nil
 		}
 		dnErrKey := dhw.kf.DnErrKey(diskNode.DnConf.HashCode, diskNode.SockAddr)
@@ -60,7 +60,7 @@ func (dhw *dnHeartbeatWorker) setErr(ctx context.Context, sockAddr string) {
 		}
 		dnErrVal, err := proto.Marshal(dnSummary)
 		if err != nil {
-			logger.Error("Marshal dnSummary err: %v %v", dnSummary, err)
+			logger.Error("Marshal dnSummary err: %s %v %v", dhw.name, dnSummary, err)
 			return nil
 		}
 		dnErrValStr := string(dnErrVal)
@@ -69,7 +69,7 @@ func (dhw *dnHeartbeatWorker) setErr(ctx context.Context, sockAddr string) {
 	}
 	err := dhw.sw.RunStm(apply, ctx, "setErr: "+sockAddr)
 	if err != nil {
-		logger.Error("RunStm err: %v", err)
+		logger.Error("RunStm err: %s %v", dhw.name, err)
 	}
 }
 
@@ -92,10 +92,10 @@ func (dhw *dnHeartbeatWorker) checkAndsetErr(ctx context.Context, sockAddr strin
 }
 
 func (dhw *dnHeartbeatWorker) processBacklog(ctx context.Context, key string) {
-	logger.Info("process key: %s", key)
+	logger.Info("process key: %s %s", dhw.name, key)
 	_, sockAddr, err := dhw.kf.DecodeDnListKey(key)
 	if err != nil {
-		logger.Error("Decode key err: %v", err)
+		logger.Error("Decode key err: %s %v", dhw.name, err)
 		return
 	}
 	var revision int64
@@ -115,7 +115,7 @@ func (dhw *dnHeartbeatWorker) processBacklog(ctx context.Context, key string) {
 	}
 	conn, err := dhw.gc.Get(sockAddr)
 	if err != nil {
-		logger.Error("get conn err: %s %v", sockAddr, err)
+		logger.Error("get conn err: %s %s %v", dhw.name, sockAddr, err)
 		return
 	}
 	c := pbdn.NewDnAgentClient(conn)
@@ -128,11 +128,11 @@ func (dhw *dnHeartbeatWorker) processBacklog(ctx context.Context, key string) {
 	reply, err := c.DnHeartbeat(dnCtx, req)
 	cancel()
 	if err != nil {
-		logger.Warning("DnHeartbeat err: %v", err)
+		logger.Warning("DnHeartbeat err: %s %v", dhw.name, err)
 		dhw.checkAndsetErr(ctx, sockAddr)
 	} else {
 		if reply.ReplyInfo.ReplyCode != lib.DnSucceedCode {
-			logger.Warning("DnHeartbeat reply err: %v", reply.ReplyInfo)
+			logger.Warning("DnHeartbeat reply err: %s %v", dhw.name, reply.ReplyInfo)
 			dhw.checkAndsetErr(ctx, sockAddr)
 		}
 	}
