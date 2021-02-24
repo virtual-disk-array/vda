@@ -6,7 +6,6 @@ import (
 
 	"github.com/coreos/etcd/clientv3/concurrency"
 	"github.com/golang/protobuf/proto"
-	"google.golang.org/grpc"
 
 	"github.com/virtual-disk-array/vda/pkg/logger"
 	pbcn "github.com/virtual-disk-array/vda/pkg/proto/cnagentapi"
@@ -17,6 +16,7 @@ import (
 type SyncupManager struct {
 	kf *KeyFmt
 	sw *StmWrapper
+	gc *GrpcCache
 }
 
 type dnIdToRes struct {
@@ -336,13 +336,11 @@ func (sm *SyncupManager) writeDnInfo(diskNode *pbds.DiskNode, capDiffList []*cap
 
 func (sm *SyncupManager) syncupDn(sockAddr string, ctx context.Context,
 	req *pbdn.SyncupDnRequest) (*pbdn.SyncupDnReply, error) {
-	conn, err := grpc.Dial(sockAddr, grpc.WithInsecure())
-	logger.Info("syncupDn: %v %v", conn, err)
+	conn, err := sm.gc.Get(sockAddr)
 	if err != nil {
-		logger.Warning("Create conn err: %s %v", sockAddr, err)
+		logger.Warning("Get conn err: %s %v", sockAddr, err)
 		return nil, err
 	}
-	defer conn.Close()
 	c := pbdn.NewDnAgentClient(conn)
 	logger.Info("SyncupDn req: %s %v", sockAddr, req)
 	reply, err := c.SyncupDn(ctx, req)
@@ -352,13 +350,6 @@ func (sm *SyncupManager) syncupDn(sockAddr string, ctx context.Context,
 		logger.Info("SyncupDn reply: %v", reply)
 	}
 	return reply, err
-}
-
-func NewSyncupManager(kf *KeyFmt, sw *StmWrapper) *SyncupManager {
-	return &SyncupManager{
-		kf: kf,
-		sw: sw,
-	}
 }
 
 func (sm *SyncupManager) SyncupCn(sockAddr string, ctx context.Context) {
@@ -524,9 +515,9 @@ func (sm *SyncupManager) buildSyncupCnRequest(
 
 func (sm *SyncupManager) syncupCn(sockAddr string, ctx context.Context,
 	req *pbcn.SyncupCnRequest) (*pbcn.SyncupCnReply, error) {
-	conn, err := grpc.Dial(sockAddr, grpc.WithInsecure())
+	conn, err := sm.gc.Get(sockAddr)
 	if err != nil {
-		logger.Warning("Create conn err: %s %v", sockAddr, err)
+		logger.Warning("Get conn err: %s %v", sockAddr, err)
 		return nil, err
 	}
 	c := pbcn.NewCnAgentClient(conn)
@@ -683,5 +674,13 @@ func (sm *SyncupManager) writeCnInfo(controllerNode *pbds.ControllerNode,
 	err = sm.sw.RunStm(apply, ctx, "SyncupCnPut: "+controllerNode.SockAddr)
 	if err != nil {
 		logger.Error("RunStm err: %v", err)
+	}
+}
+
+func NewSyncupManager(kf *KeyFmt, sw *StmWrapper, gc *GrpcCache) *SyncupManager {
+	return &SyncupManager{
+		kf: kf,
+		sw: sw,
+		gc: gc,
 	}
 }

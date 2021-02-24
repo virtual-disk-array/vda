@@ -43,7 +43,7 @@ func (dsw *dnSyncupWorker) processBacklog(ctx context.Context, key string) {
 func newDnSyncupWorker(etcdCli *clientv3.Client, kf *lib.KeyFmt,
 	gc *lib.GrpcCache, dnTimeout int) *dnSyncupWorker {
 	sw := lib.NewStmWrapper(etcdCli)
-	sm := lib.NewSyncupManager(kf, sw)
+	sm := lib.NewSyncupManager(kf, sw, gc)
 	return &dnSyncupWorker{
 		name:      "DnSyncupWorker",
 		kf:        kf,
