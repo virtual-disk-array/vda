@@ -73,7 +73,7 @@ func (dhw *dnHeartbeatWorker) setErr(ctx context.Context, sockAddr string) {
 	}
 }
 
-func (dhw *dnHeartbeatWorker) checkAndsetErr(ctx context.Context, sockAddr string) {
+func (dhw *dnHeartbeatWorker) checkAndSetErr(ctx context.Context, sockAddr string) {
 	now := time.Now().Unix()
 	dhw.mu.Lock()
 	if now-dhw.timestamp > dhw.errBurstDuration {
@@ -110,7 +110,7 @@ func (dhw *dnHeartbeatWorker) processBacklog(ctx context.Context, key string) {
 		return
 	}
 	if revision == 0 {
-		logger.Warning("DiskNode revision is 0: %s", key)
+		logger.Warning("DiskNode revision is 0: %s %s", dhw.name, key)
 		return
 	}
 	conn, err := dhw.gc.Get(sockAddr)
@@ -129,11 +129,11 @@ func (dhw *dnHeartbeatWorker) processBacklog(ctx context.Context, key string) {
 	cancel()
 	if err != nil {
 		logger.Warning("DnHeartbeat err: %s %v", dhw.name, err)
-		dhw.checkAndsetErr(ctx, sockAddr)
+		dhw.checkAndSetErr(ctx, sockAddr)
 	} else {
 		if reply.ReplyInfo.ReplyCode != lib.DnSucceedCode {
 			logger.Warning("DnHeartbeat reply err: %s %v", dhw.name, reply.ReplyInfo)
-			dhw.checkAndsetErr(ctx, sockAddr)
+			dhw.checkAndSetErr(ctx, sockAddr)
 		}
 	}
 }

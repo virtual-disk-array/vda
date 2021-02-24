@@ -1,11 +1,17 @@
 package cnagent
 
 import (
+	"sync"
 	"time"
 
 	"github.com/virtual-disk-array/vda/pkg/lib"
 	"github.com/virtual-disk-array/vda/pkg/logger"
 	pbcn "github.com/virtual-disk-array/vda/pkg/proto/cnagentapi"
+)
+
+var (
+	cnMutex sync.Mutex
+	lastRev int64
 )
 
 type cnAgentServer struct {

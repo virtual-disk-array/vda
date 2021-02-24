@@ -143,8 +143,12 @@ func (kf *KeyFmt) CnListPrefix() string {
 	return fmt.Sprintf("/%s/list/cn/", kf.prefix)
 }
 
+func (kf *KeyFmt) CnListWithHash(hashCode uint32) string {
+	return fmt.Sprintf("%s%08x", kf.CnListPrefix(), hashCode)
+}
+
 func (kf *KeyFmt) CnListKey(hashCode uint32, sockAddr string) string {
-	return fmt.Sprintf("%s%08x@%s", kf.CnListPrefix(), hashCode, sockAddr)
+	return fmt.Sprintf("%s@%s", kf.CnListWithHash(hashCode), sockAddr)
 }
 
 func (kf *KeyFmt) DecodeCnListKey(key string) (uint32, string, error) {
@@ -214,8 +218,29 @@ func (kf *KeyFmt) CnErrPrefix() string {
 	return fmt.Sprintf("/%s/error/cn/", kf.prefix)
 }
 
+func (kf *KeyFmt) CnErrWithHash(hashCode uint32) string {
+	return fmt.Sprintf("%s%08x", kf.CnErrPrefix(), hashCode)
+}
+
 func (kf *KeyFmt) CnErrKey(hashCode uint32, sockAddr string) string {
-	return fmt.Sprintf("%s%08x@%s", kf.CnErrPrefix(), hashCode, sockAddr)
+	return fmt.Sprintf("%s@%s", kf.CnErrWithHash(hashCode), sockAddr)
+}
+
+func (kf *KeyFmt) DecodeCnErrKey(key string) (uint32, string, error) {
+	prefix := kf.CnErrPrefix()
+	if !strings.HasPrefix(key, prefix) {
+		msg := fmt.Sprintf("Invalid CnErrKey: %s", key)
+		return uint32(0), "", &InvalidKeyError{msg}
+	}
+	items := strings.Split(key[len(prefix):], "@")
+	if len(items) != 2 {
+		return uint32(0), "", fmt.Errorf("CnErrKey less than 2")
+	}
+	hashCode, err := strconv.ParseUint(items[0], 16, 32)
+	if err != nil {
+		return uint32(0), "", err
+	}
+	return uint32(hashCode), items[1], nil
 }
 
 func (kf *KeyFmt) AllocLockPath() string {

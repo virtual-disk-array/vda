@@ -4,15 +4,10 @@ import (
 	"context"
 	"fmt"
 	"sort"
-	"sync"
+	"sync/atomic"
 
 	"github.com/virtual-disk-array/vda/pkg/lib"
 	pbcn "github.com/virtual-disk-array/vda/pkg/proto/cnagentapi"
-)
-
-var (
-	mu      sync.Mutex
-	lastReq *pbcn.SyncupCnRequest
 )
 
 func newErrInfo(err error) *pbcn.ErrInfo {
@@ -510,18 +505,19 @@ func newSyncupHelper(lisConf *lib.LisConf, nf *lib.NameFmt, sc *lib.SpdkClient) 
 
 func (cnAgent *cnAgentServer) SyncupCn(ctx context.Context, req *pbcn.SyncupCnRequest) (
 	*pbcn.SyncupCnReply, error) {
-	mu.Lock()
-	defer mu.Unlock()
-	if lastReq != nil && req.Revision < lastReq.Revision {
+	cnMutex.Lock()
+	defer cnMutex.Unlock()
+	currRev := atomic.LoadInt64(&lastRev)
+	if req.Revision < currRev {
 		return &pbcn.SyncupCnReply{
 			ReplyInfo: &pbcn.ReplyInfo{
 				ReplyCode: lib.CnOldRevErrCode,
 				ReplyMsg: fmt.Sprintf("received rev: %d, current rev: %d",
-					req.Revision, lastReq.Revision),
+					req.Revision, currRev),
 			},
 		}, nil
 	}
-	lastReq = req
+	atomic.StoreInt64(&lastRev, req.Revision)
 	sh := newSyncupHelper(cnAgent.lisConf, cnAgent.nf, cnAgent.sc)
 
 	cnRsp := sh.syncupCn(req.CnReq)
