@@ -2,6 +2,7 @@ package monitor
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -40,20 +41,23 @@ func (chw *cnHeartbeatWorker) getRange(begin, end int) (string, string) {
 	return key, endKey
 }
 
-func (chw *cnHeartbeatWorker) setErr(ctx context.Context, sockAddr string) {
+func (chw *cnHeartbeatWorker) setErr(ctx context.Context, sockAddr string, errMsg string) {
 	cnEntityKey := chw.kf.CnEntityKey(sockAddr)
 	apply := func(stm concurrency.STM) error {
 		controllerNode := &pbds.ControllerNode{}
 		cnEntityVal := []byte(stm.Get(cnEntityKey))
 		if len(cnEntityVal) == 0 {
 			logger.Warning("Can not find controllerNode: %s %s", chw.name, sockAddr)
-			return nil
+			return fmt.Errorf("Can not find controllerNode")
 		}
 		err := proto.Unmarshal(cnEntityVal, controllerNode)
 		if err != nil {
 			logger.Error("Unmarshal controllerNode err: %s %s %v", chw.name, sockAddr, err)
-			return nil
+			return err
 		}
+		controllerNode.CnInfo.ErrInfo.IsErr = true
+		controllerNode.CnInfo.ErrInfo.ErrMsg = errMsg
+		controllerNode.CnInfo.ErrInfo.Timestamp = lib.ResTimestamp()
 		cnErrKey := chw.kf.CnErrKey(controllerNode.CnConf.HashCode, controllerNode.SockAddr)
 		cnSummary := &pbds.CnSummary{
 			Description: controllerNode.CnConf.Description,
@@ -61,10 +65,120 @@ func (chw *cnHeartbeatWorker) setErr(ctx context.Context, sockAddr string) {
 		cnErrVal, err := proto.Marshal(cnSummary)
 		if err != nil {
 			logger.Error("Marshal cnSummary err: %s %v %v", chw.name, cnSummary, err)
-			return nil
+			return err
 		}
 		cnErrValStr := string(cnErrVal)
 		stm.Put(cnErrKey, cnErrValStr)
+
+		// try to failover each primary cntlr
+		for _, cntlrFe := range controllerNode.CntlrFeList {
+			var thisCntlr pbds.Controller
+			for _, cntlr := range cntlrFe.CntlrFeConf.CntlrList {
+				if cntlr.CntlrId == cntlrFe.CntlrId {
+					thisCntlr = cntlr
+					break
+				}
+			}
+			if thisCntlr == nil {
+				logger.Error("Can not find thisCntlr: %s %v", chw.name, cntlrFe)
+				return fmt.Errorf("Can not find thisCntlr")
+			}
+			if !thisCntlr.IsPrimary {
+				continue
+			}
+			primaryGrpFeList := cntlrFe.GrpFeList
+			primarySnapFeList := cntlrFe.SnapFeList
+			primaryExpFeList := cntlrFe.ExpFeList
+
+			var newPrimaryCntlr *pbds.Controller
+			for _, cntlr := range cntlrFe.CntlrFeConf.CntlrList {
+				if cntlr.CntlrId == cntlrFe.CntlrId {
+					continue
+				}
+				controllerNode1 := &pbds.ControllerNode{}
+				cnEntityKey1 := chw.kf.CnEntityKey(cntlr.CnSockAddr)
+				cnEntityVal1 := []byte(stm.Get(cnEntityKey1))
+				if len(cnEntityVal1) == 0 {
+					logger.Warning("Can not find controllerNode1: %s %s",
+						chw.name, cntlr.CnSockAddr)
+					return fmt.Errorf("Can not find controllerNode1")
+				}
+				err := proto.Unmarshal(cnEntityVal1, controllerNode1)
+				if err != nil {
+					logger.Error("Unmarshal controllerNode1 err: %s %s %v",
+						chw.name, cntlr.CnSockAddr, err)
+					return fmt.Errorf("Unmarshal controllerNode1 err")
+				}
+				cnErrKey1 := chw.kf.CnErrKey(controllerNode1.CnConf.HashCode,
+					controllerNode1.SockAddr)
+				cnErrVal1 := []byte(stm.Get(cnErrKey1))
+				if len(cnErrVal1) != 0 {
+					continue
+				}
+				newPrimaryCntlr = cntlr
+				break
+			}
+			if newPrimaryCntlr == nil {
+				continue
+			}
+			diskArray := &pbds.DiskArray{}
+			daEntityKey := chw.kf.DaEntityKey(cntlrFe.CntlrFeConf.DaName)
+			daEntityVal := []byte(stm.Get(daEntityKey))
+			if err := proto.Unmarshal(daEntityVal, diskArray); err != nil {
+				logger.Error("Unmarshal diskArray err: %s %s %v",
+					chw.name, daEntityKey, err)
+				return err
+			}
+			for _, cntlr := range diskArray.CntlrList {
+				if cntlr.CntlrId == newPrimaryCntlr.CntlrId {
+					cntlr.IsPrimary = true
+				} else {
+					cntlr.IsPrimary = false
+				}
+				controllerNode2 := &pbds.ControllerNode{}
+				cnEntityKey2 := chw.kf.CnEntityKey(cntlr.CnSockAddr)
+				cnEntityVal2 := []byte(stm.Get(cnEntityKey2))
+				if len(cnEntityVal2) == 0 {
+					logger.Warning("Can not find controllerNode2: %s %s",
+						chw.name, cntlr.CnSockAddr)
+					return fmt.Errorf("Can not find controllerNode2")
+				}
+				for _, cntlrFe2 := range controllerNode2.CntlrFeList {
+					if cntlrFe2.CntlrId == cntlr.CntlrId {
+						for _, cntlr2 := range cntlrFe2.CntlrFeConf.CntlrList {
+							if cntlr2.CntlrId == newPrimaryCntlr.CntlrId {
+								cntlr2.IsPrimary = true
+							} else {
+								cntlr2.IsPrimary = false
+							}
+						}
+						if cntlrFe2.CntlrId == newPrimaryCntlr {
+							cntlrFe2.GrpFeList = primaryGrpFeList
+							cntlrFe2.SnapFeList = primarySnapFeList
+							cntlrFe2.ExpFeList = primaryExpFeList
+						} else {
+							cntlrFe2.GrpFeList = make([]*pbds.GrpFrontend, 0)
+							cntlrFe2.SnapFeList = make([]*pbds.SnapFrontend, 0)
+							cntlrFe2.ExpFeList = make([]*bpds.ExpFrontend, 0)
+						}
+						break
+					}
+				}
+				newCnEntityVal2, err := proto.Marshal(controllerNode2)
+				if err != nil {
+					logger.Error("marshal controllerNode2 err: %s %v %v",
+						chw.name, controllerNode2, err)
+					return err
+				}
+				smt.Put(cnEntityKey2, newCnEntityVal2)
+			}
+			newDaEntityVal, err := proto.Marshal(diskArray)
+			if err != nil {
+				logger.Error("marshal diskArray err: %s %v %v", chw.name, diskArray, err)
+				return err
+			}
+			stm.Put(daEntityKey, string(newDaEntityVal))
+		}
 		return nil
 	}
 	err := chw.sw.RunStm(apply, ctx, "setErr: "+sockAddr)
@@ -73,7 +187,7 @@ func (chw *cnHeartbeatWorker) setErr(ctx context.Context, sockAddr string) {
 	}
 }
 
-func (chw *cnHeartbeatWorker) checkAndSetErr(ctx context.Context, sockAddr string) {
+func (chw *cnHeartbeatWorker) checkAndSetErr(ctx context.Context, sockAddr string, errMsg string) {
 	now := time.Now().Unix()
 	chw.mu.Lock()
 	if now-chw.timestamp > chw.errBurstDuration {
@@ -87,7 +201,7 @@ func (chw *cnHeartbeatWorker) checkAndSetErr(ctx context.Context, sockAddr strin
 		logger.Warning("errCounter is larger than errBurstLimit: %s %d %d",
 			chw.name, errCounter, chw.errBurstLimit)
 	} else {
-		chw.setErr(ctx, sockAddr)
+		chw.setErr(ctx, sockAddr, errMsg)
 	}
 }
 
@@ -129,11 +243,11 @@ func (chw *cnHeartbeatWorker) processBacklog(ctx context.Context, key string) {
 	cancel()
 	if err != nil {
 		logger.Warning("CnHeartbeat err: %s %v", chw.name, err)
-		chw.checkAndSetErr(ctx, sockAddr)
+		chw.checkAndSetErr(ctx, sockAddr, err.Error())
 	} else {
 		if reply.ReplyInfo.ReplyCode != lib.CnSucceedCode {
 			logger.Warning("CnHeartbeat reply err; %s %v", chw.name, reply.ReplyInfo)
-			chw.checkAndSetErr(ctx, sockAddr)
+			chw.checkAndSetErr(ctx, sockAddr, reply.ReplyInfo.ReplyMsg)
 		}
 	}
 }
