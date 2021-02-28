@@ -114,6 +114,16 @@ func launchMonitor(cmd *cobra.Command, args []string) {
 		logger.Info("Skip CnHeartbeat")
 	}
 
+	if monitorArgs.cnSyncupConcurrency > 0 && monitorArgs.cnSyncupInterval > 0 {
+		csw := newCnSyncupWorker(etcdCli, kf, gc, 5)
+		man := newManager(coord, csw, etcdCli,
+			monitorArgs.cnHeartbeatConcurrency, monitorArgs.cnHeartbeatInterval)
+		man.run()
+		managerList = append(managerList, man)
+	} else {
+		logger.Info("Skip CnSyncup")
+	}
+
 	c := make(chan os.Signal)
 	signal.Notify(c, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT,
 		syscall.SIGUSR1, syscall.SIGUSR2)
