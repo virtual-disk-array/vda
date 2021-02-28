@@ -69,6 +69,180 @@ func (chw *cnHeartbeatWorker) setErr(ctx context.Context, sockAddr string, errMs
 		}
 		cnErrValStr := string(cnErrVal)
 		stm.Put(cnErrKey, cnErrValStr)
+
+		// try to failover each primary cntlr
+		for _, cntlrFe := range controllerNode.CntlrFeList {
+			var thisCntlr *pbds.Controller
+			for _, cntlr := range cntlrFe.CntlrFeConf.CntlrList {
+				if cntlr.CntlrId == cntlrFe.CntlrId {
+					thisCntlr = cntlr
+					break
+				}
+			}
+			if thisCntlr == nil {
+				logger.Error("Can not find thisCntlr: %s %v", chw.name, cntlrFe)
+				return fmt.Errorf("Can not find thisCntlr")
+			}
+			if !thisCntlr.IsPrimary {
+				continue
+			}
+			primaryGrpFeList := cntlrFe.GrpFeList
+			primarySnapFeList := cntlrFe.SnapFeList
+			primaryExpFeList := cntlrFe.ExpFeList
+
+			var newPrimaryCntlr *pbds.Controller
+			for _, cntlr := range cntlrFe.CntlrFeConf.CntlrList {
+				if cntlr.CntlrId == cntlrFe.CntlrId {
+					continue
+				}
+				controllerNode1 := &pbds.ControllerNode{}
+				cnEntityKey1 := chw.kf.CnEntityKey(cntlr.CnSockAddr)
+				cnEntityVal1 := []byte(stm.Get(cnEntityKey1))
+				if len(cnEntityVal1) == 0 {
+					logger.Error("Can not find controllerNode1: %s %s",
+						chw.name, cntlr.CnSockAddr)
+					return fmt.Errorf("Can not find controllerNode1")
+				}
+				if err := proto.Unmarshal(cnEntityVal1, controllerNode1); err != nil {
+					logger.Error("Unmarshal controllerNode1 err: %s %s %v",
+						chw.name, cntlr.CnSockAddr, err)
+					return fmt.Errorf("Unmarshal controllerNode1 err")
+				}
+				if controllerNode1.CnInfo.ErrInfo.IsErr {
+					continue
+				}
+				newPrimaryCntlr = cntlr
+				break
+			}
+			if newPrimaryCntlr == nil {
+				logger.Warning("Can not failover: %s %s",
+					chw.name, cntlrFe.CntlrFeConf.DaName)
+				continue
+			}
+			diskArray := &pbds.DiskArray{}
+			daEntityKey := chw.kf.DaEntityKey(cntlrFe.CntlrFeConf.DaName)
+			daEntityVal := []byte(stm.Get(daEntityKey))
+			if err := proto.Unmarshal(daEntityVal, diskArray); err != nil {
+				logger.Error("Unmarshal diskArray err: %s %s %v",
+					chw.name, daEntityKey, err)
+				return err
+			}
+			for _, cntlr := range diskArray.CntlrList {
+				if cntlr.CntlrId == newPrimaryCntlr.CntlrId {
+					cntlr.IsPrimary = true
+				} else {
+					cntlr.IsPrimary = false
+				}
+				controllerNode2 := &pbds.ControllerNode{}
+				cnEntityKey2 := chw.kf.CnEntityKey(cntlr.CnSockAddr)
+				cnEntityVal2 := []byte(stm.Get(cnEntityKey2))
+				if len(cnEntityVal2) == 0 {
+					logger.Error("Can not find controllerNode2: %s %s",
+						chw.name, cntlr.CnSockAddr)
+					return fmt.Errorf("Can not find controllerNode2")
+				}
+				for _, cntlrFe2 := range controllerNode2.CntlrFeList {
+					if cntlrFe.CntlrId == cntlr.CntlrId {
+						for _, cntlr2 := range cntlrFe2.CntlrFeConf.CntlrList {
+							if cntlr2.CntlrId == newPrimaryCntlr.CntlrId {
+								cntlr2.IsPrimary = true
+							} else {
+								cntlr2.IsPrimary = false
+							}
+						}
+						if cntlrFe2.CntlrId == newPrimaryCntlr.CntlrId {
+							cntlrFe2.GrpFeList = primaryGrpFeList
+							cntlrFe2.SnapFeList = primarySnapFeList
+							cntlrFe2.ExpFeList = primaryExpFeList
+						} else {
+							cntlrFe2.GrpFeList = make([]*pbds.GrpFrontend, 0)
+							cntlrFe2.SnapFeList = make([]*pbds.SnapFrontend, 0)
+							cntlrFe2.ExpFeList = make([]*pbds.ExpFrontend, 0)
+						}
+						break
+					}
+				}
+				newCnEntityVal2, err := proto.Marshal(controllerNode2)
+				if err != nil {
+					logger.Error("Marshal controllerNode2 err: %s %v %v",
+						chw.name, controllerNode2, err)
+					return err
+				}
+				stm.Put(cnEntityKey2, string(newCnEntityVal2))
+				cnErrKey2 := chw.kf.CnErrKey(controllerNode2.CnConf.HashCode,
+					controllerNode2.SockAddr)
+				if (len(stm.Get(cnErrKey2))) == 0 {
+					cnSummary2 := &pbds.CnSummary{
+						Description: controllerNode2.CnConf.Description,
+					}
+					cnErrVal2, err := proto.Marshal(cnSummary2)
+					if err != nil {
+						logger.Error("Marshal cnSummary2 err: %s %v %v",
+							chw.name, cnSummary2, err)
+						return err
+					}
+					stm.Put(cnErrKey2, string(cnErrVal2))
+				}
+
+				for _, grp := range diskArray.GrpList {
+					for _, vd := range grp.VdList {
+						diskNode := &pbds.DiskNode{}
+						dnEntityKey := chw.kf.DnEntityKey(vd.DnSockAddr)
+						dnEntityVal := []byte(stm.Get(dnEntityKey))
+						if len(dnEntityVal) == 0 {
+							logger.Error("Can not find diskNode: %s %v",
+								chw.name, vd.DnSockAddr)
+							return fmt.Errorf("Can not find diskNode")
+						}
+						if err := proto.Unmarshal(dnEntityVal, diskNode); err != nil {
+							logger.Error("Unmarshal diskNode err: %s %s %v",
+								chw.name, vd.DnSockAddr, err)
+							return err
+						}
+						var thisPd *pbds.PhysicalDisk
+						for _, pd := range diskNode.PdList {
+							if pd.PdName == vd.PdName {
+								thisPd = pd
+								break
+							}
+						}
+						if thisPd == nil {
+							logger.Error("Can not find pd: %s %s %v",
+								chw.name, vd.PdName, diskNode)
+							return fmt.Errorf("Can not find pd")
+						}
+						var thisVdBe *pbds.VdBackend
+						for _, vdBe := range thisPd.VdBeList {
+							if vdBe.VdId == vd.VdId {
+								thisVdBe = vdBe
+								break
+							}
+						}
+						if thisVdBe == nil {
+							logger.Error("Can not find vdBe: %s %s %v",
+								chw.name, vd.VdId, diskNode)
+							return fmt.Errorf("Can not find vdBe")
+						}
+						thisVdBe.VdBeConf.CntlrId = newPrimaryCntlr.CntlrId
+						newDnEntityVal, err := proto.Marshal(diskNode)
+						if err != nil {
+							logger.Error("Marshal diskNode err: %s %v %v",
+								chw.name, diskNode, err)
+							return err
+						}
+						stm.Put(dnEntityKey, string(newDnEntityVal))
+					}
+				}
+
+				newDaEntityVal, err := proto.Marshal(diskArray)
+				if err != nil {
+					logger.Error("Marshal diskArray err: %s %v %v",
+						chw.name, diskArray, err)
+					return err
+				}
+				stm.Put(daEntityKey, string(newDaEntityVal))
+			}
+		}
 		return nil
 	}
 	err := chw.sw.RunStm(apply, ctx, "Cn setErr: "+sockAddr)
