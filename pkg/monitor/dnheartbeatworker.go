@@ -67,7 +67,7 @@ func (dhw *dnHeartbeatWorker) setErr(ctx context.Context, sockAddr string) {
 		stm.Put(dnErrKey, dnErrValStr)
 		return nil
 	}
-	err := dhw.sw.RunStm(apply, ctx, "setErr: "+sockAddr)
+	err := dhw.sw.RunStm(apply, ctx, "Dn setErr: "+sockAddr)
 	if err != nil {
 		logger.Error("RunStm err: %s %v", dhw.name, err)
 	}
