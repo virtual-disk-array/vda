@@ -87,16 +87,14 @@ func (sm *SyncupManager) SyncupDn(sockAddr string, ctx context.Context) {
 	if err == nil {
 		if reply.ReplyInfo.ReplyCode == DnSucceedCode {
 			sm.getDnRsp(reply, idToRes)
-			capDiffList, isErr := sm.setDnInfo(diskNode, idToRes)
-			sm.writeDnInfo(diskNode, capDiffList, isErr, revision, ctx)
 		} else {
 			logger.Warning("SyncupDn reply error: %v", reply.ReplyInfo)
 		}
 	} else {
 		logger.Warning("SyncupDn grpc error: %v", err)
-		capDiffList, isErr := sm.setDnInfo(diskNode, idToRes)
-		sm.writeDnInfo(diskNode, capDiffList, isErr, revision, ctx)
 	}
+	capDiffList, isErr := sm.setDnInfo(diskNode, idToRes)
+	sm.writeDnInfo(diskNode, capDiffList, isErr, revision, ctx)
 }
 
 func (sm *SyncupManager) getDiskNode(sockAddr string, ctx context.Context) (
@@ -375,16 +373,14 @@ func (sm *SyncupManager) SyncupCn(sockAddr string, ctx context.Context) {
 	if err == nil {
 		if reply.ReplyInfo.ReplyCode == CnSucceedCode {
 			sm.getCnRsp(reply, idToRes)
-			capDiffList, isErr := sm.setCnInfo(controllerNode, idToRes)
-			sm.writeCnInfo(controllerNode, capDiffList, isErr, revision, ctx)
 		} else {
 			logger.Warning("SyncupCn reply error: %v", reply.ReplyInfo)
 		}
 	} else {
 		logger.Warning("SyncupCn grpc error: %v", err)
-		capDiffList, isErr := sm.setCnInfo(controllerNode, idToRes)
-		sm.writeCnInfo(controllerNode, capDiffList, isErr, revision, ctx)
 	}
+	capDiffList, isErr := sm.setCnInfo(controllerNode, idToRes)
+	sm.writeCnInfo(controllerNode, capDiffList, isErr, revision, ctx)
 }
 
 func (sm *SyncupManager) getControllerNode(sockAddr string, ctx context.Context) (
