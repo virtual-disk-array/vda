@@ -41,7 +41,8 @@ func (chw *cnHeartbeatWorker) getRange(begin, end int) (string, string) {
 	return key, endKey
 }
 
-func (chw *cnHeartbeatWorker) setErr(ctx context.Context, sockAddr string, errMsg string) {
+func (chw *cnHeartbeatWorker) setErr(ctx context.Context,
+	sockAddr string, errMsg string, failover bool) {
 	cnEntityKey := chw.kf.CnEntityKey(sockAddr)
 	apply := func(stm concurrency.STM) error {
 		controllerNode := &pbds.ControllerNode{}
@@ -69,6 +70,10 @@ func (chw *cnHeartbeatWorker) setErr(ctx context.Context, sockAddr string, errMs
 		}
 		cnErrValStr := string(cnErrVal)
 		stm.Put(cnErrKey, cnErrValStr)
+
+		if !failover {
+			return nil
+		}
 
 		// try to failover each primary cntlr
 		for _, cntlrFe := range controllerNode.CntlrFeList {
@@ -251,7 +256,8 @@ func (chw *cnHeartbeatWorker) setErr(ctx context.Context, sockAddr string, errMs
 	}
 }
 
-func (chw *cnHeartbeatWorker) checkAndSetErr(ctx context.Context, sockAddr string, errMsg string) {
+func (chw *cnHeartbeatWorker) checkAndSetErr(ctx context.Context,
+	sockAddr string, errMsg string, failover bool) {
 	now := time.Now().Unix()
 	chw.mu.Lock()
 	if now-chw.timestamp > chw.errBurstDuration {
@@ -265,7 +271,7 @@ func (chw *cnHeartbeatWorker) checkAndSetErr(ctx context.Context, sockAddr strin
 		logger.Warning("errCounter is larger than errBurstLimit: %s %d %d",
 			chw.name, errCounter, chw.errBurstLimit)
 	} else {
-		chw.setErr(ctx, sockAddr, errMsg)
+		chw.setErr(ctx, sockAddr, errMsg, failover)
 	}
 }
 
@@ -307,11 +313,11 @@ func (chw *cnHeartbeatWorker) processBacklog(ctx context.Context, key string) {
 	cancel()
 	if err != nil {
 		logger.Warning("CnHeartbeat err: %s %v", chw.name, err)
-		chw.checkAndSetErr(ctx, sockAddr, err.Error())
+		chw.checkAndSetErr(ctx, sockAddr, err.Error(), true)
 	} else {
 		if reply.ReplyInfo.ReplyCode != lib.CnSucceedCode {
 			logger.Warning("CnHeartbeat reply err; %s %v", chw.name, reply.ReplyInfo)
-			chw.checkAndSetErr(ctx, sockAddr, reply.ReplyInfo.ReplyMsg)
+			chw.checkAndSetErr(ctx, sockAddr, reply.ReplyInfo.ReplyMsg, false)
 		}
 	}
 }
