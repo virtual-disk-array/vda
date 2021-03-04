@@ -2,6 +2,7 @@ package monitor
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -98,19 +99,30 @@ func (dhw *dnHeartbeatWorker) processBacklog(ctx context.Context, key string) {
 		logger.Error("Decode key err: %s %v", dhw.name, err)
 		return
 	}
-	var revision int64
+	var version uint64
 	dnEntityKey := dhw.kf.DnEntityKey(sockAddr)
 	apply := func(stm concurrency.STM) error {
-		revision = stm.Rev(dnEntityKey)
+		val := []byte(stm.Get(dnEntityKey))
+		if len(val) == 0 {
+			logger.Error("Can not find dnEntityKey: %s %s", dhw.name, dnEntityKey)
+			return fmt.Errorf("Can not find dnEntityKey")
+		}
+		diskNode := &pbds.DiskNode{}
+		err := proto.Unmarshal(val, diskNode)
+		if err != nil {
+			logger.Error("Unmarshal diskNode err: %s %v", dhw.name, err)
+			return err
+		}
+		version = diskNode.Version
 		return nil
 	}
-	stmName := "GetRevision: " + dhw.name + " " + sockAddr
+	stmName := "GetVersion: " + dhw.name + " " + sockAddr
 	if err := dhw.sw.RunStm(apply, ctx, stmName); err != nil {
 		logger.Error("%s err: %s", stmName, err)
 		return
 	}
-	if revision == 0 {
-		logger.Warning("DiskNode revision is 0: %s %s", dhw.name, key)
+	if version == 0 {
+		logger.Error("DiskNode version is 0: %s %s", dhw.name, key)
 		return
 	}
 	conn, err := dhw.gc.Get(sockAddr)
@@ -120,8 +132,8 @@ func (dhw *dnHeartbeatWorker) processBacklog(ctx context.Context, key string) {
 	}
 	c := pbdn.NewDnAgentClient(conn)
 	req := &pbdn.DnHeartbeatRequest{
-		ReqId:    uuid.New().String(),
-		Revision: revision,
+		ReqId:   uuid.New().String(),
+		Version: version,
 	}
 	dnCtx, cancel := context.WithTimeout(context.Background(),
 		time.Duration(dhw.dnTimeout)*time.Second)

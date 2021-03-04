@@ -134,6 +134,7 @@ func (po *portalServer) CreatePd(ctx context.Context, req *pbpo.CreatePdRequest)
 			}
 		}
 		diskNode.PdList = append(diskNode.PdList, physicalDisk)
+		diskNode.Version++
 		dnEntityVal, err := proto.Marshal(diskNode)
 		if err != nil {
 			logger.Error("Marshal diskNode err: %v %v", diskNode, err)
@@ -258,6 +259,7 @@ func (po *portalServer) DeletePd(ctx context.Context, req *pbpo.DeletePdRequest)
 		length := len(diskNode.PdList)
 		diskNode.PdList[targetIdx] = diskNode.PdList[length-1]
 		diskNode.PdList = diskNode.PdList[:length-1]
+		diskNode.Version++
 		dnEntityVal, err := proto.Marshal(diskNode)
 		if err != nil {
 			logger.Error("Marshal diskNode err: %v %v", diskNode, err)

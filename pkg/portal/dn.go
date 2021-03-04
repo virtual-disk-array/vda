@@ -72,6 +72,7 @@ func (po *portalServer) CreateDn(ctx context.Context, req *pbpo.CreateDnRequest)
 	diskNode := &pbds.DiskNode{
 		DnId:     dnId,
 		SockAddr: req.SockAddr,
+		Version:  uint64(1),
 		DnConf:   dnConf,
 		DnInfo:   dnInfo,
 		PdList:   pdList,
@@ -754,6 +755,7 @@ func (po *portalServer) GetDn(ctx context.Context, req *pbpo.GetDnRequest) (
 			DiskNode: &pbpo.DiskNode{
 				DnId:        diskNode.DnId,
 				SockAddr:    diskNode.SockAddr,
+				Version:     diskNode.Version,
 				Description: diskNode.DnConf.Description,
 				NvmfListener: &pbpo.NvmfListener{
 					TrType:  diskNode.DnConf.NvmfListener.TrType,

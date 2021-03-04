@@ -91,8 +91,8 @@ func TestNormalSyncup(t *testing.T) {
 	defer dnAgent.Stop()
 	ctx := context.Background()
 	req := &pbdn.SyncupDnRequest{
-		ReqId:    reqId,
-		Revision: int64(1),
+		ReqId:   reqId,
+		Version: uint64(1),
 		DnReq: &pbdn.DnReq{
 			DnId: dnId,
 			PdReqList: []*pbdn.PdReq{
@@ -214,12 +214,12 @@ func TestOldSyncup(t *testing.T) {
 	}
 	defer dnAgent.Stop()
 	ctx := context.Background()
-	revOld := int64(1)
-	revNew := int64(2)
+	versionOld := uint64(1)
+	versionNew := uint64(2)
 
 	req := &pbdn.SyncupDnRequest{
-		ReqId:    reqId,
-		Revision: revNew,
+		ReqId:   reqId,
+		Version: versionNew,
 		DnReq: &pbdn.DnReq{
 			DnId:      dnId,
 			PdReqList: []*pbdn.PdReq{},
@@ -241,8 +241,8 @@ func TestOldSyncup(t *testing.T) {
 	}
 
 	req = &pbdn.SyncupDnRequest{
-		ReqId:    reqId,
-		Revision: revOld,
+		ReqId:   reqId,
+		Version: versionOld,
 		DnReq: &pbdn.DnReq{
 			DnId:      dnId,
 			PdReqList: []*pbdn.PdReq{},

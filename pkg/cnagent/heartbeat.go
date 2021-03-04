@@ -11,13 +11,13 @@ import (
 
 func (cnAgent *cnAgentServer) CnHeartbeat(ctx context.Context, req *pbcn.CnHeartbeatRequest) (
 	*pbcn.CnHeartbeatReply, error) {
-	currRev := atomic.LoadInt64(&lastRev)
-	if req.Revision > currRev {
+	currVersion := atomic.LoadUint64(&lastVersion)
+	if req.Version > currVersion {
 		return &pbcn.CnHeartbeatReply{
 			ReplyInfo: &pbcn.ReplyInfo{
 				ReplyCode: lib.CnOutOfSyncErrCode,
 				ReplyMsg: fmt.Sprintf("received rev: %d, current rev: %d",
-					req.Revision, currRev),
+					req.Version, currVersion),
 			},
 		}, nil
 	} else {

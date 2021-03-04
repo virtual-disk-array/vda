@@ -10,8 +10,8 @@ import (
 )
 
 var (
-	cnMutex sync.Mutex
-	lastRev int64
+	cnMutex     sync.Mutex
+	lastVersion uint64
 )
 
 type cnAgentServer struct {

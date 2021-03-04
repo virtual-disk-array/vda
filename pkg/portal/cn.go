@@ -75,6 +75,7 @@ func (po *portalServer) CreateCn(ctx context.Context, req *pbpo.CreateCnRequest)
 	controllerNode := &pbds.ControllerNode{
 		CnId:        cnId,
 		SockAddr:    req.SockAddr,
+		Version:     uint64(1),
 		CnConf:      cnConf,
 		CnInfo:      cnInfo,
 		CnCapacity:  cnCapacity,

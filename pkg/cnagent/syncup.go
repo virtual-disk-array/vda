@@ -507,17 +507,17 @@ func (cnAgent *cnAgentServer) SyncupCn(ctx context.Context, req *pbcn.SyncupCnRe
 	*pbcn.SyncupCnReply, error) {
 	cnMutex.Lock()
 	defer cnMutex.Unlock()
-	currRev := atomic.LoadInt64(&lastRev)
-	if req.Revision < currRev {
+	currVersion := atomic.LoadUint64(&lastVersion)
+	if req.Version < currVersion {
 		return &pbcn.SyncupCnReply{
 			ReplyInfo: &pbcn.ReplyInfo{
 				ReplyCode: lib.CnOldRevErrCode,
 				ReplyMsg: fmt.Sprintf("received rev: %d, current rev: %d",
-					req.Revision, currRev),
+					req.Version, currVersion),
 			},
 		}, nil
 	}
-	atomic.StoreInt64(&lastRev, req.Revision)
+	atomic.StoreUint64(&lastVersion, req.Version)
 	sh := newSyncupHelper(cnAgent.lisConf, cnAgent.nf, cnAgent.sc)
 
 	cnRsp := sh.syncupCn(req.CnReq)

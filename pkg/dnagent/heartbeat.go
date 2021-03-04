@@ -11,13 +11,13 @@ import (
 
 func (dnAgent *dnAgentServer) DnHeartbeat(ctx context.Context, req *pbdn.DnHeartbeatRequest) (
 	*pbdn.DnHeartbeatReply, error) {
-	currRev := atomic.LoadInt64(&lastRev)
-	if req.Revision > currRev {
+	currVersion := atomic.LoadUint64(&lastVersion)
+	if req.Version > currVersion {
 		return &pbdn.DnHeartbeatReply{
 			ReplyInfo: &pbdn.ReplyInfo{
 				ReplyCode: lib.DnOutOfSyncErrCode,
 				ReplyMsg: fmt.Sprintf("received rev: %d, current rev: %d",
-					req.Revision, currRev),
+					req.Version, currVersion),
 			},
 		}, nil
 	} else {

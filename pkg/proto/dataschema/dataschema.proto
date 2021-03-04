@@ -146,9 +146,10 @@ message DnInfo {
 message DiskNode {
   string dn_id = 1;
   string sock_addr = 2;
-  DnConf dn_conf = 3;
-  DnInfo dn_info = 4;
-  repeated PhysicalDisk pd_list = 5;
+  uint64 version = 3;
+  DnConf dn_conf = 4;
+  DnInfo dn_info = 5;
+  repeated PhysicalDisk pd_list = 6;
 }
 
 message VdFeConf {
@@ -256,10 +257,11 @@ message CnCapacity {
 message ControllerNode {
   string cn_id = 1;
   string sock_addr = 2;
-  CnConf cn_conf = 3;
-  CnInfo cn_info = 4;
-  CnCapacity cn_capacity = 5;
-  repeated CntlrFrontend cntlr_fe_list = 6;
+  uint64 version = 3;
+  CnConf cn_conf = 4;
+  CnInfo cn_info = 5;
+  CnCapacity cn_capacity = 6;
+  repeated CntlrFrontend cntlr_fe_list = 7;
 }
 
 message VirtualDisk {

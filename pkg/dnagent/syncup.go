@@ -233,17 +233,17 @@ func (dnAgent *dnAgentServer) SyncupDn(ctx context.Context, req *pbdn.SyncupDnRe
 	*pbdn.SyncupDnReply, error) {
 	dnMutex.Lock()
 	defer dnMutex.Unlock()
-	currRev := atomic.LoadInt64(&lastRev)
-	if req.Revision < currRev {
+	currVersion := atomic.LoadUint64(&lastVersion)
+	if req.Version < currVersion {
 		return &pbdn.SyncupDnReply{
 			ReplyInfo: &pbdn.ReplyInfo{
 				ReplyCode: lib.DnOldRevErrCode,
 				ReplyMsg: fmt.Sprintf("received rev: %d, current rev: %d",
-					req.Revision, currRev),
+					req.Version, currVersion),
 			},
 		}, nil
 	}
-	atomic.StoreInt64(&lastRev, req.Revision)
+	atomic.StoreUint64(&lastVersion, req.Version)
 	sh := newSyncupHelper(dnAgent.lisConf, dnAgent.nf, dnAgent.sc)
 
 	dnRsp := sh.syncupDn(req.DnReq)

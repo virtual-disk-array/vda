@@ -282,10 +282,21 @@ func (chw *cnHeartbeatWorker) processBacklog(ctx context.Context, key string) {
 		logger.Error("Decode key err: %s %v", chw.name, err)
 		return
 	}
-	var revision int64
+	var version uint64
 	cnEntityKey := chw.kf.CnEntityKey(sockAddr)
 	apply := func(stm concurrency.STM) error {
-		revision = stm.Rev(cnEntityKey)
+		val := []byte(stm.Get(cnEntityKey))
+		if len(val) == 0 {
+			logger.Error("Can not find cnEntityKey: %s %s", chw.name, cnEntityKey)
+			return fmt.Errorf("Can not find cnEntityKey")
+		}
+		controllerNode := &pbds.ControllerNode{}
+		err := proto.Unmarshal(val, controllerNode)
+		if err != nil {
+			logger.Error("Unmarshal controllerNode err: %s %v", chw.name, err)
+			return err
+		}
+		version = controllerNode.Version
 		return nil
 	}
 	stmName := "GetRevision: " + chw.name + " " + sockAddr
@@ -293,8 +304,8 @@ func (chw *cnHeartbeatWorker) processBacklog(ctx context.Context, key string) {
 		logger.Error("%s err: %s", stmName, err)
 		return
 	}
-	if revision == 0 {
-		logger.Warning("ControllerNode revision is 0: %s %s", chw.name, key)
+	if version == 0 {
+		logger.Warning("ControllerNode version is 0: %s %s", chw.name, key)
 		return
 	}
 	conn, err := chw.gc.Get(sockAddr)
@@ -304,8 +315,8 @@ func (chw *cnHeartbeatWorker) processBacklog(ctx context.Context, key string) {
 	}
 	c := pbcn.NewCnAgentClient(conn)
 	req := &pbcn.CnHeartbeatRequest{
-		ReqId:    uuid.New().String(),
-		Revision: revision,
+		ReqId:   uuid.New().String(),
+		Version: version,
 	}
 	cnCtx, cancel := context.WithTimeout(context.Background(),
 		time.Duration(chw.cnTimeout)*time.Second)

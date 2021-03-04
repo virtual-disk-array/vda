@@ -92,7 +92,7 @@ func (sm *SyncupManager) getDiskNode(sockAddr string, ctx context.Context) (
 }
 
 func (sm *SyncupManager) buildSyncupDnRequest(
-	revision int64, diskNode *pbds.DiskNode, ctx context.Context) (
+	diskNode *pbds.DiskNode, ctx context.Context) (
 	*pbdn.SyncupDnRequest, error) {
 
 	pdReqList := make([]*pbdn.PdReq, 0)
@@ -157,9 +157,9 @@ func (sm *SyncupManager) buildSyncupDnRequest(
 		PdReqList: pdReqList,
 	}
 	req := &pbdn.SyncupDnRequest{
-		ReqId:    GetReqId(ctx),
-		Revision: revision,
-		DnReq:    dnReq,
+		ReqId:   GetReqId(ctx),
+		Version: diskNode.Version,
+		DnReq:   dnReq,
 	}
 	return req, nil
 }
@@ -324,7 +324,7 @@ func (sm *SyncupManager) SyncupDn(sockAddr string, ctx context.Context) {
 	if err != nil {
 		return
 	}
-	req, err := sm.buildSyncupDnRequest(revision, diskNode, ctx)
+	req, err := sm.buildSyncupDnRequest(diskNode, ctx)
 	if err != nil {
 		return
 	}
@@ -340,14 +340,16 @@ func (sm *SyncupManager) SyncupDn(sockAddr string, ctx context.Context) {
 	if err == nil {
 		if reply.ReplyInfo.ReplyCode == DnSucceedCode {
 			sm.getDnRsp(reply, idToRes)
+			capDiffList, isErr := sm.setDnInfo(diskNode, idToRes)
+			sm.writeDnInfo(diskNode, capDiffList, isErr, revision, ctx)
 		} else {
 			logger.Warning("SyncupDn reply error: %v", reply.ReplyInfo)
 		}
 	} else {
 		logger.Warning("SyncupDn grpc error: %v", err)
+		capDiffList, isErr := sm.setDnInfo(diskNode, idToRes)
+		sm.writeDnInfo(diskNode, capDiffList, isErr, revision, ctx)
 	}
-	capDiffList, isErr := sm.setDnInfo(diskNode, idToRes)
-	sm.writeDnInfo(diskNode, capDiffList, isErr, revision, ctx)
 }
 
 func (sm *SyncupManager) getControllerNode(sockAddr string, ctx context.Context) (
@@ -376,7 +378,7 @@ func (sm *SyncupManager) getControllerNode(sockAddr string, ctx context.Context)
 }
 
 func (sm *SyncupManager) buildSyncupCnRequest(
-	revision int64, controllerNode *pbds.ControllerNode, ctx context.Context) (
+	controllerNode *pbds.ControllerNode, ctx context.Context) (
 	*pbcn.SyncupCnRequest, error) {
 
 	cntlrFeReqList := make([]*pbcn.CntlrFeReq, 0)
@@ -469,9 +471,9 @@ func (sm *SyncupManager) buildSyncupCnRequest(
 		CntlrFeReqList: cntlrFeReqList,
 	}
 	req := &pbcn.SyncupCnRequest{
-		ReqId:    GetReqId(ctx),
-		Revision: revision,
-		CnReq:    cnReq,
+		ReqId:   GetReqId(ctx),
+		Version: controllerNode.Version,
+		CnReq:   cnReq,
 	}
 	return req, nil
 }
@@ -645,7 +647,7 @@ func (sm *SyncupManager) SyncupCn(sockAddr string, ctx context.Context) {
 	if err != nil {
 		return
 	}
-	req, err := sm.buildSyncupCnRequest(revision, controllerNode, ctx)
+	req, err := sm.buildSyncupCnRequest(controllerNode, ctx)
 	if err != nil {
 		return
 	}
@@ -663,14 +665,16 @@ func (sm *SyncupManager) SyncupCn(sockAddr string, ctx context.Context) {
 	if err == nil {
 		if reply.ReplyInfo.ReplyCode == CnSucceedCode {
 			sm.getCnRsp(reply, idToRes)
+			capDiffList, isErr := sm.setCnInfo(controllerNode, idToRes)
+			sm.writeCnInfo(controllerNode, capDiffList, isErr, revision, ctx)
 		} else {
 			logger.Warning("SyncupCn reply error: %v", reply.ReplyInfo)
 		}
 	} else {
 		logger.Warning("SyncupCn grpc error: %v", err)
+		capDiffList, isErr := sm.setCnInfo(controllerNode, idToRes)
+		sm.writeCnInfo(controllerNode, capDiffList, isErr, revision, ctx)
 	}
-	capDiffList, isErr := sm.setCnInfo(controllerNode, idToRes)
-	sm.writeCnInfo(controllerNode, capDiffList, isErr, revision, ctx)
 }
 
 func NewSyncupManager(kf *KeyFmt, sw *StmWrapper, gc *GrpcCache) *SyncupManager {

@@ -440,6 +440,7 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 				},
 			}
 			targetPd.VdBeList = append(targetPd.VdBeList, vdBe)
+			diskNode.Version++
 			newDnEntityVal, err := proto.Marshal(diskNode)
 			if err != nil {
 				logger.Error("Marshal diskNode err: %v %v", diskNode, err)
@@ -525,6 +526,7 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 				ExpFeList:  expFeList,
 			}
 			controllerNode.CntlrFeList = append(controllerNode.CntlrFeList, cntlrFe)
+			controllerNode.Version++
 			newCnEntityVal, err := proto.Marshal(controllerNode)
 			if err != nil {
 				logger.Error("Marshal controllerNode err: %v %v", controllerNode, err)
@@ -777,6 +779,7 @@ func (po *portalServer) DeleteDa(ctx context.Context, req *pbpo.DeleteDaRequest)
 			stm.Del(oldCnCapKey)
 			stm.Put(newCnCapKey, string(cnCapVal))
 
+			controllerNode.Version++
 			newCnEntityVal, err := proto.Marshal(controllerNode)
 			if err != nil {
 				logger.Error("Marshal controllerNode err: %v %v", controllerNode, err)
@@ -882,6 +885,7 @@ func (po *portalServer) DeleteDa(ctx context.Context, req *pbpo.DeleteDaRequest)
 				}
 				stm.Del(oldDnCapKey)
 				stm.Put(newDnCapKey, string(dnCapVal))
+				diskNode.Version++
 				newDnEntityVal, err := proto.Marshal(diskNode)
 				if err != nil {
 					logger.Error("Marshal diskNode err: %s %v %v", dnEntityKey, diskNode, err)

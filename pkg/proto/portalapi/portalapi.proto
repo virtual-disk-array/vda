@@ -128,12 +128,13 @@ message SnapAttr {
 message DiskNode {
   string dn_id = 1;
   string sock_addr = 2;
-  string description = 3;
-  NvmfListener nvmf_listener = 4;
-  string location = 5;
-  bool is_offline = 6;
-  uint32 hash_code = 7;
-  ErrInfo err_info = 8;
+  uint64 version = 3;
+  string description = 4;
+  NvmfListener nvmf_listener = 5;
+  string location = 6;
+  bool is_offline = 7;
+  uint32 hash_code = 8;
+  ErrInfo err_info = 9;
 }
 
 message DnSummary {
@@ -177,13 +178,14 @@ message PdSummary {
 message ControllerNode {
   string cn_id = 1;
   string sock_addr = 2;
-  string description = 3;
-  NvmfListener nvmf_listener = 4;
-  string location = 5;
-  bool is_offline = 6;
-  uint32 hash_code = 7;
-  ErrInfo err_info = 8;
-  repeated CntlrFrontend cntlr_fe_list = 9;
+  uint64 version = 3;
+  string description = 4;
+  NvmfListener nvmf_listener = 5;
+  string location = 6;
+  bool is_offline = 7;
+  uint32 hash_code = 8;
+  ErrInfo err_info = 9;
+  repeated CntlrFrontend cntlr_fe_list = 10;
 }
 
 message CnSummary {

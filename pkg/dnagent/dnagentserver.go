@@ -10,8 +10,8 @@ import (
 )
 
 var (
-	dnMutex sync.Mutex
-	lastRev int64
+	dnMutex     sync.Mutex
+	lastVersion uint64
 )
 
 type dnAgentServer struct {

@@ -97,8 +97,8 @@ func TestPrimSyncup(t *testing.T) {
 	defer cnAgent.Stop()
 	ctx := context.Background()
 	req := &pbcn.SyncupCnRequest{
-		ReqId:    reqId,
-		Revision: int64(1),
+		ReqId:   reqId,
+		Version: uint64(1),
 		CnReq: &pbcn.CnReq{
 			CnId: cnId,
 			CntlrFeReqList: []*pbcn.CntlrFeReq{
@@ -301,8 +301,8 @@ func TestSecSyncup(t *testing.T) {
 	}
 	ctx := context.Background()
 	req := &pbcn.SyncupCnRequest{
-		ReqId:    reqId,
-		Revision: int64(1),
+		ReqId:   reqId,
+		Version: uint64(1),
 		CnReq: &pbcn.CnReq{
 			CnId: cnId,
 			CntlrFeReqList: []*pbcn.CntlrFeReq{
@@ -429,12 +429,12 @@ func TestOldSyncup(t *testing.T) {
 	defer cnAgent.Stop()
 
 	ctx := context.Background()
-	revOld := int64(1)
-	revNew := int64(2)
+	versionOld := uint64(1)
+	versionNew := uint64(2)
 
 	req := &pbcn.SyncupCnRequest{
-		ReqId:    reqId,
-		Revision: revNew,
+		ReqId:   reqId,
+		Version: versionNew,
 		CnReq: &pbcn.CnReq{
 			CnId:           cnId,
 			CntlrFeReqList: []*pbcn.CntlrFeReq{},
@@ -455,8 +455,8 @@ func TestOldSyncup(t *testing.T) {
 	}
 
 	req = &pbcn.SyncupCnRequest{
-		ReqId:    reqId,
-		Revision: revOld,
+		ReqId:   reqId,
+		Version: versionOld,
 		CnReq: &pbcn.CnReq{
 			CnId:           cnId,
 			CntlrFeReqList: []*pbcn.CntlrFeReq{},

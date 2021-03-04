@@ -162,7 +162,7 @@ message CnReq {
 
 message SyncupCnRequest {
   string req_id = 1;
-  int64 revision = 2;
+  uint64 version = 2;
   CnReq cn_req = 3;
 }
 
@@ -208,7 +208,7 @@ message SyncupCnReply {
 
 message CnHeartbeatRequest {
   string req_id = 1;
-  int64 revision = 2;
+  uint64 version = 2;
 }
 
 message CnHeartbeatReply {
