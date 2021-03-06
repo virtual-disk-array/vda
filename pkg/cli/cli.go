@@ -36,6 +36,7 @@ func init() {
 	rootCmd.AddCommand(pdCmd)
 	rootCmd.AddCommand(cnCmd)
 	rootCmd.AddCommand(daCmd)
+	rootCmd.AddCommand(expCmd)
 }
 
 func Execute() {

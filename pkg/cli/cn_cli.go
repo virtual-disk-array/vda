@@ -204,7 +204,7 @@ func (cli *client) modifyCn(args *cnModifyArgsStruct) string {
 			HashCode: uint32(hashCode),
 		}
 	} else {
-		return "Unknonw key"
+		return "Unknown key"
 	}
 	reply, err := cli.c.ModifyCn(cli.ctx, req)
 	if err != nil {

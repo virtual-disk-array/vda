@@ -182,7 +182,7 @@ func (cli *client) modifyDa(args *daModifyArgsStruct) string {
 			Description: args.value,
 		}
 	} else {
-		return "Unknonw key"
+		return "Unknown key"
 	}
 	reply, err := cli.c.ModifyDa(cli.ctx, req)
 	if err != nil {

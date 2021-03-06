@@ -128,7 +128,7 @@ func init() {
 		"key to modify, one of: description, isOffline")
 	pdModifyCmd.MarkFlagRequired("key")
 	pdModifyCmd.Flags().StringVarP(&pdModifyArgs.value, "value", "", "",
-		"value of of the key")
+		"value of the key")
 	pdModifyCmd.MarkFlagRequired("value")
 	pdCmd.AddCommand(pdModifyCmd)
 
@@ -222,7 +222,7 @@ func (cli *client) modifyPd(args *pdModifyArgsStruct) string {
 			IsOffline: isOffline,
 		}
 	} else {
-		return "Unknonw key"
+		return "Unknown key"
 	}
 	reply, err := cli.c.ModifyPd(cli.ctx, req)
 	if err != nil {
