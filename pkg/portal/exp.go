@@ -518,8 +518,8 @@ func (po *portalServer) ListExp(ctx context.Context, req *pbpo.ListExpRequest) (
 		return &pbpo.ListExpReply{
 			ReplyInfo: &pbpo.ReplyInfo{
 				ReqId:     lib.GetReqId(ctx),
-				ReplyCode: lib.PortalInternalErrCode,
-				ReplyMsg:  err.Error(),
+				ReplyCode: lib.PortalSucceedCode,
+				ReplyMsg:  lib.PortalSucceedMsg,
 			},
 			ExpSummaryList: expSummaryList,
 		}, nil
@@ -622,7 +622,7 @@ func (po *portalServer) GetExp(ctx context.Context, req *pbpo.GetExpRequest) (
 			ExpName:      targetExp.ExpName,
 			Description:  targetExp.Description,
 			InitiatorNqn: targetExp.InitiatorNqn,
-			SnapName:     targetExp.ExpName,
+			SnapName:     targetExp.SnapName,
 			ExpInfoList:  exp_info_list,
 		}
 		return nil

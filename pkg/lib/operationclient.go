@@ -1447,6 +1447,9 @@ func (oc *OperationClient) CreateRaid0Bdev(raid0BdevName string,
 		return nil
 	}
 
+	// Make sure the raid0 device has been removed from config
+	oc.DeleteRaid0Bdev(raid0BdevName)
+
 	params := &struct {
 		Name        string   `json:"name"`
 		RaidLevel   string   `json:"raid_level"`

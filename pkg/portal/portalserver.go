@@ -13,6 +13,7 @@ type portalServer struct {
 	kf      *lib.KeyFmt
 	sw      *lib.StmWrapper
 	sm      *lib.SyncupManager
+	nf      *lib.NameFmt
 	alloc   *lib.Allocator
 }
 
@@ -21,6 +22,7 @@ func newPortalServer(etcdCli *clientv3.Client) *portalServer {
 	sw := lib.NewStmWrapper(etcdCli)
 	gc := lib.NewGrpcCache(lib.GrpcCacheTTL, lib.GrpcCacheStep, lib.GrpcCacheInterval)
 	sm := lib.NewSyncupManager(kf, sw, gc)
+	nf := lib.NewNameFmt(lib.DefaultVdaPrefix, lib.DefaultNqnPrefix)
 	boundList := make([]uint64, 0)
 	boundList = append(boundList, 100*1024*1024*1024)
 	boundList = append(boundList, 1000*1024*1024*1024)
@@ -31,6 +33,7 @@ func newPortalServer(etcdCli *clientv3.Client) *portalServer {
 		kf:      kf,
 		sw:      sw,
 		sm:      sm,
+		nf:      nf,
 		alloc:   alloc,
 	}
 }
