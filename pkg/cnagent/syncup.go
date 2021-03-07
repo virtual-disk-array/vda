@@ -470,9 +470,12 @@ func (sh *syncupHelper) syncupCn(cnReq *pbcn.CnReq) *pbcn.CnRsp {
 		feNvmeList, cnErr := sh.oc.GetFeNvmeList(feNvmePrefix)
 		if cnErr == nil {
 			for _, feNvmeName := range feNvmeList {
-				cnErr = sh.oc.DeleteFeNvme(feNvmeName)
-				if cnErr != nil {
-					break
+				_, ok := sh.feNvmeMap[feNvmeName]
+				if !ok {
+					cnErr = sh.oc.DeleteFeNvme(feNvmeName)
+					if cnErr != nil {
+						break
+					}
 				}
 			}
 		}
