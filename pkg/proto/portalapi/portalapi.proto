@@ -273,7 +273,8 @@ message SnapSummary {
 
 message ExpInfo {
   uint32 cntlr_idx = 1;
-  ErrInfo err_info = 2;
+  NvmfListener nvmfListener = 2;
+  ErrInfo err_info = 3;
 }
 
 message Exporter {
@@ -282,7 +283,8 @@ message Exporter {
   string description = 3;
   string initiator_nqn = 4;
   string snap_name = 5;
-  repeated ExpInfo exp_info_list = 6;
+  string target_nqn = 6;
+  repeated ExpInfo exp_info_list = 7;
 }
 
 message ExpSummary {

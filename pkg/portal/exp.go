@@ -609,6 +609,12 @@ func (po *portalServer) GetExp(ctx context.Context, req *pbpo.GetExpRequest) (
 			}
 			exp_info := &pbpo.ExpInfo{
 				CntlrIdx: cntlr.CntlrIdx,
+				NvmfListener: &pbpo.NvmfListener{
+					TrType:  cntlr.CnNvmfListener.TrType,
+					AdrFam:  cntlr.CnNvmfListener.AdrFam,
+					TrAddr:  cntlr.CnNvmfListener.TrAddr,
+					TrSvcId: cntlr.CnNvmfListener.TrSvcId,
+				},
 				ErrInfo: &pbpo.ErrInfo{
 					IsErr:     targetExpFe.ExpFeInfo.ErrInfo.IsErr,
 					ErrMsg:    targetExpFe.ExpFeInfo.ErrInfo.ErrMsg,
@@ -623,6 +629,7 @@ func (po *portalServer) GetExp(ctx context.Context, req *pbpo.GetExpRequest) (
 			Description:  targetExp.Description,
 			InitiatorNqn: targetExp.InitiatorNqn,
 			SnapName:     targetExp.SnapName,
+			TargetNqn:    po.nf.ExpNqnName(targetExp.ExpId),
 			ExpInfoList:  exp_info_list,
 		}
 		return nil
