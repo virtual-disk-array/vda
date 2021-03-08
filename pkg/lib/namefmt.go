@@ -140,8 +140,8 @@ func (nf *NameFmt) SnapFullName(daId, snapId string) string {
 	return fmt.Sprintf("%s/%s", nf.DaLvsName(daId), nf.SnapName(snapId))
 }
 
-func (nf *NameFmt) ExpNqnName(expId string) string {
-	return fmt.Sprintf("%s-%s", nf.ExpNqnPrefix(), expId)
+func (nf *NameFmt) ExpNqnName(daName, expName string) string {
+	return fmt.Sprintf("%s-%s-%s", nf.ExpNqnPrefix(), daName, expName)
 }
 
 func (nf *NameFmt) SecNqnName(cntlrId string) string {

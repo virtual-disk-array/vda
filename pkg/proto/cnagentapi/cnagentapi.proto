@@ -106,6 +106,8 @@ message SnapFeInfo {
 message ExpFeConf {
   string initiator_nqn = 1;
   string snap_id = 2;
+  string da_name = 3;
+  string exp_name = 4;
 }
 
 message ExpFeInfo {

@@ -433,6 +433,8 @@ func (sm *SyncupManager) buildSyncupCnRequest(
 				ExpFeConf: &pbcn.ExpFeConf{
 					InitiatorNqn: expFe.ExpFeConf.InitiatorNqn,
 					SnapId:       expFe.ExpFeConf.SnapId,
+					DaName:       expFe.ExpFeConf.DaName,
+					ExpName:      expFe.ExpFeConf.ExpName,
 				},
 			}
 			expFeReqList = append(expFeReqList, expFeReq)

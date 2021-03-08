@@ -82,6 +82,8 @@ func (po *portalServer) CreateExp(ctx context.Context, req *pbpo.CreateExpReques
 			ExpFeConf: &pbds.ExpFeConf{
 				InitiatorNqn: req.InitiatorNqn,
 				SnapId:       targetSnap.SnapId,
+				DaName:       diskArray.DaName,
+				ExpName:      req.ExpName,
 			},
 			ExpFeInfo: &pbds.ExpFeInfo{
 				ErrInfo: &pbds.ErrInfo{
@@ -629,7 +631,7 @@ func (po *portalServer) GetExp(ctx context.Context, req *pbpo.GetExpRequest) (
 			Description:  targetExp.Description,
 			InitiatorNqn: targetExp.InitiatorNqn,
 			SnapName:     targetExp.SnapName,
-			TargetNqn:    po.nf.ExpNqnName(targetExp.ExpId),
+			TargetNqn:    po.nf.ExpNqnName(req.DaName, req.ExpName),
 			ExpInfoList:  exp_info_list,
 		}
 		return nil

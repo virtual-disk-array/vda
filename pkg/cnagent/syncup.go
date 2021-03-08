@@ -140,7 +140,7 @@ func (sh *syncupHelper) syncupSnapFe(cntlrFeReq *pbcn.CntlrFeReq,
 func (sh *syncupHelper) syncupExpFe(cntlrFeReq *pbcn.CntlrFeReq,
 	expFeReq *pbcn.ExpFeReq, secNqnList []string) *pbcn.ExpFeRsp {
 	var expFeErr error
-	expNqnName := sh.nf.ExpNqnName(expFeReq.ExpId)
+	expNqnName := sh.nf.ExpNqnName(expFeReq.ExpFeConf.DaName, expFeReq.ExpFeConf.ExpName)
 	sh.expNqnMap[expNqnName] = true
 	snapFullName := sh.nf.SnapFullName(cntlrFeReq.CntlrFeConf.DaId, expFeReq.ExpFeConf.SnapId)
 	initiatorNqn := expFeReq.ExpFeConf.InitiatorNqn
@@ -236,7 +236,7 @@ func (sh *syncupHelper) syncupSecExpFe(cntlrFeReq *pbcn.CntlrFeReq,
 	secNvmeName := sh.nf.SecNvmeName(primCntlr.CntlrId)
 	sh.secNvmeMap[secNvmeName] = true
 	secBdevName := sh.nf.SecBdevName(primCntlr.CntlrId)
-	expNqnName := sh.nf.ExpNqnName(expFeReq.ExpId)
+	expNqnName := sh.nf.ExpNqnName(expFeReq.ExpFeConf.DaName, expFeReq.ExpFeConf.ExpName)
 	sh.expNqnMap[expNqnName] = true
 	secNqnName := sh.nf.SecNqnName(cntlrFeReq.CntlrId)
 	primLisConf := &lib.LisConf{
