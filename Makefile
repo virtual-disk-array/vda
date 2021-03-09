@@ -18,6 +18,7 @@ compile:
 	env GOOS=linux GOARCH=amd64 go build -o $(OUT_DIR)/linux_amd64/vda_cn_agent ./cmd/cnagent
 	env GOOS=linux GOARCH=amd64 go build -o $(OUT_DIR)/linux_amd64/vda_cli ./cmd/cli
 	env GOOS=linux GOARCH=amd64 go build -o $(OUT_DIR)/linux_amd64/vda_admin ./cmd/admin
+	env GOOS=linux GOARCH=amd64 go build -o $(OUT_DIR)/linux_amd64/vda_csi ./cmd/csi
 
 .PHONY: test
 test:
