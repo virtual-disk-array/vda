@@ -12,7 +12,7 @@ import (
 	"google.golang.org/grpc"
 	"k8s.io/klog"
 
-	pb "github.com/virtual-disk-array/vda/pkg/proto/portalapi"
+	pbpo "github.com/virtual-disk-array/vda/pkg/proto/portalapi"
 )
 
 const (
@@ -84,7 +84,7 @@ func StartGrpcServer(endpoint string, vdaEndpoint string,
 			return
 		}
 		defer conn.Close()
-		client := pb.NewPortalClient(conn)
+		client := pbpo.NewPortalClient(conn)
 		cs := newControllerServer(client)
 		csi.RegisterControllerServer(server, cs)
 	}
@@ -96,7 +96,7 @@ func StartGrpcServer(endpoint string, vdaEndpoint string,
 			return
 		}
 		defer conn.Close()
-		client := pb.NewPortalClient(conn)
+		client := pbpo.NewPortalClient(conn)
 		no := newNodeOperator()
 		ns := newNodeServer(
 			client, nodeId, no)

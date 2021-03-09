@@ -2,9 +2,7 @@ package csi
 
 import (
 	"context"
-	// "crypto/md5"
-	// "encoding/hex"
-	// "fmt"
+	"fmt"
 	"sync"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
@@ -12,12 +10,13 @@ import (
 	"google.golang.org/grpc/status"
 	"k8s.io/klog"
 
-	pb "github.com/virtual-disk-array/vda/pkg/proto/portalapi"
+	"github.com/virtual-disk-array/vda/pkg/lib"
+	pbpo "github.com/virtual-disk-array/vda/pkg/proto/portalapi"
 )
 
 type NodeServer struct {
 	csi.UnimplementedNodeServer
-	vdaClient pb.PortalClient
+	vdaClient pbpo.PortalClient
 	nodeId    string
 	mux       sync.Mutex
 	no        NodeOperatorInterface
@@ -100,7 +99,7 @@ func (ns *NodeServer) NodeStageVolume(
 
 	initiatorNqn := getInitiatorNqn(ns.nodeId)
 
-	createExpRequest := pb.CreateExpRequest{
+	createExpRequest := pbpo.CreateExpRequest{
 		DaName:       volumeId,
 		ExpName:      ns.nodeId,
 		InitiatorNqn: initiatorNqn,
@@ -111,10 +110,14 @@ func (ns *NodeServer) NodeStageVolume(
 		klog.Errorf("CreateExp failed: %v", err)
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	// FIXME: check reply info
 	klog.Infof("CreateExp reply: %v", createExpReply)
+	if createExpReply.ReplyInfo.ReplyCode != lib.PortalSucceedCode &&
+		createExpReply.ReplyInfo.ReplyCode != lib.PortalDupResErrCode {
+		klog.Errorf("CreateExp reply err: %v", createExpReply.ReplyInfo)
+		return nil, status.Error(codes.Internal, createExpReply.ReplyInfo.ReplyMsg)
+	}
 
-	getExpRequest := pb.GetExpRequest{
+	getExpRequest := pbpo.GetExpRequest{
 		DaName:  volumeId,
 		ExpName: ns.nodeId,
 	}
@@ -128,61 +131,52 @@ func (ns *NodeServer) NodeStageVolume(
 		klog.Errorf("GetExp failed: %v", err)
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	// FIXME: check reply info
 	klog.Infof("GetExp reply: %v", getExpReply)
+	if getExpReply.ReplyInfo.ReplyCode != lib.PortalSucceedCode {
+		klog.Errorf("GetExp reply err: %v", getExpReply.ReplyInfo)
+		return nil, status.Error(codes.Internal, getExpReply.ReplyInfo.ReplyMsg)
+	}
 
-	// expMsg := getExpReply.GetExpMsg()
-	// expNqn := expMsg.GetExpNqn()
-	// hostNqn := expMsg.GetInitiatorNqn()
-	// hash := md5.Sum([]byte(expNqn))
-	// hashStr := hex.EncodeToString(hash[:])
-	// serialNumber := hashStr[:20]
-	// esMsgList := expMsg.GetEsMsgList()
+	serialNumber := getExpReply.Exporter.SerialNumber
+	targetNqn := getExpReply.Exporter.TargetNqn
+	hostNqn := getExpReply.Exporter.InitiatorNqn
+	targetAddr := getExpReply.Exporter.ExpInfoList[0].NvmfListener.TrAddr
+	targetPort := getExpReply.Exporter.ExpInfoList[0].NvmfListener.TrSvcId
 
-	// // FIXME: only connect to the first controller
-	// // should support multiple controllers in the future
-	// esMsg := esMsgList[0]
-	// cnListenerConfStr := esMsg.GetCnListenerConf()
-	// targetAddr, targetPort, err := getNvmfAddrPort(cnListenerConfStr)
-	// if err != nil {
-	// 	klog.Errorf("Get nvmf addr port failed: %v", err)
-	// 	return nil, status.Error(codes.Internal, err.Error())
-	// }
+	devicePath := fmt.Sprintf("/dev/disk/by-id/nvme-VDA_CONTROLLER_%s", serialNumber)
 
-	// devicePath := fmt.Sprintf("/dev/disk/by-id/nvme-VDA_CONTROLLER_%s", serialNumber)
+	ready, err := ns.no.CheckDeviceReady(devicePath)
+	if err != nil {
+		klog.Errorf("Check device ready failed: %v", err)
+		return nil, status.Error(codes.Internal, err.Error())
+	}
 
-	// ready, err := ns.no.CheckDeviceReady(devicePath)
-	// if err != nil {
-	// 	klog.Errorf("Check device ready failed: %v", err)
-	// 	return nil, status.Error(codes.Internal, err.Error())
-	// }
+	if !ready {
+		cmdLine := []string{"nvme", "connect", "-t", "tcp",
+			"-a", targetAddr, "-s", targetPort, "-n", targetNqn, "--hostnqn", hostNqn}
+		err = ns.no.ExecWithTimeout(cmdLine, 40, ctx)
+		if err != nil {
+			klog.Errorf("Connect nvmf error: %v", err)
+			return nil, status.Error(codes.Internal, err.Error())
+		}
 
-	// if !ready {
-	// 	cmdLine := []string{"nvme", "connect", "-t", "tcp",
-	// 		"-a", targetAddr, "-s", targetPort, "-n", expNqn, "--hostnqn", hostNqn}
-	// 	err = ns.no.ExecWithTimeout(cmdLine, 40, ctx)
-	// 	if err != nil {
-	// 		klog.Errorf("Connect nvmf error: %v", err)
-	// 		return nil, status.Error(codes.Internal, err.Error())
-	// 	}
+		err = ns.no.WaitForDeviceReady(devicePath, 10)
+		if err != nil {
+			klog.Errorf("Wait for nvmf error: %v", err)
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+	}
 
-	// 	err = ns.no.WaitForDeviceReady(devicePath, 10)
-	// 	if err != nil {
-	// 		klog.Errorf("Wait for nvmf error: %v", err)
-	// 		return nil, status.Error(codes.Internal, err.Error())
-	// 	}
-	// }
-
-	// stagingPath := req.GetStagingTargetPath() + "/" + volumeId
-	// fsType := req.GetVolumeCapability().GetMount().GetFsType()
-	// mntFlags := req.GetVolumeCapability().GetMount().GetMountFlags()
-	// klog.Infof("mount %s to %s, fstype: %s, flags: %v",
-	// 	devicePath, stagingPath, fsType, mntFlags)
-	// err = ns.no.MountAndFormat(devicePath, stagingPath, fsType, mntFlags)
-	// if err != nil {
-	// 	klog.Errorf("CreateMountPoint failed: %v", err)
-	// 	return nil, status.Error(codes.Internal, err.Error())
-	// }
+	stagingPath := req.GetStagingTargetPath() + "/" + volumeId
+	fsType := req.GetVolumeCapability().GetMount().GetFsType()
+	mntFlags := req.GetVolumeCapability().GetMount().GetMountFlags()
+	klog.Infof("mount %s to %s, fstype: %s, flags: %v",
+		devicePath, stagingPath, fsType, mntFlags)
+	err = ns.no.MountAndFormat(devicePath, stagingPath, fsType, mntFlags)
+	if err != nil {
+		klog.Errorf("CreateMountPoint failed: %v", err)
+		return nil, status.Error(codes.Internal, err.Error())
+	}
 
 	return &csi.NodeStageVolumeResponse{}, nil
 }
@@ -197,7 +191,7 @@ func (ns *NodeServer) NodeUnstageVolume(
 	ns.mux.Lock()
 	defer ns.mux.Unlock()
 
-	getExpRequest := pb.GetExpRequest{
+	getExpRequest := pbpo.GetExpRequest{
 		DaName:  volumeId,
 		ExpName: ns.nodeId,
 	}
@@ -208,45 +202,50 @@ func (ns *NodeServer) NodeUnstageVolume(
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	klog.Infof("GetExp reply: %v", getExpReply)
-	// FIXME: check reply info
+	if getExpReply.ReplyInfo.ReplyCode != lib.PortalSucceedCode &&
+		getExpReply.ReplyInfo.ReplyCode != lib.PortalUnknownResErrCode {
+		klog.Errorf("GetExp reply err: %v", getExpReply.ReplyInfo)
+		return nil, status.Error(codes.Internal, getExpReply.ReplyInfo.ReplyMsg)
+	}
+	if getExpReply.ReplyInfo.ReplyCode == lib.PortalUnknownResErrCode {
+		klog.Infof("Exp has been delted: %v", getExpReply.ReplyInfo)
+		return &csi.NodeUnstageVolumeResponse{}, nil
+	}
 
-	// expMsg := getExpReply.GetExpMsg()
-	// expNqn := expMsg.GetExpNqn()
-	// hash := md5.Sum([]byte(expNqn))
-	// hashStr := hex.EncodeToString(hash[:])
-	// serialNumber := hashStr[:20]
+	serialNumber := getExpReply.Exporter.SerialNumber
+	targetNqn := getExpReply.Exporter.TargetNqn
 
-	// devicePath := fmt.Sprintf("/dev/disk/by-id/nvme-VDA_CONTROLLER_%s", serialNumber)
-	// stagingPath := req.GetStagingTargetPath() + "/" + volumeId
+	devicePath := fmt.Sprintf("/dev/disk/by-id/nvme-VDA_CONTROLLER_%s", serialNumber)
+	stagingPath := req.GetStagingTargetPath() + "/" + volumeId
 
-	// err = ns.no.DeleteMountPoint(stagingPath)
-	// if err != nil {
-	// 	klog.Errorf("DeleteMountPoint failed: %v", err)
-	// 	return nil, status.Error(codes.Internal, err.Error())
-	// }
+	err = ns.no.DeleteMountPoint(stagingPath)
+	if err != nil {
+		klog.Errorf("DeleteMountPoint failed: %v", err)
+		return nil, status.Error(codes.Internal, err.Error())
+	}
 
-	// ready, err := ns.no.CheckDeviceReady(devicePath)
-	// if err != nil {
-	// 	klog.Errorf("CheckDeviceReady failed: %v", err)
-	// 	return nil, status.Error(codes.Internal, err.Error())
-	// }
+	ready, err := ns.no.CheckDeviceReady(devicePath)
+	if err != nil {
+		klog.Errorf("CheckDeviceReady failed: %v", err)
+		return nil, status.Error(codes.Internal, err.Error())
+	}
 
-	// if ready {
-	// 	cmdLine := []string{"nvme", "disconnect", "-n", expNqn}
-	// 	err := ns.no.ExecWithTimeout(cmdLine, 40, ctx)
-	// 	if err != nil {
-	// 		klog.Errorf("Disconnect nvmf error: %v", err)
-	// 		return nil, status.Error(codes.Internal, err.Error())
-	// 	}
+	if ready {
+		cmdLine := []string{"nvme", "disconnect", "-n", targetNqn}
+		err := ns.no.ExecWithTimeout(cmdLine, 40, ctx)
+		if err != nil {
+			klog.Errorf("Disconnect nvmf error: %v", err)
+			return nil, status.Error(codes.Internal, err.Error())
+		}
 
-	// 	err = ns.no.WaitForDeviceGone(devicePath, 10)
-	// 	if err != nil {
-	// 		klog.Errorf("WaitForDeviceGone error: %v", err)
-	// 		return nil, status.Error(codes.Internal, err.Error())
-	// 	}
-	// }
+		err = ns.no.WaitForDeviceGone(devicePath, 10)
+		if err != nil {
+			klog.Errorf("WaitForDeviceGone error: %v", err)
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+	}
 
-	deleteExpRequest := pb.DeleteExpRequest{
+	deleteExpRequest := pbpo.DeleteExpRequest{
 		DaName:  volumeId,
 		ExpName: ns.nodeId,
 	}
@@ -257,13 +256,17 @@ func (ns *NodeServer) NodeUnstageVolume(
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	klog.Infof("DeleteExp reply: %v", deleteExpReply)
-	// FIXME: check reply info
+	if deleteExpReply.ReplyInfo.ReplyCode != lib.PortalSucceedCode &&
+		deleteExpReply.ReplyInfo.ReplyCode != lib.PortalUnknownResErrCode {
+		klog.Errorf("DeleteExp reply err: %v", deleteExpReply.ReplyInfo)
+		return nil, status.Error(codes.Internal, deleteExpReply.ReplyInfo.ReplyMsg)
+	}
 
 	return &csi.NodeUnstageVolumeResponse{}, nil
 }
 
 func newNodeServer(
-	vdaClient pb.PortalClient, nodeId string, no NodeOperatorInterface) *NodeServer {
+	vdaClient pbpo.PortalClient, nodeId string, no NodeOperatorInterface) *NodeServer {
 	return &NodeServer{
 		vdaClient: vdaClient,
 		nodeId:    nodeId,
