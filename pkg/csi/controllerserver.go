@@ -42,11 +42,11 @@ func (cs *ControllerServer) CreateVolume(
 		klog.Errorf("CreateDa failed: %v", err)
 		return nil, status.Error(codes.Internal, err.Error())
 	}
+	klog.Infof("CreateDa reply: %v", reply)
 	if reply.ReplyInfo.ReplyCode != lib.PortalSucceedCode &&
 		reply.ReplyInfo.ReplyCode != lib.PortalDupResErrCode {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	klog.Infof("CreateDa reply: %v", reply)
 	return &csi.CreateVolumeResponse{
 		Volume: &csi.Volume{
 			VolumeId:      name,
@@ -71,8 +71,11 @@ func (cs *ControllerServer) DeleteVolume(
 		klog.Errorf("DeleteDa failed: %v", err)
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	// FIXME: check reply info
 	klog.Infof("DeleteDa reply: %v", reply)
+	if reply.ReplyInfo.ReplyCode != lib.PortalSucceedCode &&
+		reply.ReplyInfo.ReplyCode != lib.PortalUnknownResErrCode {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
 	return &csi.DeleteVolumeResponse{}, nil
 }
 
