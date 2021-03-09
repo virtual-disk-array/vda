@@ -46,7 +46,7 @@ func ResTimestamp() string {
 	return time.Now().UTC().String()
 }
 
-func NvmfSerailNumber(nqn string) string {
+func NvmfSerialNumber(nqn string) string {
 	hash := md5.Sum([]byte(nqn))
 	return hex.EncodeToString(hash[:])[:20]
 }

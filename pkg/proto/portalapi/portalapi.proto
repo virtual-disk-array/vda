@@ -284,7 +284,9 @@ message Exporter {
   string initiator_nqn = 4;
   string snap_name = 5;
   string target_nqn = 6;
-  repeated ExpInfo exp_info_list = 7;
+  string serial_number = 7;
+  string model_number = 8;
+  repeated ExpInfo exp_info_list = 9;
 }
 
 message ExpSummary {

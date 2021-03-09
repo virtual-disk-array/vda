@@ -625,13 +625,16 @@ func (po *portalServer) GetExp(ctx context.Context, req *pbpo.GetExpRequest) (
 			}
 			exp_info_list = append(exp_info_list, exp_info)
 		}
+		nqn := po.nf.ExpNqnName(req.DaName, req.ExpName)
 		exporter = &pbpo.Exporter{
 			ExpId:        targetExp.ExpId,
 			ExpName:      targetExp.ExpName,
 			Description:  targetExp.Description,
 			InitiatorNqn: targetExp.InitiatorNqn,
 			SnapName:     targetExp.SnapName,
-			TargetNqn:    po.nf.ExpNqnName(req.DaName, req.ExpName),
+			TargetNqn:    nqn,
+			SerialNumber: lib.NvmfSerialNumber(nqn),
+			ModelNumber:  lib.NVMF_MODULE_NUMBER,
 			ExpInfoList:  exp_info_list,
 		}
 		return nil

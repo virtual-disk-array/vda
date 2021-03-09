@@ -264,7 +264,7 @@ func (oc *OperationClient) createNvmfSubsystem(nqn string) error {
 	}{
 		Nqn:          nqn,
 		AllowAnyHost: false,
-		SerialNumber: NvmfSerailNumber(nqn),
+		SerialNumber: NvmfSerialNumber(nqn),
 		ModelNumber:  NVMF_MODULE_NUMBER,
 	}
 	rsp := &struct {
