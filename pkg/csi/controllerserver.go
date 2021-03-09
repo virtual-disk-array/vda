@@ -8,6 +8,7 @@ import (
 	"google.golang.org/grpc/status"
 	"k8s.io/klog"
 
+	"github.com/virtual-disk-array/vda/pkg/lib"
 	pbpo "github.com/virtual-disk-array/vda/pkg/proto/portalapi"
 )
 
@@ -41,7 +42,10 @@ func (cs *ControllerServer) CreateVolume(
 		klog.Errorf("CreateDa failed: %v", err)
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	// FIXME: check reply info
+	if reply.ReplyInfo.ReplyCode != lib.PortalSucceedCode &&
+		reply.ReplyInfo.ReplyCode != lib.PortalDupResErrCode {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
 	klog.Infof("CreateDa reply: %v", reply)
 	return &csi.CreateVolumeResponse{
 		Volume: &csi.Volume{

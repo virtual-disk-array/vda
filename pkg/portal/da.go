@@ -257,7 +257,10 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 		daEntityVal := stm.Get(daEntityKey)
 		if len(daEntityVal) != 0 {
 			logger.Error("Duplicate DaName: %s", diskArray.DaName)
-			return fmt.Errorf("Duplicate DaName: %s", diskArray.DaName)
+			return &portalError{
+				code: lib.PortalDupResErrCode,
+				msg:  daEntityKey,
+			}
 		}
 		newDaEntityVal, err := proto.Marshal(diskArray)
 		if err != nil {
@@ -660,13 +663,23 @@ func (po *portalServer) CreateDa(ctx context.Context, req *pbpo.CreateDaRequest)
 
 	dnList, cnList, err := po.createNewDa(ctx, req)
 	if err != nil {
-		return &pbpo.CreateDaReply{
-			ReplyInfo: &pbpo.ReplyInfo{
-				ReqId:     lib.GetReqId(ctx),
-				ReplyCode: lib.PortalInternalErrCode,
-				ReplyMsg:  err.Error(),
-			},
-		}, nil
+		if serr, ok := err.(*portalError); ok {
+			return &pbpo.CreateDaReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: serr.code,
+					ReplyMsg:  serr.msg,
+				},
+			}, nil
+		} else {
+			return &pbpo.CreateDaReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: lib.PortalInternalErrCode,
+					ReplyMsg:  err.Error(),
+				},
+			}, nil
+		}
 	}
 
 	for _, sockAddr := range dnList {
