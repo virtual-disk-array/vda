@@ -9,6 +9,10 @@ proto:
 	protoc --go_out=plugins=grpc:. --go_opt=paths=source_relative pkg/proto/dnagentapi/dnagentapi.proto
 	protoc --go_out=plugins=grpc:. --go_opt=paths=source_relative pkg/proto/cnagentapi/cnagentapi.proto
 
+.PHONY: mock
+mock:
+	mockgen -destination=pkg/mocks/mockclient/mockclient.go -package=mockclient -source pkg/proto/portalapi/portalapi.pb.go
+
 .PHONY: compile
 compile:
 	mkdir -p $(OUT_DIR)/linux_amd64/
@@ -34,6 +38,6 @@ clean:
 	go clean -testcache ./...
 
 .PHONY: all
-all: proto compile test
+all: proto mock compile test
 
 .DEFAULT_GOAL := all

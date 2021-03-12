@@ -12,6 +12,7 @@ require (
 	github.com/container-storage-interface/spec v1.4.0
 	github.com/coreos/etcd v3.3.25+incompatible
 	github.com/dustin/go-humanize v1.0.0 // indirect
+	github.com/golang/mock v1.3.1
 	github.com/golang/protobuf v1.4.3
 	github.com/google/uuid v1.1.2
 	github.com/kubernetes-csi/csi-lib-utils v0.9.1

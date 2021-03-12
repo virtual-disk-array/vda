@@ -1,2 +1,3 @@
 _out
 *.pb.go
+mockclient.go
