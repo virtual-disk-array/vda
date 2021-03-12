@@ -12,6 +12,7 @@ proto:
 .PHONY: mock
 mock:
 	mockgen -destination=pkg/mocks/mockclient/mockclient.go -package=mockclient -source pkg/proto/portalapi/portalapi.pb.go
+	mockgen -destination=pkg/mocks/mockcsi/mockutils.go -package=mockcsi -source pkg/csi/utils.go
 
 .PHONY: compile
 compile:
@@ -35,6 +36,8 @@ clean:
 	rm -rf pkg/proto/portalapi/portalapi.pb.go
 	rm -rf pkg/proto/dnagentapi/dnagentapi.pb.go
 	rm -rf pkg/proto/cnagentapi/cnagentapi.pb.go
+	rm -rf pkg/mocks/mockclient/mockclient.go
+	rm -rf pkg/mocks/mockcsi/mockutils.go
 	go clean -testcache ./...
 
 .PHONY: all
