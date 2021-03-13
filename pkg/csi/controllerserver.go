@@ -34,6 +34,12 @@ func (cs *ControllerServer) CreateVolume(
 		DaConf: &pbpo.DaConf{
 			StripCnt:    1,
 			StripSizeKb: 64,
+			Qos: &pbpo.BdevQos{
+				RwIosPerSec:    0,
+				RwMbytesPerSec: 0,
+				RMbytesPerSec:  0,
+				WMbytesPerSec:  0,
+			},
 		},
 	}
 	klog.Infof("CreateDa request: %v", request)

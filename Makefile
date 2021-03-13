@@ -40,7 +40,15 @@ clean:
 	rm -rf pkg/mocks/mockcsi/mockutils.go
 	go clean -testcache ./...
 
-.PHONY: all
-all: proto mock compile test
+.PHONY: build
+build: proto mock compile test
 
-.DEFAULT_GOAL := all
+.DEFAULT_GOAL := build
+
+.PHONY: image
+image:
+	docker build -t virtualdiskarray/vdacsi:v0.0.1 -f scripts/csi/Dockerfile .
+
+.PHONY: push
+push:
+	docker push virtualdiskarray/vdacsi

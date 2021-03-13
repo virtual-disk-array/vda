@@ -572,8 +572,8 @@ func (po *portalServer) ListPd(ctx context.Context, req *pbpo.ListPdRequest) (
 		return &pbpo.ListPdReply{
 			ReplyInfo: &pbpo.ReplyInfo{
 				ReqId:     lib.GetReqId(ctx),
-				ReplyCode: lib.PortalInternalErrCode,
-				ReplyMsg:  err.Error(),
+				ReplyCode: lib.PortalSucceedCode,
+				ReplyMsg:  lib.PortalSucceedMsg,
 			},
 			PdSummaryList: pdSummaryList,
 		}, nil
