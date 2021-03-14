@@ -99,7 +99,31 @@ $kubectl_cmd apply -f controller.yaml
 $kubectl_cmd apply -f node-rbac.yaml
 $kubectl_cmd apply -f node.yaml
 $kubectl_cmd apply -f storageclass.yaml
+
+function wait_for_pod() {
+    target_cnt=$1
+    max_retry=$2
+    retry_cnt=0
+    while true; do
+        cnt=`$kubectl_cmd get pod -o json | jq ".items[].status.containerStatuses[].ready" | grep true | wc -l`
+        if [ $cnt -eq $target_cnt ]; then
+            break
+        fi
+        if [ $retry_cnt -ge $max_retry ]; then
+            echo "kubernetes resoruces timeout"
+            exit 1
+        fi
+        echo "kubernetes resources wait retry cnt: $retry_cnt"
+        sleep 5
+        ((retry_cnt=retry_cnt+1))
+    done
+}
+
+wait_for_pod 5 10
+
 $kubectl_cmd apply -f testpod.yaml
+
+wait_for_pod 6 20
 
 echo "sleep"
 sleep infinity
