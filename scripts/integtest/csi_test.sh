@@ -4,6 +4,7 @@ set -e
 
 curr_dir="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
 source $curr_dir/conf.sh
+source $curr_dir/utils.sh
 
 rm -rf $work_dir
 mkdir -p $work_dir
@@ -47,45 +48,45 @@ cd $etcd_dir
        > $work_dir/etcd0.log 2>&1 &
 
 echo "launch vda services"
-cd $vda_dir
+# cd $vda_dir
 
-./vda_dn_agent --network tcp --address '127.0.0.1:9720' \
+$vda_dir/vda_dn_agent --network tcp --address '127.0.0.1:9720' \
                --sock-path $work_dir/dn0.sock --sock-timeout 10 \
                --lis-conf '{"trtype":"tcp","traddr":"127.0.0.1","adrfam":"ipv4","trsvcid":"4420"}' \
                --tr-conf '{"trtype":"TCP"}' \
                > $work_dir/dn_agent_0.log 2>&1 &
 
-./vda_dn_agent --network tcp --address '127.0.0.1:9721' \
+$vda_dir/vda_dn_agent --network tcp --address '127.0.0.1:9721' \
                --sock-path $work_dir/dn1.sock --sock-timeout 10 \
                --lis-conf '{"trtype":"tcp","traddr":"127.0.0.1","adrfam":"ipv4","trsvcid":"4421"}' \
                --tr-conf '{"trtype":"TCP"}' \
                > $work_dir/dn_agent_1.log 2>&1 &
 
-./vda_cn_agent --network tcp --address '127.0.0.1:9820' \
+$vda_dir/vda_cn_agent --network tcp --address '127.0.0.1:9820' \
                --sock-path $work_dir/cn0.sock --sock-timeout 10 \
                --lis-conf '{"trtype":"tcp","traddr":"127.0.0.1","adrfam":"ipv4","trsvcid":"4430"}' \
                --tr-conf '{"trtype":"TCP"}' \
                > $work_dir/cn_agent_0.log 2>&1 &
 
-./vda_cn_agent --network tcp --address '127.0.0.1:9821' \
+$vda_dir/vda_cn_agent --network tcp --address '127.0.0.1:9821' \
                --sock-path $work_dir/cn1.sock --sock-timeout 10 \
                --lis-conf '{"trtype":"tcp","traddr":"127.0.0.1","adrfam":"ipv4","trsvcid":"4431"}' \
                --tr-conf '{"trtype":"TCP"}' \
                > $work_dir/cn_agent_1.log 2>&1 &
 
-./vda_portal --portal-address '127.0.0.1:9520' --portal-network tcp \
+$vda_dir/vda_portal --portal-address '127.0.0.1:9520' --portal-network tcp \
              --etcd-endpoints localhost:$etcd_port \
              > $work_dir/portal_0.log 2>&1 &
 
-./vda_monitor --etcd-endpoints localhost:$etcd_port \
+$vda_dir/vda_monitor --etcd-endpoints localhost:$etcd_port \
               > $work_dir/monitor_0.log 2>&1 &
 
 
 echo "create vda resources"
-./vda_cli dn create --sock-addr localhost:9720 --tr-svc-id 4420
-./vda_cli pd create --sock-addr localhost:9720 --pd-name pd0 \
+$vda_dir/vda_cli dn create --sock-addr localhost:9720 --tr-svc-id 4420
+$vda_dir/vda_cli pd create --sock-addr localhost:9720 --pd-name pd0 \
           --bdev-type-key malloc --bdev-type-value 256
-./vda_cli cn create --sock-addr localhost:9820 --tr-svc-id 4430
+$vda_dir/vda_cli cn create --sock-addr localhost:9820 --tr-svc-id 4430
 
 echo "create kubernetes cluster"
 cd $curr_dir
@@ -113,7 +114,43 @@ function wait_for_pod() {
             echo "kubernetes resoruces timeout"
             exit 1
         fi
-        echo "kubernetes resources wait retry cnt: $retry_cnt"
+        echo "kubernetes pod retry cnt: $retry_cnt"
+        sleep 5
+        ((retry_cnt=retry_cnt+1))
+    done
+}
+
+function wait_for_pvc() {
+    max_retry=10
+    retry_cnt=0
+    while true; do
+        phase=`$kubectl_cmd get pvc -o json | jq -r ".items[0].status.phase"`
+        if [ $phase == "Bound" ]; then
+            break
+        fi
+        if [ $retry_cnt -ge $max_retry ]; then
+            echo "kubernetes pvc timeout"
+            exit 1
+        fi
+        echo "kubernetes pvc retry cnt: $retry_cnt"
+        sleep 5
+        ((retry_cnt=retry_cnt+1))
+    done
+}
+
+function wait_for_deleting_pvc() {
+    max_retry=10
+    retry_cnt=0
+    while true; do
+        pvc_cnt=`$kubectl_cmd get pvc -o json | jq ".items | length"`
+        if [ $pvc_cnt -eq 0 ]; then
+            break
+        fi
+        if [ $retry_cnt -ge $max_retry ]; then
+            echo "kubernetes deleting pvc timeout"
+            exit 1
+        fi
+        echo "kubernetes pvc deleting retry cnt: $retry_cnt"
         sleep 5
         ((retry_cnt=retry_cnt+1))
     done
@@ -121,9 +158,56 @@ function wait_for_pod() {
 
 wait_for_pod 5 10
 
+echo "create testpvc"
+$kubectl_cmd apply -f testpvc.yaml
+wait_for_pvc
+
+da_name=`$vda_dir/vda_cli da list | jq -r ".da_summary_list[0].da_name"`
+if [ $da_name == "null" ]; then
+    echo "can not find da"
+    exit 1
+fi
+
+exp_cnt=`$vda_dir/vda_cli exp list --da-name $da_name | jq ".exp_summary_list | length"`
+if [ $exp_cnt -ne 0 ]; then
+    echo "exp_cnt is not 0: $exp_cnt"
+    exit 1
+fi
+
+echo "create testpod"
 $kubectl_cmd apply -f testpod.yaml
 
 wait_for_pod 6 20
 
-echo "sleep"
-sleep infinity
+exp_cnt=`$vda_dir/vda_cli exp list --da-name $da_name | jq ".exp_summary_list | length"`
+if [ $exp_cnt -ne 1 ]; then
+    echo "exp_cnt is not 1: $exp_cnt"
+    exit 1
+fi
+
+echo "delete testpod"
+$kubectl_cmd delete pod vdacsi-test
+
+wait_for_pod 5 10
+
+echo "check exp_cnt after deleting testpod"
+exp_cnt=`$vda_dir/vda_cli exp list --da-name $da_name | jq ".exp_summary_list | length"`
+if [ $exp_cnt -ne 0 ]; then
+    echo "exp_cnt is not 0: $exp_cnt"
+    exit 1
+fi
+
+echo "deleve pvc"
+$kubectl_cmd delete pvc vdacsi-pvc
+
+wait_for_deleting_pvc
+
+da_cnt=`$vda_dir/vda_cli da list | jq ".da_summary_list | length"`
+if [ $da_cnt -ne 0 ]; then
+    echo "da_cnt is not 0: $da_cnt"
+    exit 1
+fi
+
+cleanup
+
+echo "succeed"
