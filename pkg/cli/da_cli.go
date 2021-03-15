@@ -9,8 +9,8 @@ import (
 type daCreateArgsStruct struct {
 	daName         string
 	description    string
-	size           uint64
-	physicalSize   uint64
+	sizeMb         uint64
+	physicalSizeMb uint64
 	cntlrCnt       uint32
 	stripCnt       uint32
 	stripSizeKb    uint32
@@ -86,18 +86,18 @@ func init() {
 	daCreateCmd.MarkFlagRequired("da-name")
 	daCreateCmd.Flags().StringVarP(&daCreateArgs.description, "description", "", "",
 		"da description")
-	daCreateCmd.Flags().Uint64VarP(&daCreateArgs.size, "size", "", 0,
-		"da size")
+	daCreateCmd.Flags().Uint64VarP(&daCreateArgs.sizeMb, "size-mb", "", 0,
+		"da size in MB")
 	daCreateCmd.MarkFlagRequired("size")
-	daCreateCmd.Flags().Uint64VarP(&daCreateArgs.physicalSize, "physical-size", "", 0,
-		"da physical size")
+	daCreateCmd.Flags().Uint64VarP(&daCreateArgs.physicalSizeMb, "physical-size-mb", "", 0,
+		"da physical size in MB")
 	daCreateCmd.MarkFlagRequired("physical-size")
 	daCreateCmd.Flags().Uint32VarP(&daCreateArgs.cntlrCnt, "cntlr-cnt", "", 1,
 		"da controller count")
 	daCreateCmd.Flags().Uint32VarP(&daCreateArgs.stripCnt, "strip-cnt", "", 1,
 		"da strip count")
 	daCreateCmd.Flags().Uint32VarP(&daCreateArgs.stripSizeKb, "strip-size-kb", "", 64,
-		"da strip size in kb")
+		"da strip size in KB")
 	daCreateCmd.Flags().Uint64VarP(&daCreateArgs.rwIosPerSec, "rw-ios-per-sec", "", 0,
 		"da read/write ios per second")
 	daCreateCmd.Flags().Uint64VarP(&daCreateArgs.rwMbytesPerSec, "rw-mbytes-per-sec", "", 0,
@@ -140,8 +140,8 @@ func (cli *client) createDa(args *daCreateArgsStruct) string {
 	req := &pbpo.CreateDaRequest{
 		DaName:       args.daName,
 		Description:  args.description,
-		Size:         args.size,
-		PhysicalSize: args.physicalSize,
+		Size:         args.sizeMb * 1024 * 1024,
+		PhysicalSize: args.physicalSizeMb * 1024 * 1024,
 		CntlrCnt:     args.cntlrCnt,
 		DaConf: &pbpo.DaConf{
 			Qos: &pbpo.BdevQos{
