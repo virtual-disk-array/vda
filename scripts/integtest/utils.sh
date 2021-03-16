@@ -1,6 +1,8 @@
 #!/bin/bash
 
 function cleanup() {
+    echo "nvme disconnect-all"
+    sudo nvme disconnect-all
     echo "stop minikube"
     minikube status > /dev/null && minikube stop
     echo "delete minikube"
@@ -27,6 +29,11 @@ function cleanup_check() {
     ps -f -C vda_cn_agent > /dev/null && echo "vda_cn_agent is still running"
     ps -f -C etcd > /dev/null && echo "etcd is still running"
     ps -f -C reactor_0 > /dev/null && echo "reactor_0 is still running"
+}
+
+function umount_dir() {
+    dir=$1
+    mountpoint $dir && sudo umount  $dir
 }
 
 function da_verify() {
@@ -119,7 +126,7 @@ function exp_verify() {
         echo "exp_info_cnt is 0, da_name: $da_name exp_name: $exp_name"
         exit 1
     fi
-    for i in `seq $[exp_info_cnt - 1]`; do
+    for i in `seq 0 $[exp_info_cnt - 1]`; do
         is_err=`$vda_dir/vda_cli exp get --da-name $da_name --exp-name $exp_name | jq ".exporter.exp_info_list[$i].err_info.is_err"`
         if [ "$is_err" != "null" ]; then
             echo "exp_info is err, da_name: $da_name exp_name: $exp_name exp_info: $i"
@@ -146,9 +153,26 @@ function nvmf_connect() {
         echo "exp_info_cnt is 0, da_name: $da_name exp_name: $exp_name"
         exit 1
     fi
-    for i in `seq $[exp_info_cnt - 1]`; do
-        tr_svc_id=`$vda_dir/vda_cli exp get --daname $da_name --exp-name $exp_name | jq -r ".exporter.exp_info_list[$i].nvmf_listener.tr_svc_id"`
+    for i in `seq 0 $[exp_info_cnt - 1]`; do
+        tr_svc_id=`$vda_dir/vda_cli exp get --da-name $da_name --exp-name $exp_name | jq -r ".exporter.exp_info_list[$i].nvmf_listener.tr_svc_id"`
         sudo nvme connect -t tcp -n nqn.2016-06.io.vda:exp-$da_name-$exp_name -a 127.0.0.1 -s $tr_svc_id --hostnqn $host_nqn
     done
+}
+
+function nvmf_format() {
+    da_name=$1
+    exp_name=$2
     serial_number=`$vda_dir/vda_cli exp get --da-name $da_name --exp-name $exp_name | jq -r ".exporter.serial_number"`
+    dev_path="/dev/disk/by-id/nvme-VDA_CONTROLLER_$serial_number"
+    sudo mkfs.ext4 $dev_path
+}
+
+function nvmf_mount() {
+    da_name=$1
+    exp_name=$2
+    dir=$3
+    serial_number=`$vda_dir/vda_cli exp get --da-name $da_name --exp-name $exp_name | jq -r ".exporter.serial_number"`
+    dev_path="/dev/disk/by-id/nvme-VDA_CONTROLLER_$serial_number"
+    mkdir -p $dir
+    sudo mount $dev_path $dir
 }

@@ -130,27 +130,33 @@ exp_verify da1 exp1
 exp_verify da2 exp2
 exp_verify da3 exp3
 
-# nvmf_connect da0 exp0 $host_nqn
+nvmf_connect da0 exp0 $host_nqn
+sleep 1
+nvmf_format da0 exp0
+nvmf_mount da0 exp0 "$work_dir/da0"
 
-$vda_dir/vda_cli exp delete --da-name da0 --exp-name exp0
-$vda_dir/vda_cli exp delete --da-name da1 --exp-name exp1
-$vda_dir/vda_cli exp delete --da-name da2 --exp-name exp2
-$vda_dir/vda_cli exp delete --da-name da3 --exp-name exp3
+echo "sleep"
+sleep infinity
 
-$vda_dir/vda_cli da delete --da-name da0
-$vda_dir/vda_cli da delete --da-name da1
-$vda_dir/vda_cli da delete --da-name da2
-$vda_dir/vda_cli da delete --da-name da3
+# $vda_dir/vda_cli exp delete --da-name da0 --exp-name exp0
+# $vda_dir/vda_cli exp delete --da-name da1 --exp-name exp1
+# $vda_dir/vda_cli exp delete --da-name da2 --exp-name exp2
+# $vda_dir/vda_cli exp delete --da-name da3 --exp-name exp3
 
-$vda_dir/vda_cli cn delete --sock-addr localhost:9820
-$vda_dir/vda_cli cn delete --sock-addr localhost:9821
+# $vda_dir/vda_cli da delete --da-name da0
+# $vda_dir/vda_cli da delete --da-name da1
+# $vda_dir/vda_cli da delete --da-name da2
+# $vda_dir/vda_cli da delete --da-name da3
 
-$vda_dir/vda_cli pd delete --sock-addr localhost:9720 --pd-name pd0
-$vda_dir/vda_cli pd delete --sock-addr localhost:9721 --pd-name pd1
+# $vda_dir/vda_cli cn delete --sock-addr localhost:9820
+# $vda_dir/vda_cli cn delete --sock-addr localhost:9821
 
-$vda_dir/vda_cli dn delete --sock-addr localhost:9720
-$vda_dir/vda_cli dn delete --sock-addr localhost:9721
+# $vda_dir/vda_cli pd delete --sock-addr localhost:9720 --pd-name pd0
+# $vda_dir/vda_cli pd delete --sock-addr localhost:9721 --pd-name pd1
 
-cleanup
+# $vda_dir/vda_cli dn delete --sock-addr localhost:9720
+# $vda_dir/vda_cli dn delete --sock-addr localhost:9721
 
-echo "succeed"
+# cleanup
+
+# echo "succeed"
