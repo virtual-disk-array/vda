@@ -448,8 +448,6 @@ func (oc *OperationClient) CreateBeNvmf(beNqnName, beLvolFullName, feNqnName str
 			return err
 		}
 		nvmf = nil
-	} else {
-		nvmf = nil
 	}
 	if nvmf == nil {
 		if err := oc.createNvmfSubsystem(beNqnName); err != nil {

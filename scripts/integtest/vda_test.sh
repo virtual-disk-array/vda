@@ -98,14 +98,14 @@ $vda_dir/vda_cli cn create --sock-addr localhost:9821 --tr-svc-id 4431
 $vda_dir/vda_cli da create --da-name da0 --size-mb 64 --physical-size-mb 64 \
                  --cntlr-cnt 1 --strip-cnt 1 --strip-size-kb 64
 
-# $vda_dir/vda_cli da create --da-name da1 --size-mb 64 --physical-size-mb 64 \
-#                  --cntlr-cnt 2 --strip-cnt 1 --strip-size-kb 64
+$vda_dir/vda_cli da create --da-name da1 --size-mb 64 --physical-size-mb 64 \
+                 --cntlr-cnt 2 --strip-cnt 1 --strip-size-kb 64
 
-# $vda_dir/vda_cli da create --da-name da2 --size-mb 64 --physical-size-mb 64 \
-#                  --cntlr-cnt 1 --strip-cnt 2 --strip-size-kb 64
+$vda_dir/vda_cli da create --da-name da2 --size-mb 64 --physical-size-mb 64 \
+                 --cntlr-cnt 1 --strip-cnt 2 --strip-size-kb 64
 
-# $vda_dir/vda_cli da create --da-name da3 --size-mb 64 --physical-size-mb 64 \
-#                  --cntlr-cnt 2 --strip-cnt 2 --strip-size-kb 64
+$vda_dir/vda_cli da create --da-name da3 --size-mb 64 --physical-size-mb 64 \
+                 --cntlr-cnt 2 --strip-cnt 2 --strip-size-kb 64
 
 echo "sleep"
 sleep infinity
