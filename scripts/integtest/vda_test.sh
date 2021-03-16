@@ -107,5 +107,50 @@ $vda_dir/vda_cli da create --da-name da2 --size-mb 64 --physical-size-mb 64 \
 $vda_dir/vda_cli da create --da-name da3 --size-mb 64 --physical-size-mb 64 \
                  --cntlr-cnt 2 --strip-cnt 2 --strip-size-kb 64
 
-echo "sleep"
-sleep infinity
+
+host_nqn="nqn.2016-06.io.spdk:host0"
+
+$vda_dir/vda_cli exp create --da-name da0 --exp-name exp0 \
+                 --initiator-nqn $host_nqn
+$vda_dir/vda_cli exp create --da-name da1 --exp-name exp1 \
+                 --initiator-nqn $host_nqn
+$vda_dir/vda_cli exp create --da-name da2 --exp-name exp2 \
+                 --initiator-nqn $host_nqn
+$vda_dir/vda_cli exp create --da-name da3 --exp-name exp3 \
+                 --initiator-nqn $host_nqn
+
+
+da_verify da0
+da_verify da1
+da_verify da2
+da_verify da3
+
+exp_verify da0 exp0
+exp_verify da1 exp1
+exp_verify da2 exp2
+exp_verify da3 exp3
+
+# nvmf_connect da0 exp0 $host_nqn
+
+$vda_dir/vda_cli exp delete --da-name da0 --exp-name exp0
+$vda_dir/vda_cli exp delete --da-name da1 --exp-name exp1
+$vda_dir/vda_cli exp delete --da-name da2 --exp-name exp2
+$vda_dir/vda_cli exp delete --da-name da3 --exp-name exp3
+
+$vda_dir/vda_cli da delete --da-name da0
+$vda_dir/vda_cli da delete --da-name da1
+$vda_dir/vda_cli da delete --da-name da2
+$vda_dir/vda_cli da delete --da-name da3
+
+$vda_dir/vda_cli cn delete --sock-addr localhost:9820
+$vda_dir/vda_cli cn delete --sock-addr localhost:9821
+
+$vda_dir/vda_cli pd delete --sock-addr localhost:9720 --pd-name pd0
+$vda_dir/vda_cli pd delete --sock-addr localhost:9721 --pd-name pd1
+
+$vda_dir/vda_cli dn delete --sock-addr localhost:9720
+$vda_dir/vda_cli dn delete --sock-addr localhost:9721
+
+cleanup
+
+echo "succeed"

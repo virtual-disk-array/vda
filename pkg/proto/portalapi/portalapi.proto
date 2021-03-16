@@ -273,7 +273,7 @@ message SnapSummary {
 
 message ExpInfo {
   uint32 cntlr_idx = 1;
-  NvmfListener nvmfListener = 2;
+  NvmfListener nvmf_listener = 2;
   ErrInfo err_info = 3;
 }
 
