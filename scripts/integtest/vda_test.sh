@@ -110,13 +110,13 @@ $vda_dir/vda_cli da create --da-name da3 --size-mb 64 --physical-size-mb 64 \
 
 host_nqn="nqn.2016-06.io.spdk:host0"
 
-$vda_dir/vda_cli exp create --da-name da0 --exp-name exp0 \
+$vda_dir/vda_cli exp create --da-name da0 --exp-name exp0a \
                  --initiator-nqn $host_nqn
-$vda_dir/vda_cli exp create --da-name da1 --exp-name exp1 \
+$vda_dir/vda_cli exp create --da-name da1 --exp-name exp1a \
                  --initiator-nqn $host_nqn
-$vda_dir/vda_cli exp create --da-name da2 --exp-name exp2 \
+$vda_dir/vda_cli exp create --da-name da2 --exp-name exp2a \
                  --initiator-nqn $host_nqn
-$vda_dir/vda_cli exp create --da-name da3 --exp-name exp3 \
+$vda_dir/vda_cli exp create --da-name da3 --exp-name exp3a \
                  --initiator-nqn $host_nqn
 
 
@@ -125,38 +125,133 @@ da_verify da1
 da_verify da2
 da_verify da3
 
-exp_verify da0 exp0
-exp_verify da1 exp1
-exp_verify da2 exp2
-exp_verify da3 exp3
+exp_verify da0 exp0a
+exp_verify da1 exp1a
+exp_verify da2 exp2a
+exp_verify da3 exp3a
 
-nvmf_connect da0 exp0 $host_nqn
-sleep 1
-nvmf_format da0 exp0
-nvmf_mount da0 exp0 "$work_dir/da0"
+nvmf_connect da0 exp0a $host_nqn
+nvmf_connect da1 exp1a $host_nqn
+nvmf_connect da2 exp2a $host_nqn
+nvmf_connect da3 exp3a $host_nqn
 
-echo "sleep"
-sleep infinity
+nvmf_format da0 exp0a
+nvmf_format da1 exp1a
+nvmf_format da2 exp2a
+nvmf_format da3 exp3a
 
-# $vda_dir/vda_cli exp delete --da-name da0 --exp-name exp0
-# $vda_dir/vda_cli exp delete --da-name da1 --exp-name exp1
-# $vda_dir/vda_cli exp delete --da-name da2 --exp-name exp2
-# $vda_dir/vda_cli exp delete --da-name da3 --exp-name exp3
+nvmf_mount da0 exp0a "$work_dir/da0"
+nvmf_mount da1 exp1a "$work_dir/da1"
+nvmf_mount da2 exp2a "$work_dir/da2"
+nvmf_mount da3 exp3a "$work_dir/da3"
 
-# $vda_dir/vda_cli da delete --da-name da0
-# $vda_dir/vda_cli da delete --da-name da1
-# $vda_dir/vda_cli da delete --da-name da2
-# $vda_dir/vda_cli da delete --da-name da3
+sudo touch "$work_dir/da0/foo"
+sudo touch "$work_dir/da1/foo"
+sudo touch "$work_dir/da2/foo"
+sudo touch "$work_dir/da3/foo"
 
-# $vda_dir/vda_cli cn delete --sock-addr localhost:9820
-# $vda_dir/vda_cli cn delete --sock-addr localhost:9821
+if [ ! -f "$work_dir/da0/foo" ]; then
+    echo "can not create file: $work_dir/da0/foo"
+    exit 1
+fi
 
-# $vda_dir/vda_cli pd delete --sock-addr localhost:9720 --pd-name pd0
-# $vda_dir/vda_cli pd delete --sock-addr localhost:9721 --pd-name pd1
+if [ ! -f "$work_dir/da1/foo" ]; then
+    echo "can not create file: $work_dir/da1/foo"
+    exit 1
+fi
 
-# $vda_dir/vda_cli dn delete --sock-addr localhost:9720
-# $vda_dir/vda_cli dn delete --sock-addr localhost:9721
+if [ ! -f "$work_dir/da2/foo" ]; then
+    echo "can not create file: $work_dir/da2/foo"
+    exit 1
+fi
 
-# cleanup
+if [ ! -f "$work_dir/da3/foo" ]; then
+    echo "can not create file: $work_dir/da3/foo"
+    exit 1
+fi
 
-# echo "succeed"
+umount_dir "$work_dir/da0"
+umount_dir "$work_dir/da1"
+umount_dir "$work_dir/da2"
+umount_dir "$work_dir/da3"
+
+sudo nvme disconnect-all
+
+$vda_dir/vda_cli exp delete --da-name da0 --exp-name exp0a
+$vda_dir/vda_cli exp delete --da-name da1 --exp-name exp1a
+$vda_dir/vda_cli exp delete --da-name da2 --exp-name exp2a
+$vda_dir/vda_cli exp delete --da-name da3 --exp-name exp3a
+
+$vda_dir/vda_cli exp create --da-name da0 --exp-name exp0b \
+                 --initiator-nqn $host_nqn
+$vda_dir/vda_cli exp create --da-name da1 --exp-name exp1b \
+                 --initiator-nqn $host_nqn
+$vda_dir/vda_cli exp create --da-name da2 --exp-name exp2b \
+                 --initiator-nqn $host_nqn
+$vda_dir/vda_cli exp create --da-name da3 --exp-name exp3b \
+                 --initiator-nqn $host_nqn
+
+exp_verify da0 exp0b
+exp_verify da1 exp1b
+exp_verify da2 exp2b
+exp_verify da3 exp3b
+
+nvmf_connect da0 exp0b $host_nqn
+nvmf_connect da1 exp1b $host_nqn
+nvmf_connect da2 exp2b $host_nqn
+nvmf_connect da3 exp3b $host_nqn
+
+nvmf_mount da0 exp0b "$work_dir/da0"
+nvmf_mount da1 exp1b "$work_dir/da1"
+nvmf_mount da2 exp2b "$work_dir/da2"
+nvmf_mount da3 exp3b "$work_dir/da3"
+
+if [ ! -f "$work_dir/da0/foo" ]; then
+    echo "can not find file: $work_dir/da0/foo"
+    exit 1
+fi
+
+if [ ! -f "$work_dir/da1/foo" ]; then
+    echo "can not find file: $work_dir/da1/foo"
+    exit 1
+fi
+
+if [ ! -f "$work_dir/da2/foo" ]; then
+    echo "can not find file: $work_dir/da2/foo"
+    exit 1
+fi
+
+if [ ! -f "$work_dir/da3/foo" ]; then
+    echo "can not find file: $work_dir/da3/foo"
+    exit 1
+fi
+
+umount_dir "$work_dir/da0"
+umount_dir "$work_dir/da1"
+umount_dir "$work_dir/da2"
+umount_dir "$work_dir/da3"
+
+sudo nvme disconnect-all
+
+$vda_dir/vda_cli exp delete --da-name da0 --exp-name exp0b
+$vda_dir/vda_cli exp delete --da-name da1 --exp-name exp1b
+$vda_dir/vda_cli exp delete --da-name da2 --exp-name exp2b
+$vda_dir/vda_cli exp delete --da-name da3 --exp-name exp3b
+
+$vda_dir/vda_cli da delete --da-name da0
+$vda_dir/vda_cli da delete --da-name da1
+$vda_dir/vda_cli da delete --da-name da2
+$vda_dir/vda_cli da delete --da-name da3
+
+$vda_dir/vda_cli cn delete --sock-addr localhost:9820
+$vda_dir/vda_cli cn delete --sock-addr localhost:9821
+
+$vda_dir/vda_cli pd delete --sock-addr localhost:9720 --pd-name pd0
+$vda_dir/vda_cli pd delete --sock-addr localhost:9721 --pd-name pd1
+
+$vda_dir/vda_cli dn delete --sock-addr localhost:9720
+$vda_dir/vda_cli dn delete --sock-addr localhost:9721
+
+cleanup
+
+echo "succeed"

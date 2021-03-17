@@ -156,6 +156,21 @@ function nvmf_connect() {
     for i in `seq 0 $[exp_info_cnt - 1]`; do
         tr_svc_id=`$vda_dir/vda_cli exp get --da-name $da_name --exp-name $exp_name | jq -r ".exporter.exp_info_list[$i].nvmf_listener.tr_svc_id"`
         sudo nvme connect -t tcp -n nqn.2016-06.io.vda:exp-$da_name-$exp_name -a 127.0.0.1 -s $tr_svc_id --hostnqn $host_nqn
+        serial_number=`$vda_dir/vda_cli exp get --da-name $da_name --exp-name $exp_name | jq -r ".exporter.serial_number"`
+        dev_path="/dev/disk/by-id/nvme-VDA_CONTROLLER_$serial_number"
+        max_retry=10
+        retry_cnt=0
+        while true; do
+            if [ -e $dev_path ]; then
+                break
+            fi
+            if [ $retry_cnt -ge $max_retry ]; then
+                echo "nvmf check timeout: $da_name $exp_name $dev_path"
+                exit 1
+            fi
+            sleep 1
+            ((retry_cnt=retry_cnt+1))
+        done
     done
 }
 
