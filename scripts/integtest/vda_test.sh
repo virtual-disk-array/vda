@@ -233,6 +233,9 @@ umount_dir "$work_dir/da3"
 
 sudo nvme disconnect-all
 
+echo "sleep"
+sleep infinity
+
 $vda_dir/vda_cli exp delete --da-name da0 --exp-name exp0b
 $vda_dir/vda_cli exp delete --da-name da1 --exp-name exp1b
 $vda_dir/vda_cli exp delete --da-name da2 --exp-name exp2b

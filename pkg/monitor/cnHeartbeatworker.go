@@ -146,6 +146,12 @@ func (chw *cnHeartbeatWorker) setErr(ctx context.Context,
 						chw.name, cntlr.CnSockAddr)
 					return fmt.Errorf("Can not find controllerNode2")
 				}
+				err := proto.Unmarshal(cnEntityVal2, controllerNode2)
+				if err != nil {
+					logger.Error("Unmarshal controllerNode2 err: %s %s %v",
+						chw.name, cntlr.CnSockAddr, err)
+					return err
+				}
 				for _, cntlrFe2 := range controllerNode2.CntlrFeList {
 					if cntlrFe.CntlrId == cntlr.CntlrId {
 						for _, cntlr2 := range cntlrFe2.CntlrFeConf.CntlrList {
