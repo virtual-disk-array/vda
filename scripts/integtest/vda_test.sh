@@ -233,13 +233,80 @@ umount_dir "$work_dir/da3"
 
 sudo nvme disconnect-all
 
-echo "sleep"
-sleep infinity
-
 $vda_dir/vda_cli exp delete --da-name da0 --exp-name exp0b
 $vda_dir/vda_cli exp delete --da-name da1 --exp-name exp1b
 $vda_dir/vda_cli exp delete --da-name da2 --exp-name exp2b
 $vda_dir/vda_cli exp delete --da-name da3 --exp-name exp3b
+
+echo "testing failover"
+$vda_dir/vda_cli exp create --da-name da3 --exp-name exp3c \
+                 --initiator-nqn $host_nqn
+exp_verify da3 exp3c
+nvmf_connect da3 exp3c $host_nqn
+nvmf_mount da3 exp3c "$work_dir/da3"
+
+sock_addr=`$vda_dir/vda_cli da get --da-name da3 | jq -r ".disk_array.cntlr_list[] | select(.is_primary==true).sock_addr"`
+echo "primary sock_addr: $sock_addr"
+if [ "$sock_addr" != "localhost:9820" ] && [ "$sock_addr" != "localhost:9821" ]; then
+    echo "get primary sock_addr err"
+    exit 1
+fi
+if [ "$sock_addr" == "localhost:9820" ]; then
+    port="9820"
+    new_primary="localhost:9821"
+else
+    port="9821"
+    new_primary="localhost:9820"
+fi
+primary_pid=`ps -ef | grep vda_cn_agent | grep $port | awk '{print $2}'`
+if [ "$primary_pid" == "" ]; then
+    echo "can not find primary_pid"
+    exit 1
+fi
+kill $primary_pid
+echo "waiting for failover"
+max_retry=10
+retry_cnt=0
+while true; do
+    sock_addr=`$vda_dir/vda_cli da get --da-name da3 | jq -r ".disk_array.cntlr_list[] | select(.is_primary==true).sock_addr"`
+    if [ "$sock_addr" == "$new_primary" ]; then
+        break
+    fi
+    if [ $retry_cnt -ge $max_retry ]; then
+        echo "failover timeout"
+        exit 1
+    fi
+    sleep 5
+    ((retry_cnt=retry_cnt+1))
+done
+
+sudo touch "$work_dir/da3/bar"
+
+if [ ! -f "$work_dir/da3/bar" ]; then
+    echo "can not create file: $work_dir/da3/bar"
+    exit 1
+fi
+
+# if [ "$new_primary" == "localhost:9820" ]; then
+#     $vda_dir/vda_cn_agent --network tcp --address '127.0.0.1:9821' \
+#                           --sock-path $work_dir/cn1.sock --sock-timeout 10 \
+#                           --lis-conf '{"trtype":"tcp","traddr":"127.0.0.1","adrfam":"ipv4","trsvcid":"4431"}' \
+#                           --tr-conf '{"trtype":"TCP"}' \
+#                           > $work_dir/cn_agent_1.log 2>&1 &
+# else
+#     $vda_dir/vda_cn_agent --network tcp --address '127.0.0.1:9820' \
+#                           --sock-path $work_dir/cn0.sock --sock-timeout 10 \
+#                           --lis-conf '{"trtype":"tcp","traddr":"127.0.0.1","adrfam":"ipv4","trsvcid":"4430"}' \
+#                           --tr-conf '{"trtype":"TCP"}' \
+#                           > $work_dir/cn_agent_0.log 2>&1 &
+# fi
+
+# echo "waiting for da3 recover"
+
+# echo "sleep"
+# sleep infinity
+$vda_dir/vda_cli exp delete --da-name da3 --exp-name exp3c
+
 
 $vda_dir/vda_cli da delete --da-name da0
 $vda_dir/vda_cli da delete --da-name da1
