@@ -339,6 +339,8 @@ while true; do
     ((retry_cnt=retry_cnt+1))
 done
 
+sleep 15
+
 echo "da3 recovered"
 
 da_verify da3
