@@ -36,7 +36,7 @@ function umount_dir() {
     mountpoint $dir && sudo umount  $dir
 }
 
-function da_verify() {
+function cntlr_verify() {
     da_name=$1
     cntlr_cnt=`$vda_dir/vda_cli da get --da-name $da_name | jq ".disk_array.cntlr_list | length"`
     if [ "$cntlr_cnt" == "" ]; then
@@ -59,7 +59,10 @@ function da_verify() {
             exit 1
         fi
     done
+}
 
+function grp_verify() {
+    da_name=$1
     grp_cnt=`$vda_dir/vda_cli da get --da-name $da_name | jq -r ".disk_array.grp_list | length"`
     if [ "$grp_cnt" == "" ]; then
         echo "grp_cnt is empty, da_name: $da_name"
@@ -112,6 +115,12 @@ function da_verify() {
             fi
         done
     done
+}
+
+function da_verify() {
+    da_name=$1
+    cntlr_verify $da_name
+    grp_verify $da_name
 }
 
 function exp_verify() {

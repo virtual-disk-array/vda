@@ -280,6 +280,8 @@ while true; do
     ((retry_cnt=retry_cnt+1))
 done
 
+grp_verify da3
+
 sudo touch "$work_dir/da3/bar"
 
 if [ ! -f "$work_dir/da3/bar" ]; then
@@ -287,24 +289,65 @@ if [ ! -f "$work_dir/da3/bar" ]; then
     exit 1
 fi
 
-# if [ "$new_primary" == "localhost:9820" ]; then
-#     $vda_dir/vda_cn_agent --network tcp --address '127.0.0.1:9821' \
-#                           --sock-path $work_dir/cn1.sock --sock-timeout 10 \
-#                           --lis-conf '{"trtype":"tcp","traddr":"127.0.0.1","adrfam":"ipv4","trsvcid":"4431"}' \
-#                           --tr-conf '{"trtype":"TCP"}' \
-#                           > $work_dir/cn_agent_1.log 2>&1 &
-# else
-#     $vda_dir/vda_cn_agent --network tcp --address '127.0.0.1:9820' \
-#                           --sock-path $work_dir/cn0.sock --sock-timeout 10 \
-#                           --lis-conf '{"trtype":"tcp","traddr":"127.0.0.1","adrfam":"ipv4","trsvcid":"4430"}' \
-#                           --tr-conf '{"trtype":"TCP"}' \
-#                           > $work_dir/cn_agent_0.log 2>&1 &
-# fi
+if [ "$new_primary" == "localhost:9820" ]; then
+    $vda_dir/vda_cn_agent --network tcp --address '127.0.0.1:9821' \
+                          --sock-path $work_dir/cn1.sock --sock-timeout 10 \
+                          --lis-conf '{"trtype":"tcp","traddr":"127.0.0.1","adrfam":"ipv4","trsvcid":"4431"}' \
+                          --tr-conf '{"trtype":"TCP"}' \
+                          > $work_dir/cn_agent_1.log 2>&1 &
+else
+    $vda_dir/vda_cn_agent --network tcp --address '127.0.0.1:9820' \
+                          --sock-path $work_dir/cn0.sock --sock-timeout 10 \
+                          --lis-conf '{"trtype":"tcp","traddr":"127.0.0.1","adrfam":"ipv4","trsvcid":"4430"}' \
+                          --tr-conf '{"trtype":"TCP"}' \
+                          > $work_dir/cn_agent_0.log 2>&1 &
+fi
 
-# echo "waiting for da3 recover"
+echo "waiting for da3 recover"
+max_retry=10
+retry_cnt=0
+while true; do
+    cntlr_cnt=`$vda_dir/vda_cli da get --da-name $da_name | jq ".disk_array.cntlr_list | length"`
+    if [ "$cntlr_cnt" == "" ]; then
+        echo "cntlr_cnt is empty, da_name: $da_name"
+        exit 1
+    fi
+    if [ $cntlr_cnt -eq 0 ]; then
+        echo "cntlr_cnt is 0, da_name: $da_name"
+        exit 1
+    fi
+    good_cntlr_cnt=0
+    for i in `seq 0 $[cntlr_cnt - 1]`; do
+        timestamp=`$vda_dir/vda_cli da get --da-name $da_name | jq -r ".disk_array.cntlr_list[$i].err_info.timestamp"`
+        if [ "$timestamp" == "null" ]; then
+            echo "cntlr timestmap is null, da_name: $da_name cntlr: $i"
+            exit 1
+        fi
+        is_err=`$vda_dir/vda_cli da get --da-name $da_name | jq -r ".disk_array.cntlr_list[$i].err_info.is_err"`
+        if [ "$is_err" == "null" ]; then
+            ((good_cntlr_cnt=good_cntlr_cnt+1))
+        fi
+    done
+    if [ $good_cntlr_cnt -eq 2 ]; then
+        break
+    fi
+    if [ $retry_cnt -ge $max_retry ]; then
+        echo "da3 recover timeout"
+        exit 1
+    fi
+    sleep 5
+    ((retry_cnt=retry_cnt+1))
+done
+
+echo "da3 recovered"
+
+da_verify da3
 
 # echo "sleep"
 # sleep infinity
+
+umount_dir "$work_dir/da3"
+
 $vda_dir/vda_cli exp delete --da-name da3 --exp-name exp3c
 
 
