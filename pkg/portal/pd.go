@@ -672,6 +672,7 @@ func (po *portalServer) GetPd(ctx context.Context, req *pbpo.GetPdRequest) (
 					RMbytesPerSec:  dsVdBe.VdBeConf.Qos.RMbytesPerSec,
 					WMbytesPerSec:  dsVdBe.VdBeConf.Qos.WMbytesPerSec,
 				},
+				CntlrId: dsVdBe.VdBeConf.CntlrId,
 				ErrInfo: &pbpo.ErrInfo{
 					IsErr:     dsVdBe.VdBeInfo.ErrInfo.IsErr,
 					ErrMsg:    dsVdBe.VdBeInfo.ErrInfo.ErrMsg,

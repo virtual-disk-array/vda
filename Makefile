@@ -1,6 +1,7 @@
 OUT_DIR := ./_out
 GOPATH := $(shell go env GOPATH)
 PATH := $(PATH):$(GOPATH)/bin
+VERSION := v0.0.2
 
 .PHONY: proto
 proto:
@@ -47,7 +48,7 @@ build: proto mock compile test
 
 .PHONY: image
 image:
-	docker build -t virtualdiskarray/vdacsi:v0.0.1 -f scripts/csi/Dockerfile .
+	docker build -t virtualdiskarray/vdacsi:$(VERSION) -f scripts/csi/Dockerfile .
 
 .PHONY: push
 push:

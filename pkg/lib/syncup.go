@@ -84,6 +84,8 @@ func (sm *SyncupManager) getDiskNode(sockAddr string, ctx context.Context) (
 			return err
 		}
 		revision = stm.Rev(dnEntityKey)
+		logger.Debug("SyncupManager diskNode get: %v revision: %v",
+			diskNode, revision)
 		return nil
 	}
 
@@ -256,6 +258,7 @@ func (sm *SyncupManager) setDnInfo(diskNode *pbds.DiskNode, idToRes *dnIdToRes) 
 func (sm *SyncupManager) writeDnInfo(diskNode *pbds.DiskNode, capDiffList []*capDiff,
 	isErr bool, revision int64, ctx context.Context) {
 
+	logger.Debug("SyncupManager diskNode put: %v", diskNode)
 	dnEntityKey := sm.kf.DnEntityKey(diskNode.SockAddr)
 	dnEntityVal, err := proto.Marshal(diskNode)
 	if err != nil {
@@ -370,6 +373,8 @@ func (sm *SyncupManager) getControllerNode(sockAddr string, ctx context.Context)
 			return err
 		}
 		revision = stm.Rev(cnEntityKey)
+		logger.Debug("SyncupManager controllerNode get: %v revision: %v",
+			controllerNode, revision)
 		return nil
 	}
 
@@ -599,6 +604,7 @@ func (sm *SyncupManager) setCnInfo(controllerNode *pbds.ControllerNode,
 func (sm *SyncupManager) writeCnInfo(controllerNode *pbds.ControllerNode,
 	capDiffList []*capDiff, isErr bool, revision int64, ctx context.Context) {
 
+	logger.Debug("SyncupManager controllerNode put: %v", controllerNode)
 	cnEntityKey := sm.kf.CnEntityKey(controllerNode.SockAddr)
 	cnEntityVal, err := proto.Marshal(controllerNode)
 	if err != nil {

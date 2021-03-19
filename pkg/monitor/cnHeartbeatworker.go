@@ -153,7 +153,7 @@ func (chw *cnHeartbeatWorker) setErr(ctx context.Context,
 					return err
 				}
 				for _, cntlrFe2 := range controllerNode2.CntlrFeList {
-					if cntlrFe.CntlrId == cntlr.CntlrId {
+					if cntlrFe2.CntlrId == cntlr.CntlrId {
 						for _, cntlr2 := range cntlrFe2.CntlrFeConf.CntlrList {
 							if cntlr2.CntlrId == newPrimaryCntlr.CntlrId {
 								cntlr2.IsPrimary = true

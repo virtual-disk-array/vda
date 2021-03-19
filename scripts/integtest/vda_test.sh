@@ -343,10 +343,11 @@ sleep 15
 
 echo "da3 recovered"
 
+da_verify da0
+da_verify da1
+da_verify da2
 da_verify da3
-
-# echo "sleep"
-# sleep infinity
+exp_verify da3 exp3c
 
 umount_dir "$work_dir/da3"
 

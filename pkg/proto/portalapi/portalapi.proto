@@ -149,7 +149,8 @@ message VdBackend {
   uint32 vd_idx = 4;
   uint64 size = 5;
   BdevQos qos = 6;
-  ErrInfo err_info = 7;
+  string cntlr_id = 7;
+  ErrInfo err_info = 8;
 }
 
 message PhysicalDisk {
