@@ -173,6 +173,7 @@ func (chw *cnHeartbeatWorker) setErr(ctx context.Context,
 						break
 					}
 				}
+				controllerNode2.Version++
 				newCnEntityVal2, err := proto.Marshal(controllerNode2)
 				if err != nil {
 					logger.Error("Marshal controllerNode2 err: %s %v %v",
@@ -182,8 +183,9 @@ func (chw *cnHeartbeatWorker) setErr(ctx context.Context,
 				stm.Put(cnEntityKey2, string(newCnEntityVal2))
 				cnErrKey2 := chw.kf.CnErrKey(controllerNode2.CnConf.HashCode,
 					controllerNode2.SockAddr)
-				if (len(stm.Get(cnErrKey2))) == 0 {
+				if len(stm.Get(cnErrKey2)) == 0 {
 					cnSummary2 := &pbds.CnSummary{
+						SockAddr:    controllerNode2.SockAddr,
 						Description: controllerNode2.CnConf.Description,
 					}
 					cnErrVal2, err := proto.Marshal(cnSummary2)
@@ -235,6 +237,7 @@ func (chw *cnHeartbeatWorker) setErr(ctx context.Context,
 							return fmt.Errorf("Can not find vdBe")
 						}
 						thisVdBe.VdBeConf.CntlrId = newPrimaryCntlr.CntlrId
+						diskNode.Version++
 						newDnEntityVal, err := proto.Marshal(diskNode)
 						if err != nil {
 							logger.Error("Marshal diskNode err: %s %v %v",
@@ -242,6 +245,21 @@ func (chw *cnHeartbeatWorker) setErr(ctx context.Context,
 							return err
 						}
 						stm.Put(dnEntityKey, string(newDnEntityVal))
+						dnErrKey := chw.kf.DnErrKey(diskNode.DnConf.HashCode,
+							diskNode.SockAddr)
+						if len(stm.Get(dnErrKey)) == 0 {
+							dnSummary := &pbds.DnSummary{
+								SockAddr:    diskNode.SockAddr,
+								Description: diskNode.DnConf.Description,
+							}
+							dnErrVal, err := proto.Marshal(dnSummary)
+							if err != nil {
+								logger.Error("Marshal dnSummary err: %s %v %v",
+									chw.name, dnSummary, err)
+								return err
+							}
+							stm.Put(dnErrKey, string(dnErrVal))
+						}
 					}
 				}
 

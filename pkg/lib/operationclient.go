@@ -175,7 +175,7 @@ func (oc *OperationClient) LoadNvmfs() error {
 func (oc *OperationClient) LoadBdevs() error {
 	rsp := &struct {
 		Error  *spdkErr     `json:"error"`
-		Result *[]*bdevConf `json"result"`
+		Result *[]*bdevConf `json:"result"`
 	}{}
 	err := oc.sc.Invoke("bdev_get_bdevs", nil, rsp)
 	if err != nil {
@@ -318,7 +318,7 @@ func (oc *OperationClient) createNvmfNs(nqn, bdevName string) error {
 	}
 	if rsp.Error != nil {
 		logger.Error("nvmf_subsystem_add_ns rsp err: %v", *rsp.Error)
-		return fmt.Errorf("nvmf_subsystem_add_ns r sp err: %d %s",
+		return fmt.Errorf("nvmf_subsystem_add_ns rsp err: %d %s",
 			rsp.Error.Code, rsp.Error.Message)
 	}
 	return nil
