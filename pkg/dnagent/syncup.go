@@ -233,6 +233,7 @@ func (dnAgent *dnAgentServer) SyncupDn(ctx context.Context, req *pbdn.SyncupDnRe
 	*pbdn.SyncupDnReply, error) {
 	dnMutex.Lock()
 	defer dnMutex.Unlock()
+	logger.Debug("SyncupDn get lock: %v", req)
 	currVersion := atomic.LoadUint64(&lastVersion)
 	if req.Version < currVersion {
 		return &pbdn.SyncupDnReply{

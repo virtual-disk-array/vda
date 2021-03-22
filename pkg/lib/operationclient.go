@@ -46,10 +46,10 @@ type LvsInfo struct {
 }
 
 type bdevConf struct {
-	name           string      `json:"name"`
-	aliases        []string    `json:"aliases"`
-	productName    string      `json:"product_name"`
-	driverSpecific interface{} `json:"driver_specific"`
+	Name           string      `json:"name"`
+	Aliases        []string    `json:"aliases"`
+	ProductName    string      `json:"product_name"`
+	DriverSpecific interface{} `json:"driver_specific"`
 }
 
 type nvmfConf struct {
@@ -68,8 +68,9 @@ type nvmfConf struct {
 	SerialNumber string `json:"serial_number"`
 	ModelNumber  string `json:"model_number"`
 	Namespaces   []struct {
-		Nsid int    `json:"nsid"`
-		name string `json:"name"`
+		Nsid     int    `json:"nsid"`
+		Name     string `json:"name"`
+		BdevName string `json:"bdev_name"`
 	} `json:"namespaces"`
 }
 
@@ -192,7 +193,7 @@ func (oc *OperationClient) LoadBdevs() error {
 		return fmt.Errorf("bdev_get_bdevs result is nil")
 	}
 	for _, bdev := range *rsp.Result {
-		oc.nameToBdev[bdev.name] = bdev
+		oc.nameToBdev[bdev.Name] = bdev
 	}
 	return nil
 }
@@ -231,7 +232,7 @@ func (oc *OperationClient) setQosLimit(name string,
 func (oc *OperationClient) getBdevByPrefix(prefix string) ([]string, error) {
 	beLvolList := make([]string, 0)
 	for _, bdev := range oc.nameToBdev {
-		for _, alias := range bdev.aliases {
+		for _, alias := range bdev.Aliases {
 			if strings.HasPrefix(alias, prefix) {
 				beLvolList = append(beLvolList, alias)
 				break
@@ -733,6 +734,32 @@ func (oc *OperationClient) bdevExist(name string) (bool, error) {
 	}
 }
 
+func (oc *OperationClient) getBdevName(nameOrAlias string) (string, error) {
+	params := &struct {
+		Name string `json:"name"`
+	}{
+		Name: nameOrAlias,
+	}
+	rsp := &struct {
+		Error  *spdkErr     `json:"error"`
+		Result *[]*bdevConf `json:"result"`
+	}{}
+	err := oc.sc.Invoke("bdev_get_bdevs", params, rsp)
+	if err != nil {
+		logger.Error("bdev_get_bdevs failed: %v", err)
+		return "", err
+	}
+	if rsp.Error != nil {
+		return "", fmt.Errorf("bdev_get_bdevs resp err: %d %s",
+			rsp.Error.Code, rsp.Error.Message)
+	}
+	if len(*rsp.Result) == 0 {
+		return "", fmt.Errorf("Can not find bdev %s", nameOrAlias)
+	}
+
+	return (*rsp.Result)[0].Name, nil
+}
+
 func (oc *OperationClient) CreatePdMalloc(name string, size uint64) error {
 	exist, err := oc.bdevExist(name)
 	if err != nil {
@@ -918,7 +945,7 @@ func (oc *OperationClient) DeletePdBdev(bdevName string) error {
 	if !ok {
 		return fmt.Errorf("Unknow bdev: %s", bdevName)
 	}
-	switch productName := bdev.productName; productName {
+	switch productName := bdev.ProductName; productName {
 	case "Malloc disk":
 		return oc.deletePdMalloc(bdevName)
 	case "AIO disk":
@@ -934,6 +961,18 @@ func (oc *OperationClient) CreateExpPrimaryNvmf(expNqnName, snapFullName, initia
 	secNqnList []string, lisConf *LisConf) error {
 	nvmf, ok := oc.nqnToNvmf[expNqnName]
 	if ok {
+		bdevName, err := oc.getBdevName(snapFullName)
+		if err != nil {
+			return err
+		}
+		if len(nvmf.Namespaces) != 0 && nvmf.Namespaces[0].BdevName != bdevName {
+			oc.deleteNvmf(expNqnName)
+			nvmf = nil
+		}
+	} else {
+		nvmf = nil
+	}
+	if nvmf != nil {
 		if len(nvmf.Namespaces) == 0 {
 			if err := oc.createNvmfNs(expNqnName, snapFullName); err != nil {
 				return err
@@ -997,12 +1036,18 @@ func (oc *OperationClient) CreateExpPrimaryNvmf(expNqnName, snapFullName, initia
 func (oc *OperationClient) CreateExpSecNvmf(expNqnName, secBdevName, initiatorNqn string,
 	lisConf *LisConf) error {
 	nvmf, ok := oc.nqnToNvmf[expNqnName]
-	if ok && (len(nvmf.Namespaces) > 0) && nvmf.Namespaces[0].name != secBdevName {
-		err := oc.deleteNvmf(expNqnName)
+	if ok {
+		bdevName, err := oc.getBdevName(secBdevName)
 		if err != nil {
 			return err
 		}
-		nvmf = nil
+		if len(nvmf.Namespaces) > 0 && nvmf.Namespaces[0].BdevName != bdevName {
+			err := oc.deleteNvmf(expNqnName)
+			if err != nil {
+				return err
+			}
+			nvmf = nil
+		}
 	} else {
 		nvmf = nil
 	}

@@ -188,7 +188,8 @@ function nvmf_format() {
     exp_name=$2
     serial_number=`$vda_dir/vda_cli exp get --da-name $da_name --exp-name $exp_name | jq -r ".exporter.serial_number"`
     dev_path="/dev/disk/by-id/nvme-VDA_CONTROLLER_$serial_number"
-    sudo mkfs.ext4 $dev_path
+    # sudo mkfs.ext4 $dev_path
+    sudo mkfs.xfs $dev_path
 }
 
 function nvmf_mount() {

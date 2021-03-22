@@ -82,40 +82,50 @@ $vda_dir/vda_monitor --etcd-endpoints localhost:$etcd_port \
 
 
 echo "prepare pd file"
-dd if=/dev/zero of=$work_dir/pd0.img bs=1M count=512
-dd if=/dev/zero of=$work_dir/pd1.img bs=1M count=512
+dd if=/dev/zero of=$work_dir/pd0.img bs=1M count=2048
+dd if=/dev/zero of=$work_dir/pd1.img bs=1M count=2048
 
-echo "create vda resources"
+echo "create dn localhost:9720"
 $vda_dir/vda_cli dn create --sock-addr localhost:9720 --tr-svc-id 4420
+echo "create pd localhost:9720 pd0"
 $vda_dir/vda_cli pd create --sock-addr localhost:9720 --pd-name pd0 \
                  --bdev-type-key aio --bdev-type-value $work_dir/pd0.img
+echo "create dn localhost:9721"
 $vda_dir/vda_cli dn create --sock-addr localhost:9721 --tr-svc-id 4421
+echo "create pd localhost:9721 pd1"
 $vda_dir/vda_cli pd create --sock-addr localhost:9721 --pd-name pd1 \
                  --bdev-type-key aio --bdev-type-value $work_dir/pd1.img
+echo "create cn localhost:9820"
 $vda_dir/vda_cli cn create --sock-addr localhost:9820 --tr-svc-id 4430
+echo "create cn localhost:9821"
 $vda_dir/vda_cli cn create --sock-addr localhost:9821 --tr-svc-id 4431
 
+echo "create da0"
 $vda_dir/vda_cli da create --da-name da0 --size-mb 64 --physical-size-mb 64 \
                  --cntlr-cnt 1 --strip-cnt 1 --strip-size-kb 64
-
+echo "create da1"
 $vda_dir/vda_cli da create --da-name da1 --size-mb 64 --physical-size-mb 64 \
                  --cntlr-cnt 2 --strip-cnt 1 --strip-size-kb 64
-
+echo "create da2"
 $vda_dir/vda_cli da create --da-name da2 --size-mb 64 --physical-size-mb 64 \
                  --cntlr-cnt 1 --strip-cnt 2 --strip-size-kb 64
-
-$vda_dir/vda_cli da create --da-name da3 --size-mb 64 --physical-size-mb 64 \
+echo "create da3"
+$vda_dir/vda_cli da create --da-name da3 --size-mb 64 --physical-size-mb 1024 \
                  --cntlr-cnt 2 --strip-cnt 2 --strip-size-kb 64
 
 
 host_nqn="nqn.2016-06.io.spdk:host0"
 
+echo "create exp da0 exp0a"
 $vda_dir/vda_cli exp create --da-name da0 --exp-name exp0a \
                  --initiator-nqn $host_nqn
+echo "create exp da1 exp1a"
 $vda_dir/vda_cli exp create --da-name da1 --exp-name exp1a \
                  --initiator-nqn $host_nqn
+echo "create exp da2 exp2a"
 $vda_dir/vda_cli exp create --da-name da2 --exp-name exp2a \
                  --initiator-nqn $host_nqn
+echo "create exp da3 exp3a"
 $vda_dir/vda_cli exp create --da-name da3 --exp-name exp3a \
                  --initiator-nqn $host_nqn
 
@@ -177,17 +187,25 @@ umount_dir "$work_dir/da3"
 
 sudo nvme disconnect-all
 
+echo "delete exp da0 exp0a"
 $vda_dir/vda_cli exp delete --da-name da0 --exp-name exp0a
+echo "delete exp da1 exp1a"
 $vda_dir/vda_cli exp delete --da-name da1 --exp-name exp1a
+echo "delete exp da2 exp2a"
 $vda_dir/vda_cli exp delete --da-name da2 --exp-name exp2a
+echo "delete exp da3 exp3a"
 $vda_dir/vda_cli exp delete --da-name da3 --exp-name exp3a
 
+echo "create exp da0 exp0b"
 $vda_dir/vda_cli exp create --da-name da0 --exp-name exp0b \
                  --initiator-nqn $host_nqn
+echo "create exp da1 exp1b"
 $vda_dir/vda_cli exp create --da-name da1 --exp-name exp1b \
                  --initiator-nqn $host_nqn
+echo "create exp da2 exp2b"
 $vda_dir/vda_cli exp create --da-name da2 --exp-name exp2b \
                  --initiator-nqn $host_nqn
+echo "create exp da3 exp3b"
 $vda_dir/vda_cli exp create --da-name da3 --exp-name exp3b \
                  --initiator-nqn $host_nqn
 
@@ -233,16 +251,23 @@ umount_dir "$work_dir/da3"
 
 sudo nvme disconnect-all
 
+echo "delete exp da0 exp0b"
 $vda_dir/vda_cli exp delete --da-name da0 --exp-name exp0b
+echo "delete exp da1 exp1b"
 $vda_dir/vda_cli exp delete --da-name da1 --exp-name exp1b
+echo "delete exp da2 exp2b"
 $vda_dir/vda_cli exp delete --da-name da2 --exp-name exp2b
+echo "delete exp da3 exp3b"
 $vda_dir/vda_cli exp delete --da-name da3 --exp-name exp3b
 
 echo "testing failover"
+echo "create exp da3 exp3c"
 $vda_dir/vda_cli exp create --da-name da3 --exp-name exp3c \
                  --initiator-nqn $host_nqn
 exp_verify da3 exp3c
 nvmf_connect da3 exp3c $host_nqn
+sudo dd if=/dev/nvme0n1 of=$work_dir/da3.img bs=1M count=1
+
 nvmf_mount da3 exp3c "$work_dir/da3"
 
 sock_addr=`$vda_dir/vda_cli da get --da-name da3 | jq -r ".disk_array.cntlr_list[] | select(.is_primary==true).sock_addr"`
@@ -254,9 +279,11 @@ fi
 if [ "$sock_addr" == "localhost:9820" ]; then
     port="9820"
     new_primary="localhost:9821"
+    cn_name="cn0"
 else
     port="9821"
     new_primary="localhost:9820"
+    cn_name="cn1"
 fi
 primary_pid=`ps -ef | grep vda_cn_agent | grep $port | awk '{print $2}'`
 if [ "$primary_pid" == "" ]; then
@@ -264,6 +291,8 @@ if [ "$primary_pid" == "" ]; then
     exit 1
 fi
 kill $primary_pid
+spdk_pid=`ps -ef | grep spdk_tgt | grep $cn_name | grep -v sudo | awk '{print $2}'`
+sudo kill -9 $spdk_pid
 echo "waiting for failover"
 max_retry=10
 retry_cnt=0
@@ -280,22 +309,35 @@ while true; do
     ((retry_cnt=retry_cnt+1))
 done
 
+echo "failover done"
 grp_verify da3
 
-sudo touch "$work_dir/da3/bar"
+# sudo touch "$work_dir/da3/bar"
 
-if [ ! -f "$work_dir/da3/bar" ]; then
-    echo "can not create file: $work_dir/da3/bar"
-    exit 1
-fi
+# if [ ! -f "$work_dir/da3/bar" ]; then
+#     echo "can not create file: $work_dir/da3/bar"
+#     exit 1
+# fi
 
 if [ "$new_primary" == "localhost:9820" ]; then
+    sudo $spdk_dir/build/bin/spdk_tgt --rpc-socket $work_dir/cn1.sock --wait-for-rpc > $work_dir/cn1.log 2>&1 &
+    sleep 1
+    sudo $spdk_dir/scripts/rpc.py -s $work_dir/cn1.sock bdev_set_options -d
+    sudo $spdk_dir/scripts/rpc.py -s $work_dir/cn1.sock framework_start_init
+    sudo $spdk_dir/scripts/rpc.py -s $work_dir/cn1.sock framework_wait_init
+    sudo chmod 777 $work_dir/cn1.sock
     $vda_dir/vda_cn_agent --network tcp --address '127.0.0.1:9821' \
                           --sock-path $work_dir/cn1.sock --sock-timeout 10 \
                           --lis-conf '{"trtype":"tcp","traddr":"127.0.0.1","adrfam":"ipv4","trsvcid":"4431"}' \
                           --tr-conf '{"trtype":"TCP"}' \
                           > $work_dir/cn_agent_1.log 2>&1 &
 else
+    sudo $spdk_dir/build/bin/spdk_tgt --rpc-socket $work_dir/cn0.sock --wait-for-rpc > $work_dir/cn0.log 2>&1 &
+    sleep 1
+    sudo $spdk_dir/scripts/rpc.py -s $work_dir/cn0.sock bdev_set_options -d
+    sudo $spdk_dir/scripts/rpc.py -s $work_dir/cn0.sock framework_start_init
+    sudo $spdk_dir/scripts/rpc.py -s $work_dir/cn0.sock framework_wait_init
+    sudo chmod 777 $work_dir/cn0.sock
     $vda_dir/vda_cn_agent --network tcp --address '127.0.0.1:9820' \
                           --sock-path $work_dir/cn0.sock --sock-timeout 10 \
                           --lis-conf '{"trtype":"tcp","traddr":"127.0.0.1","adrfam":"ipv4","trsvcid":"4430"}' \
@@ -339,7 +381,7 @@ while true; do
     ((retry_cnt=retry_cnt+1))
 done
 
-sleep 15
+sleep 20
 
 echo "da3 recovered"
 
@@ -348,6 +390,9 @@ da_verify da1
 da_verify da2
 da_verify da3
 exp_verify da3 exp3c
+
+echo "sleep"
+sleep infinity
 
 umount_dir "$work_dir/da3"
 

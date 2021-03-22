@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 
 	"github.com/virtual-disk-array/vda/pkg/lib"
+	"github.com/virtual-disk-array/vda/pkg/logger"
 	pbcn "github.com/virtual-disk-array/vda/pkg/proto/cnagentapi"
 )
 
@@ -510,6 +511,7 @@ func (cnAgent *cnAgentServer) SyncupCn(ctx context.Context, req *pbcn.SyncupCnRe
 	*pbcn.SyncupCnReply, error) {
 	cnMutex.Lock()
 	defer cnMutex.Unlock()
+	logger.Debug("SyncupCn get lock: %v", req)
 	currVersion := atomic.LoadUint64(&lastVersion)
 	if req.Version < currVersion {
 		return &pbcn.SyncupCnReply{

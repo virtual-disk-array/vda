@@ -551,14 +551,14 @@ func (po *portalServer) GetExp(ctx context.Context, req *pbpo.GetExpRequest) (
 	var exporter *pbpo.Exporter
 
 	apply := func(stm concurrency.STM) error {
-		dnEntityVal := []byte(stm.Get(daEntityKey))
-		if len(dnEntityVal) == 0 {
+		daEntityVal := []byte(stm.Get(daEntityKey))
+		if len(daEntityVal) == 0 {
 			return &portalError{
 				lib.PortalUnknownResErrCode,
 				daEntityKey,
 			}
 		}
-		if err := proto.Unmarshal(dnEntityVal, diskArray); err != nil {
+		if err := proto.Unmarshal(daEntityVal, diskArray); err != nil {
 			logger.Error("Unmarshal diskArray err: %s %v", daEntityKey, err)
 			return err
 		}
