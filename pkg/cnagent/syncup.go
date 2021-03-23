@@ -48,6 +48,7 @@ type bdevSeq struct {
 
 func (sh *syncupHelper) syncupVdFe(cntlrFeReq *pbcn.CntlrFeReq,
 	grpFeReq *pbcn.GrpFeReq, vdFeReq *pbcn.VdFeReq) *pbcn.VdFeRsp {
+	logger.Info("syncupVdFe: %v", vdFeReq)
 	var vdFeErr error
 	beNqnName := sh.nf.BeNqnName(vdFeReq.VdId)
 	feNvmeName := sh.nf.FeNvmeName(vdFeReq.VdId)
@@ -75,6 +76,7 @@ func (sh *syncupHelper) syncupVdFe(cntlrFeReq *pbcn.CntlrFeReq,
 
 func (sh *syncupHelper) syncupGrpFe(cntlrFeReq *pbcn.CntlrFeReq,
 	grpFeReq *pbcn.GrpFeReq) *pbcn.GrpFeRsp {
+	logger.Info("syncupGrpFe: %v", grpFeReq)
 	var grpFeErr error
 	vdFeRspList := make([]*pbcn.VdFeRsp, 0)
 	vdFeReqList := grpFeReq.VdFeReqList
@@ -117,6 +119,7 @@ func (sh *syncupHelper) syncupGrpFe(cntlrFeReq *pbcn.CntlrFeReq,
 
 func (sh *syncupHelper) syncupSnapFe(cntlrFeReq *pbcn.CntlrFeReq,
 	snapFeReq *pbcn.SnapFeReq) *pbcn.SnapFeRsp {
+	logger.Info("syncupSnapFe: %v", snapFeReq)
 	var snapErr error
 	daLvsName := sh.nf.DaLvsName(cntlrFeReq.CntlrFeConf.DaId)
 	snapName := sh.nf.SnapName(snapFeReq.SnapId)
@@ -140,6 +143,7 @@ func (sh *syncupHelper) syncupSnapFe(cntlrFeReq *pbcn.CntlrFeReq,
 
 func (sh *syncupHelper) syncupExpFe(cntlrFeReq *pbcn.CntlrFeReq,
 	expFeReq *pbcn.ExpFeReq, secNqnList []string) *pbcn.ExpFeRsp {
+	logger.Info("syncupExpFe: %v", expFeReq)
 	var expFeErr error
 	expNqnName := sh.nf.ExpNqnName(expFeReq.ExpFeConf.DaName, expFeReq.ExpFeConf.ExpName)
 	sh.expNqnMap[expNqnName] = true
@@ -167,6 +171,7 @@ func (sh *syncupHelper) syncupExpFe(cntlrFeReq *pbcn.CntlrFeReq,
 
 func (sh *syncupHelper) syncupPrimary(cntlrFeReq *pbcn.CntlrFeReq,
 	secNqnList []string) *pbcn.CntlrFeRsp {
+	logger.Info("syncupPrimary: %v", cntlrFeReq)
 	var cntlrFeErr error
 	grpFeRspList := make([]*pbcn.GrpFeRsp, 0)
 	snapFeRspList := make([]*pbcn.SnapFeRsp, 0)
@@ -233,6 +238,7 @@ func (sh *syncupHelper) syncupPrimary(cntlrFeReq *pbcn.CntlrFeReq,
 
 func (sh *syncupHelper) syncupSecExpFe(cntlrFeReq *pbcn.CntlrFeReq,
 	expFeReq *pbcn.ExpFeReq, primCntlr *pbcn.Controller) *pbcn.ExpFeRsp {
+	logger.Info("syncupSecExpFe: %v", cntlrFeReq)
 	var expFeErr error
 	secNvmeName := sh.nf.SecNvmeName(primCntlr.CntlrId)
 	sh.secNvmeMap[secNvmeName] = true
@@ -273,6 +279,7 @@ func (sh *syncupHelper) syncupSecExpFe(cntlrFeReq *pbcn.CntlrFeReq,
 
 func (sh *syncupHelper) syncupSecondary(cntlrFeReq *pbcn.CntlrFeReq,
 	primCntlr *pbcn.Controller) *pbcn.CntlrFeRsp {
+	logger.Info("syncupSecondary: %v", cntlrFeReq)
 	var cntlrFeErr error
 	expFeRspList := make([]*pbcn.ExpFeRsp, 0)
 
@@ -296,6 +303,7 @@ func (sh *syncupHelper) syncupSecondary(cntlrFeReq *pbcn.CntlrFeReq,
 }
 
 func (sh *syncupHelper) syncupCntlrFe(cntlrFeReq *pbcn.CntlrFeReq) *pbcn.CntlrFeRsp {
+	logger.Info("syncupCntlrFe:  %v", cntlrFeReq)
 	var cntlrFeErr error
 	var thisCntlr *pbcn.Controller
 	var primCntlr *pbcn.Controller
@@ -340,6 +348,8 @@ func (sh *syncupHelper) syncupCntlrFe(cntlrFeReq *pbcn.CntlrFeReq) *pbcn.CntlrFe
 
 func (sh *syncupHelper) syncupCn(cnReq *pbcn.CnReq) *pbcn.CnRsp {
 	var cnErr error
+
+	logger.Info("syncupCn: %v", cnReq)
 	cntlrFeRspList := make([]*pbcn.CntlrFeRsp, 0)
 	cnErr = sh.oc.LoadNvmfs()
 
@@ -511,7 +521,7 @@ func (cnAgent *cnAgentServer) SyncupCn(ctx context.Context, req *pbcn.SyncupCnRe
 	*pbcn.SyncupCnReply, error) {
 	cnMutex.Lock()
 	defer cnMutex.Unlock()
-	logger.Debug("SyncupCn get lock: %v", req)
+	logger.Debug("SyncupCn get lock")
 	currVersion := atomic.LoadUint64(&lastVersion)
 	if req.Version < currVersion {
 		return &pbcn.SyncupCnReply{

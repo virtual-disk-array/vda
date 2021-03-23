@@ -268,7 +268,7 @@ exp_verify da3 exp3c
 nvmf_connect da3 exp3c $host_nqn
 sudo dd if=/dev/nvme0n1 of=$work_dir/da3.img bs=1M count=1
 
-nvmf_mount da3 exp3c "$work_dir/da3"
+# nvmf_mount da3 exp3c "$work_dir/da3"
 
 sock_addr=`$vda_dir/vda_cli da get --da-name da3 | jq -r ".disk_array.cntlr_list[] | select(.is_primary==true).sock_addr"`
 echo "primary sock_addr: $sock_addr"
@@ -312,12 +312,14 @@ done
 echo "failover done"
 grp_verify da3
 
-# sudo touch "$work_dir/da3/bar"
+nvmf_mount da3 exp3c "$work_dir/da3"
 
-# if [ ! -f "$work_dir/da3/bar" ]; then
-#     echo "can not create file: $work_dir/da3/bar"
-#     exit 1
-# fi
+sudo touch "$work_dir/da3/bar"
+
+if [ ! -f "$work_dir/da3/bar" ]; then
+    echo "can not create file: $work_dir/da3/bar"
+    exit 1
+fi
 
 if [ "$new_primary" == "localhost:9820" ]; then
     sudo $spdk_dir/build/bin/spdk_tgt --rpc-socket $work_dir/cn1.sock --wait-for-rpc > $work_dir/cn1.log 2>&1 &

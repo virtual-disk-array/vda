@@ -86,6 +86,7 @@ type spdkErr struct {
 }
 
 func (oc *OperationClient) BdevGetIosat(bdevName string) (*Iostat, error) {
+	logger.Info("BdevGetIosat: bdevName %v", bdevName)
 	params := &struct {
 		Name string `json:"name"`
 	}{
@@ -149,6 +150,7 @@ func (oc *OperationClient) BdevGetIosat(bdevName string) (*Iostat, error) {
 }
 
 func (oc *OperationClient) LoadNvmfs() error {
+	logger.Info("LoadNvmfs")
 	rsp := &struct {
 		Error  *spdkErr     `json:"error"`
 		Result *[]*nvmfConf `json:"result"`
@@ -174,6 +176,7 @@ func (oc *OperationClient) LoadNvmfs() error {
 }
 
 func (oc *OperationClient) LoadBdevs() error {
+	logger.Info("LoadBdevs")
 	rsp := &struct {
 		Error  *spdkErr     `json:"error"`
 		Result *[]*bdevConf `json:"result"`
@@ -243,6 +246,7 @@ func (oc *OperationClient) getBdevByPrefix(prefix string) ([]string, error) {
 }
 
 func (oc *OperationClient) GetBeNqnList(prefix string) ([]string, error) {
+	logger.Info("GetBeNqnList: prefix %v", prefix)
 	return oc.getNqnList(prefix)
 }
 
@@ -436,6 +440,8 @@ func (oc *OperationClient) deleteNvmf(nqn string) error {
 
 func (oc *OperationClient) CreateBeNvmf(beNqnName, beLvolFullName, feNqnName string,
 	lisConf *LisConf) error {
+	logger.Info("CreateBeNvmf: beNqnName %v beLvolFullName %v feNqnName %v lisConf %v",
+		beNqnName, beLvolFullName, feNqnName, lisConf)
 	nvmf, ok := oc.nqnToNvmf[beNqnName]
 	// The nvmf subsystem should only allow frontend_nqn_name to access it.
 	// If the allowed host nqn does not match frontend_nqn_name,
@@ -484,15 +490,20 @@ func (oc *OperationClient) CreateBeNvmf(beNqnName, beLvolFullName, feNqnName str
 }
 
 func (oc *OperationClient) DeleteBeNvmf(nqn string) error {
+	logger.Info("DeleteBeNvmf: nqn %v", nqn)
 	return oc.deleteNvmf(nqn)
 }
 
 func (oc *OperationClient) GetBeLvolList(prefix string) ([]string, error) {
+	logger.Info("GetBeLvolList: prefix %v", prefix)
 	return oc.getBdevByPrefix(prefix)
 }
 
 func (oc *OperationClient) CreateBeLvol(lvsName, lvolName string, size uint64,
 	rwIosPerSec, rwMbytesPerSec, rMbytesPerSec, wMbytesPerSec uint64) error {
+	logger.Info("CreateBeLvol: lvsName %v lvolName %v size %v qos: %v %v %v %v",
+		lvsName, lvolName, size,
+		rwIosPerSec, rwMbytesPerSec, rMbytesPerSec, wMbytesPerSec)
 	fullName := fmt.Sprintf("%s/%s", lvsName, lvolName)
 	exist, err := oc.bdevExist(fullName)
 	if err != nil {
@@ -530,6 +541,7 @@ func (oc *OperationClient) CreateBeLvol(lvsName, lvolName string, size uint64,
 }
 
 func (oc *OperationClient) DeleteBeLvol(name string) error {
+	logger.Info("DeleteBeLvol: name %v", name)
 	params := &struct {
 		Name string `json:"name"`
 	}{
@@ -580,11 +592,14 @@ func (oc *OperationClient) getLvsByPrefix(prefix string) ([]string, error) {
 	}
 	return lvsList, nil
 }
+
 func (oc *OperationClient) GetPdLvsList(prefix string) ([]string, error) {
+	logger.Info("GetPdLvsList: prefix %v", prefix)
 	return oc.getLvsByPrefix(prefix)
 }
 
 func (oc *OperationClient) GetLvsInfo(lvsName string) (*LvsInfo, error) {
+	logger.Info("GetLvsInfo: lvsName %v", lvsName)
 	params := &struct {
 		LvsName string `json:"lvs_name"`
 	}{
@@ -649,6 +664,8 @@ func (oc *OperationClient) lvsExist(lvsName string) (bool, error) {
 	}
 }
 func (oc *OperationClient) CreatePdLvs(pdLvsName, bdevName string) error {
+	logger.Info("CreatePdLvs: pdLvsName %v bdevName %v",
+		pdLvsName, bdevName)
 	exist, err := oc.lvsExist(pdLvsName)
 	if err != nil {
 		return err
@@ -706,10 +723,12 @@ func (oc *OperationClient) deleteLvs(lvsName string) error {
 	return nil
 }
 func (oc *OperationClient) DeletePdLvs(lvsName string) error {
+	logger.Info("DeletePdLvs: lvsName %v", lvsName)
 	return oc.deleteLvs(lvsName)
 }
 
 func (oc *OperationClient) GetPdBdevList(prefix string) ([]string, error) {
+	logger.Info("GetPdBdevList: prefix %v", prefix)
 	return oc.getBdevByPrefix(prefix)
 }
 
@@ -761,6 +780,7 @@ func (oc *OperationClient) getBdevName(nameOrAlias string) (string, error) {
 }
 
 func (oc *OperationClient) CreatePdMalloc(name string, size uint64) error {
+	logger.Info("CreatePdMalloc: name %v size %v", name, size)
 	exist, err := oc.bdevExist(name)
 	if err != nil {
 		return err
@@ -819,6 +839,7 @@ func (oc *OperationClient) deletePdMalloc(bdevName string) error {
 }
 
 func (oc *OperationClient) CreatePdAio(name string, fileName string) error {
+	logger.Info("CreatePdAio: name %v fileName %v", name, fileName)
 	exist, err := oc.bdevExist(name)
 	if err != nil {
 		return err
@@ -876,6 +897,8 @@ func (oc *OperationClient) deletePdAio(bdevName string) error {
 }
 
 func (oc *OperationClient) CreatePdNvme(name, realName, trAddr string) error {
+	logger.Info("CreatePdNvme: name %v realName %v trAddr %v",
+		name, realName, trAddr)
 	exist, err := oc.bdevExist(realName)
 	if err != nil {
 		return err
@@ -941,6 +964,7 @@ func (oc *OperationClient) deletePdNvme(bdevName string) error {
 }
 
 func (oc *OperationClient) DeletePdBdev(bdevName string) error {
+	logger.Info("DeletePdBdev: bdevName %v", bdevName)
 	bdev, ok := oc.nameToBdev[bdevName]
 	if !ok {
 		return fmt.Errorf("Unknow bdev: %s", bdevName)
@@ -959,6 +983,8 @@ func (oc *OperationClient) DeletePdBdev(bdevName string) error {
 
 func (oc *OperationClient) CreateExpPrimaryNvmf(expNqnName, snapFullName, initiatorNqn string,
 	secNqnList []string, lisConf *LisConf) error {
+	logger.Info("CreateExpPrimaryNvmf: expNqnName %v snapFullName %v initiatorNqn %v secNqnList %v lisConf %v",
+		expNqnName, snapFullName, initiatorNqn, secNqnList, lisConf)
 	nvmf, ok := oc.nqnToNvmf[expNqnName]
 	if ok {
 		bdevName, err := oc.getBdevName(snapFullName)
@@ -1035,6 +1061,8 @@ func (oc *OperationClient) CreateExpPrimaryNvmf(expNqnName, snapFullName, initia
 
 func (oc *OperationClient) CreateExpSecNvmf(expNqnName, secBdevName, initiatorNqn string,
 	lisConf *LisConf) error {
+	logger.Info("CreateExpSecNvmf: expNqnName %v secBdevName %v initiatorNqn %v lisConf %v",
+		expNqnName, secBdevName, initiatorNqn, lisConf)
 	nvmf, ok := oc.nqnToNvmf[expNqnName]
 	if ok {
 		bdevName, err := oc.getBdevName(secBdevName)
@@ -1094,10 +1122,12 @@ func (oc *OperationClient) CreateExpSecNvmf(expNqnName, secBdevName, initiatorNq
 }
 
 func (oc *OperationClient) GetExpNqnList(prefix string) ([]string, error) {
+	logger.Info("GetExpNqnList: prefix %v", prefix)
 	return oc.getNqnList(prefix)
 }
 
 func (oc *OperationClient) DeleteExpNvmf(nqn string) error {
+	logger.Info("DeleteExpNvmf: nqn %v", nqn)
 	return oc.deleteNvmf(nqn)
 }
 
@@ -1132,10 +1162,12 @@ func (oc *OperationClient) getNvmeByPrefix(prefix string) ([]string, error) {
 }
 
 func (oc *OperationClient) GetSecNvmeList(prefix string) ([]string, error) {
+	logger.Info("GetSecNvmeList: prefix %v", prefix)
 	return oc.getNvmeByPrefix(prefix)
 }
 
 func (oc *OperationClient) DeleteSecNvme(secNvmeName string) error {
+	logger.Info("DeleteSecNvme: secNvmeName %v", secNvmeName)
 	return oc.bdevNvmeDetachController(secNvmeName)
 }
 
@@ -1162,6 +1194,8 @@ func (oc *OperationClient) nvmeExist(name string) (bool, error) {
 
 func (oc *OperationClient) CreateSecNvme(secNvmeName, expNqnName, secNqnName string,
 	lisConf *LisConf) error {
+	logger.Info("CreateSecNvme: secNvmeName %v expNqnName %v secNqnName %v lisConf %v",
+		secNvmeName, expNqnName, secNqnName, lisConf)
 	exist, err := oc.nvmeExist(secNvmeName)
 	if err != nil {
 		return err
@@ -1204,10 +1238,12 @@ func (oc *OperationClient) CreateSecNvme(secNvmeName, expNqnName, secNqnName str
 }
 
 func (oc *OperationClient) GetSnapList(prefix string) ([]string, error) {
+	logger.Info("GetSnapList: prefix %v", prefix)
 	return oc.getBdevByPrefix(prefix)
 }
 
 func (oc *OperationClient) DeleteSnap(name string) error {
+	logger.Info("DeleteSnap: name %v", name)
 	params := &struct {
 		Name string `json:"name"`
 	}{
@@ -1312,6 +1348,8 @@ func (oc *OperationClient) createSnapshot(daLvsName, snapName, oriName string) e
 
 func (oc *OperationClient) CreateSnap(daLvsName, snapName, oriName string,
 	isClone bool, snapSize uint64) error {
+	logger.Info("CreateSnap: daLvsName %v snapName %v oriName %v isClone %v snapSize %v",
+		daLvsName, snapName, oriName, isClone, snapSize)
 	fullName := "daLvsName" + "/" + snapName
 	exist, err := oc.bdevExist(fullName)
 	if err != nil {
@@ -1330,14 +1368,18 @@ func (oc *OperationClient) CreateSnap(daLvsName, snapName, oriName string,
 }
 
 func (oc *OperationClient) GetDaLvsList(prefix string) ([]string, error) {
+	logger.Info("GetDaLvsList: prefix %v", prefix)
 	return oc.getLvsByPrefix(prefix)
 }
 
 func (oc *OperationClient) DeleteDaLvs(daLvsName string) error {
+	logger.Info("DeleteDaLvs: %v", daLvsName)
 	return oc.deleteLvs(daLvsName)
 }
 
 func (oc *OperationClient) CreateDaLvs(daLvsName, aggBdevName string) error {
+	logger.Info("CreateDaLvs: daLvsName %v aggBdevName %v",
+		daLvsName, aggBdevName)
 	exist, err := oc.lvsExist(daLvsName)
 	if err != nil {
 		return err
@@ -1374,6 +1416,7 @@ func (oc *OperationClient) CreateDaLvs(daLvsName, aggBdevName string) error {
 }
 
 func (oc *OperationClient) GetAggBdevList(prefix string) ([]string, error) {
+	logger.Info("GetAggBdevList: %v", prefix)
 	return oc.getBdevByPrefix(prefix)
 }
 
@@ -1431,10 +1474,12 @@ func (oc *OperationClient) bdevPassthruDelete(name string) error {
 }
 
 func (oc *OperationClient) DeleteAggBdev(name string) error {
+	logger.Info("DeleteAggBdev: name %v", name)
 	return oc.bdevPassthruDelete(name)
 }
 
 func (oc *OperationClient) CreateAggBdev(aggBdevName string, grpBdevList []string) error {
+	logger.Info("CreateAggBdev: aggBdevName %v grpBdevList %v", aggBdevName, grpBdevList)
 	if len(grpBdevList) != 1 {
 		logger.Error("Unsupport grp cnt: %v", grpBdevList)
 		return fmt.Errorf("Unsupport grp cnt: %v", grpBdevList)
@@ -1443,22 +1488,28 @@ func (oc *OperationClient) CreateAggBdev(aggBdevName string, grpBdevList []strin
 }
 
 func (oc *OperationClient) GetGrpBdevList(prefix string) ([]string, error) {
+	logger.Info("GetGrpBdevList: prefix %v", prefix)
 	return oc.getBdevByPrefix(prefix)
 }
 
 func (oc *OperationClient) DeleteGrpBdev(name string) error {
+	logger.Info("DeleteGrpBdev: name %v", name)
 	return oc.bdevPassthruDelete(name)
 }
 
 func (oc *OperationClient) CreateGrpBdev(grpBdevName, raid0BdevName string) error {
+	logger.Info("CreateGrpBdev: grpBdevName %v raid0BdevName %v",
+		grpBdevName, raid0BdevName)
 	return oc.bdevPassthruCreate(grpBdevName, raid0BdevName)
 }
 
 func (oc *OperationClient) GetRaid0BdevList(prefix string) ([]string, error) {
+	logger.Info("GetRaid0BdevList %v", prefix)
 	return oc.getBdevByPrefix(prefix)
 }
 
 func (oc *OperationClient) DeleteRaid0Bdev(name string) error {
+	logger.Info("DeleteRaid0Bdev: name %s", name)
 	params := &struct {
 		Name string `json:"name"`
 	}{
@@ -1482,6 +1533,8 @@ func (oc *OperationClient) DeleteRaid0Bdev(name string) error {
 
 func (oc *OperationClient) CreateRaid0Bdev(raid0BdevName string,
 	stripSizeKb uint32, feBdevList []string) error {
+	logger.Info("CreateRaid0Bdev: raid0BdevName %v stripSizeKb %v feBdevList %v",
+		raid0BdevName, stripSizeKb, feBdevList)
 	exist, err := oc.bdevExist(raid0BdevName)
 	if err != nil {
 		return err
@@ -1521,15 +1574,19 @@ func (oc *OperationClient) CreateRaid0Bdev(raid0BdevName string,
 }
 
 func (oc *OperationClient) GetFeNvmeList(prefix string) ([]string, error) {
+	logger.Info("GetFeNvmeList: prefix %v", prefix)
 	return oc.getNvmeByPrefix(prefix)
 }
 
 func (oc *OperationClient) DeleteFeNvme(feNvmeName string) error {
+	logger.Info("DeleteFeNvme: feNvmeName %v", feNvmeName)
 	return oc.bdevNvmeDetachController(feNvmeName)
 }
 
 func (oc *OperationClient) CreateFeNvme(feNvmeName, beNqnName, feNqnName string,
 	lisConf *LisConf) error {
+	logger.Info("CreateFeNvme: feNvmeName %v beNqnName %v feNqnName %v lisConf %v",
+		feNvmeName, beNqnName, feNqnName, lisConf)
 	exist, err := oc.nvmeExist(feNvmeName)
 	if err != nil {
 		return err
@@ -1572,6 +1629,7 @@ func (oc *OperationClient) CreateFeNvme(feNvmeName, beNqnName, feNqnName string,
 }
 
 func (oc *OperationClient) ExamineBdev(bdevName string) error {
+	logger.Info("ExamineBdev: bdevName %v", bdevName)
 	params := &struct {
 		Name string `json:"name"`
 	}{
@@ -1594,6 +1652,7 @@ func (oc *OperationClient) ExamineBdev(bdevName string) error {
 }
 
 func (oc *OperationClient) EnableHistogram(bdevName string) error {
+	logger.Info("EnableHistogram: bdevName %v", bdevName)
 	params := &struct {
 		Name   string `json:"name"`
 		Enable bool   `json:"enable"`
