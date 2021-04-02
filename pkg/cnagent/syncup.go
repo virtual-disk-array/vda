@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"sync/atomic"
+	"time"
 
 	"github.com/virtual-disk-array/vda/pkg/lib"
 	"github.com/virtual-disk-array/vda/pkg/logger"
@@ -39,6 +40,7 @@ type syncupHelper struct {
 	grpBdevMap   map[string]bool
 	raid0BdevMap map[string]bool
 	secNvmeMap   map[string]bool
+	reqId        string
 }
 
 type bdevSeq struct {
@@ -203,7 +205,8 @@ func (sh *syncupHelper) syncupPrimary(cntlrFeReq *pbcn.CntlrFeReq,
 	daLvsName := sh.nf.DaLvsName(cntlrFeReq.CntlrFeConf.DaId)
 	sh.daLvsMap[daLvsName] = true
 	if cntlrFeErr == nil {
-		cntlrFeErr = sh.oc.CreateDaLvs(daLvsName, aggBdevName)
+		time.Sleep(time.Second)
+		cntlrFeErr = sh.oc.CreateDaLvs(daLvsName, aggBdevName, sh.reqId)
 	}
 
 	if cntlrFeErr == nil {
@@ -534,6 +537,7 @@ func (cnAgent *cnAgentServer) SyncupCn(ctx context.Context, req *pbcn.SyncupCnRe
 	}
 	atomic.StoreUint64(&lastVersion, req.Version)
 	sh := newSyncupHelper(cnAgent.lisConf, cnAgent.nf, cnAgent.sc)
+	sh.reqId = req.ReqId
 
 	cnRsp := sh.syncupCn(req.CnReq)
 	return &pbcn.SyncupCnReply{

@@ -11,32 +11,31 @@ mkdir -p $work_dir
 
 echo "launch spdk"
 
-cd $spdk_dir
-sudo ./build/bin/spdk_tgt --rpc-socket $work_dir/dn0.sock --wait-for-rpc > $work_dir/dn0.log 2>&1 &
-sudo ./build/bin/spdk_tgt --rpc-socket $work_dir/dn1.sock --wait-for-rpc > $work_dir/dn1.log 2>&1 &
-sudo ./build/bin/spdk_tgt --rpc-socket $work_dir/cn0.sock --wait-for-rpc > $work_dir/cn0.log 2>&1 &
-sudo ./build/bin/spdk_tgt --rpc-socket $work_dir/cn1.sock --wait-for-rpc > $work_dir/cn1.log 2>&1 &
+sudo $spdk_dir/build/bin/spdk_tgt --rpc-socket $work_dir/dn0.sock --wait-for-rpc > $work_dir/dn0.log 2>&1 &
+sudo $spdk_dir/build/bin/spdk_tgt --rpc-socket $work_dir/dn1.sock --wait-for-rpc > $work_dir/dn1.log 2>&1 &
+sudo $spdk_dir/build/bin/spdk_tgt --rpc-socket $work_dir/cn0.sock --wait-for-rpc > $work_dir/cn0.log 2>&1 &
+sudo $spdk_dir/build/bin/spdk_tgt --rpc-socket $work_dir/cn1.sock --wait-for-rpc > $work_dir/cn1.log 2>&1 &
 
 sleep 1
 
-sudo ./scripts/rpc.py -s $work_dir/dn0.sock bdev_set_options -d
-sudo ./scripts/rpc.py -s $work_dir/dn0.sock framework_start_init
-sudo ./scripts/rpc.py -s $work_dir/dn0.sock framework_wait_init
+sudo $spdk_dir/scripts/rpc.py -s $work_dir/dn0.sock bdev_set_options -d
+sudo $spdk_dir/scripts/rpc.py -s $work_dir/dn0.sock framework_start_init
+sudo $spdk_dir/scripts/rpc.py -s $work_dir/dn0.sock framework_wait_init
 sudo chmod 777 $work_dir/dn0.sock
 
-sudo ./scripts/rpc.py -s $work_dir/dn1.sock bdev_set_options -d
-sudo ./scripts/rpc.py -s $work_dir/dn1.sock framework_start_init
-sudo ./scripts/rpc.py -s $work_dir/dn1.sock framework_wait_init
+sudo $spdk_dir/scripts/rpc.py -s $work_dir/dn1.sock bdev_set_options -d
+sudo $spdk_dir/scripts/rpc.py -s $work_dir/dn1.sock framework_start_init
+sudo $spdk_dir/scripts/rpc.py -s $work_dir/dn1.sock framework_wait_init
 sudo chmod 777 $work_dir/dn1.sock
 
-sudo ./scripts/rpc.py -s $work_dir/cn0.sock bdev_set_options -d
-sudo ./scripts/rpc.py -s $work_dir/cn0.sock framework_start_init
-sudo ./scripts/rpc.py -s $work_dir/cn0.sock framework_wait_init
+sudo $spdk_dir/scripts/rpc.py -s $work_dir/cn0.sock bdev_set_options -d
+sudo $spdk_dir/scripts/rpc.py -s $work_dir/cn0.sock framework_start_init
+sudo $spdk_dir/scripts/rpc.py -s $work_dir/cn0.sock framework_wait_init
 sudo chmod 777 $work_dir/cn0.sock
 
-sudo ./scripts/rpc.py -s $work_dir/cn1.sock bdev_set_options -d
-sudo ./scripts/rpc.py -s $work_dir/cn1.sock framework_start_init
-sudo ./scripts/rpc.py -s $work_dir/cn1.sock framework_wait_init
+sudo $spdk_dir/scripts/rpc.py -s $work_dir/cn1.sock bdev_set_options -d
+sudo $spdk_dir/scripts/rpc.py -s $work_dir/cn1.sock framework_start_init
+sudo $spdk_dir/scripts/rpc.py -s $work_dir/cn1.sock framework_wait_init
 sudo chmod 777 $work_dir/cn1.sock
 
 echo "launch etcd"
@@ -77,8 +76,8 @@ $vda_dir/vda_portal --portal-address '127.0.0.1:9520' --portal-network tcp \
              --etcd-endpoints localhost:$etcd_port \
              > $work_dir/portal_0.log 2>&1 &
 
-$vda_dir/vda_monitor --etcd-endpoints localhost:$etcd_port \
-              > $work_dir/monitor_0.log 2>&1 &
+# $vda_dir/vda_monitor --etcd-endpoints localhost:$etcd_port \
+#               > $work_dir/monitor_0.log 2>&1 &
 
 
 echo "prepare pd file"
@@ -110,10 +109,8 @@ echo "create da2"
 $vda_dir/vda_cli da create --da-name da2 --size-mb 64 --physical-size-mb 64 \
                  --cntlr-cnt 1 --strip-cnt 2 --strip-size-kb 64
 echo "create da3"
-$vda_dir/vda_cli da create --da-name da3 --size-mb 64 --physical-size-mb 1024 \
-                 --cntlr-cnt 2 --strip-cnt 2 --strip-size-kb 64
-
-
+$vda_dir/vda_cli da create --da-name da3 --size-mb 512 --physical-size-mb 512 \
+                 --cntlr-cnt 2 --strip-cnt 1 --strip-size-kb 64
 host_nqn="nqn.2016-06.io.spdk:host0"
 
 echo "create exp da0 exp0a"
@@ -128,7 +125,6 @@ $vda_dir/vda_cli exp create --da-name da2 --exp-name exp2a \
 echo "create exp da3 exp3a"
 $vda_dir/vda_cli exp create --da-name da3 --exp-name exp3a \
                  --initiator-nqn $host_nqn
-
 
 da_verify da0
 da_verify da1
@@ -270,6 +266,9 @@ sudo dd if=/dev/nvme0n1 of=$work_dir/da3.img bs=1M count=1
 
 # nvmf_mount da3 exp3c "$work_dir/da3"
 
+$vda_dir/vda_monitor --etcd-endpoints localhost:$etcd_port > $work_dir/monitor_0.log 2>&1 &
+                     
+
 sock_addr=`$vda_dir/vda_cli da get --da-name da3 | jq -r ".disk_array.cntlr_list[] | select(.is_primary==true).sock_addr"`
 echo "primary sock_addr: $sock_addr"
 if [ "$sock_addr" != "localhost:9820" ] && [ "$sock_addr" != "localhost:9821" ]; then
@@ -310,8 +309,27 @@ while true; do
 done
 
 echo "failover done"
+
+max_retry=10
+retry_cnt=0
+while true; do
+    is_err=`$vda_dir/vda_cli da get --da-name da3 | jq -r  ".disk_array.cntlr_list[] | select(.is_primary==true).err_info.is_err"`
+    if [ $is_err == "null" ]; then
+        break
+    fi
+    if [ $retry_cnt -ge $max_retry ]; then
+        echo "wait for primary ready timeout"
+        exit 1
+    fi
+    sleep 5
+    ((retry_cnt=retry_cnt+1))
+done
+
+echo "new primary ready"
+
 grp_verify da3
 
+sudo dd if=/dev/nvme0n1 of=/tmp/vdatest/da3.img bs=1M count=1
 nvmf_mount da3 exp3c "$work_dir/da3"
 
 sudo touch "$work_dir/da3/bar"
@@ -392,9 +410,6 @@ da_verify da1
 da_verify da2
 da_verify da3
 exp_verify da3 exp3c
-
-echo "sleep"
-sleep infinity
 
 umount_dir "$work_dir/da3"
 

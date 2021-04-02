@@ -103,7 +103,7 @@ func init() {
 		"nvmf listener adr fam")
 	cnCreateCmd.Flags().StringVarP(&cnCreateArgs.trAddr, "tr-addr", "", "127.0.0.1",
 		"nvmf listener tr addr")
-	cnCreateCmd.Flags().StringVarP(&cnCreateArgs.trSvcId, "tr-svc-id", "", "4420",
+	cnCreateCmd.Flags().StringVarP(&cnCreateArgs.trSvcId, "tr-svc-id", "", "4430",
 		"nvmf listener tr svc id")
 	cnCreateCmd.Flags().StringVarP(&cnCreateArgs.location, "location", "", "",
 		"cn location")

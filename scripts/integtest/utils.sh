@@ -21,6 +21,16 @@ function cleanup() {
     ps -f -C reactor_0 > /dev/null && sudo killall reactor_0
 }
 
+function force_cleanup() {
+    sudo nvme disconnect-all
+    ps -f -C vda_portal > /dev/null && killall -9 vda_portal
+    ps -f -C vda_monitor > /dev/null && killall -9 vda_monitor
+    ps -f -C vda_dn_agent > /dev/null && killall -9 vda_dn_agent
+    ps -f -C vda_cn_agent > /dev/null && killall -9 vda_cn_agent
+    ps -f -C etcd > /dev/null && killall -9 etcd
+    ps -f -C reactor_0 > /dev/null && sudo killall -9 reactor_0
+}
+
 function cleanup_check() {
     minikube status > /dev/null && echo "minikube is still runing"
     ps -f -C vda_portal > /dev/null && echo "vda_portal is still running"
@@ -162,7 +172,7 @@ function nvmf_connect() {
         echo "exp_info_cnt is 0, da_name: $da_name exp_name: $exp_name"
         exit 1
     fi
-    for i in `seq 0 $[exp_info_cnt - 1]`; do
+    for i in `seq $[exp_info_cnt - 1] -1 0`; do
         tr_svc_id=`$vda_dir/vda_cli exp get --da-name $da_name --exp-name $exp_name | jq -r ".exporter.exp_info_list[$i].nvmf_listener.tr_svc_id"`
         sudo nvme connect -t tcp -n nqn.2016-06.io.vda:exp-$da_name-$exp_name -a 127.0.0.1 -s $tr_svc_id --hostnqn $host_nqn
         serial_number=`$vda_dir/vda_cli exp get --da-name $da_name --exp-name $exp_name | jq -r ".exporter.serial_number"`
@@ -199,5 +209,7 @@ function nvmf_mount() {
     serial_number=`$vda_dir/vda_cli exp get --da-name $da_name --exp-name $exp_name | jq -r ".exporter.serial_number"`
     dev_path="/dev/disk/by-id/nvme-VDA_CONTROLLER_$serial_number"
     mkdir -p $dir
+    echo "dev_path: $dev_path"
+    echo "dir: $dir"
     sudo mount $dev_path $dir
 }

@@ -1350,7 +1350,7 @@ func (oc *OperationClient) CreateSnap(daLvsName, snapName, oriName string,
 	isClone bool, snapSize uint64) error {
 	logger.Info("CreateSnap: daLvsName %v snapName %v oriName %v isClone %v snapSize %v",
 		daLvsName, snapName, oriName, isClone, snapSize)
-	fullName := "daLvsName" + "/" + snapName
+	fullName := daLvsName + "/" + snapName
 	exist, err := oc.bdevExist(fullName)
 	if err != nil {
 		return err
@@ -1377,7 +1377,7 @@ func (oc *OperationClient) DeleteDaLvs(daLvsName string) error {
 	return oc.deleteLvs(daLvsName)
 }
 
-func (oc *OperationClient) CreateDaLvs(daLvsName, aggBdevName string) error {
+func (oc *OperationClient) CreateDaLvs(daLvsName, aggBdevName string, reqId string) error {
 	logger.Info("CreateDaLvs: daLvsName %v aggBdevName %v",
 		daLvsName, aggBdevName)
 	exist, err := oc.lvsExist(daLvsName)
@@ -1386,6 +1386,10 @@ func (oc *OperationClient) CreateDaLvs(daLvsName, aggBdevName string) error {
 	}
 	if exist {
 		return nil
+	}
+
+	if reqId == "???" {
+		return fmt.Errorf("Can not find lvs")
 	}
 
 	params := &struct {

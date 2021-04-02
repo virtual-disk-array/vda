@@ -36,7 +36,7 @@ func init() {
 		&cnAgentArgs.network, "network", "", "tcp",
 		"cn agent network")
 	cnAgentCmd.PersistentFlags().StringVarP(
-		&cnAgentArgs.address, "address", "", ":9720",
+		&cnAgentArgs.address, "address", "", ":9820",
 		"cn agent address")
 	cnAgentCmd.PersistentFlags().StringVarP(
 		&cnAgentArgs.sockPath, "sock-path", "", "/var/tmp/spdk.sock",
