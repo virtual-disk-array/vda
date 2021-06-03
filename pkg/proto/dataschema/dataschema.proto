@@ -234,9 +234,10 @@ message CntlrFrontend {
   string cntlr_id = 1;
   CntlrFeConf cntlr_fe_conf = 2;
   CntlrFeInfo cntlr_fe_info = 3;
-  repeated GrpFrontend grp_fe_list = 4;
-  repeated SnapFrontend snap_fe_list = 5;
-  repeated ExpFrontend exp_fe_list = 6;
+  bool is_init = 4;
+  repeated GrpFrontend grp_fe_list = 5;
+  repeated SnapFrontend snap_fe_list = 6;
+  repeated ExpFrontend exp_fe_list = 7;
 }
 
 message CnConf {

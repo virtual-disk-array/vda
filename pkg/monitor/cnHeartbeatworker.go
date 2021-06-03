@@ -93,7 +93,7 @@ func (chw *cnHeartbeatWorker) setErr(ctx context.Context,
 			}
 			primaryGrpFeList := cntlrFe.GrpFeList
 			primarySnapFeList := cntlrFe.SnapFeList
-			// primaryExpFeList := cntlrFe.ExpFeList
+			isInit := cntlrFe.IsInit
 
 			var newPrimaryCntlr *pbds.Controller
 			for _, cntlr := range cntlrFe.CntlrFeConf.CntlrList {
@@ -164,11 +164,11 @@ func (chw *cnHeartbeatWorker) setErr(ctx context.Context,
 						if cntlrFe2.CntlrId == newPrimaryCntlr.CntlrId {
 							cntlrFe2.GrpFeList = primaryGrpFeList
 							cntlrFe2.SnapFeList = primarySnapFeList
-							// cntlrFe2.ExpFeList = primaryExpFeList
+							cntlrFe2.IsInit = isInit
 						} else {
 							cntlrFe2.GrpFeList = make([]*pbds.GrpFrontend, 0)
 							cntlrFe2.SnapFeList = make([]*pbds.SnapFrontend, 0)
-							// cntlrFe2.ExpFeList = make([]*pbds.ExpFrontend, 0)
+							cntlrFe2.IsInit = false
 						}
 						break
 					}

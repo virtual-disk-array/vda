@@ -152,9 +152,10 @@ message ExpFeReq {
 message CntlrFeReq {
   string cntlr_id = 1;
   CntlrFeConf cntlr_fe_conf = 2;
-  repeated GrpFeReq grp_fe_req_list = 3;
-  repeated SnapFeReq snap_fe_req_list = 4;
-  repeated ExpFeReq exp_fe_req_list = 5;
+  bool is_init = 3;
+  repeated GrpFeReq grp_fe_req_list = 4;
+  repeated SnapFeReq snap_fe_req_list = 5;
+  repeated ExpFeReq exp_fe_req_list = 6;
 }
 
 message CnReq {

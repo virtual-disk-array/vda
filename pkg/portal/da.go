@@ -524,6 +524,7 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 						Timestamp: lib.ResTimestamp(),
 					},
 				},
+				IsInit:     false,
 				GrpFeList:  thisGrpFeList,
 				SnapFeList: thisSnapFeList,
 				ExpFeList:  expFeList,

@@ -467,6 +467,7 @@ func (sm *SyncupManager) buildSyncupCnRequest(
 				StripSizeKb: cntlrFe.CntlrFeConf.StripSizeKb,
 				CntlrList:   cntlrList,
 			},
+			IsInit:        cntlrFe.IsInit,
 			GrpFeReqList:  grpFeReqList,
 			SnapFeReqList: snapFeReqList,
 			ExpFeReqList:  expFeReqList,
@@ -547,6 +548,20 @@ func (sm *SyncupManager) setCnInfo(controllerNode *pbds.ControllerNode,
 		} else {
 			if setCnErrInfo(nil, cntlrFe.CntlrFeInfo.ErrInfo) {
 				isErr = true
+			}
+		}
+		var thisCntlr *pbds.Controller
+		for _, cntlr := range cntlrFe.CntlrFeConf.CntlrList {
+			if cntlr.CntlrId == cntlrFe.CntlrId {
+				thisCntlr = cntlr
+				break
+			}
+		}
+		if thisCntlr == nil {
+			logger.Error("Can not find thisCntlr: %s %v", controllerNode.SockAddr, cntlrFe)
+		} else {
+			if thisCntlr.IsPrimary && !cntlrFe.CntlrFeInfo.ErrInfo.IsErr {
+				cntlrFe.IsInit = true
 			}
 		}
 		for _, grpFe := range cntlrFe.GrpFeList {

@@ -306,7 +306,7 @@ func (sh *syncupHelper) syncupSecondary(cntlrFeReq *pbcn.CntlrFeReq,
 }
 
 func (sh *syncupHelper) syncupCntlrFe(cntlrFeReq *pbcn.CntlrFeReq) *pbcn.CntlrFeRsp {
-	logger.Info("syncupCntlrFe:  %v", cntlrFeReq)
+	logger.Info("syncupCntlrFe: %v", cntlrFeReq)
 	var cntlrFeErr error
 	var thisCntlr *pbcn.Controller
 	var primCntlr *pbcn.Controller

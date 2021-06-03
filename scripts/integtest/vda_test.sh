@@ -19,21 +19,25 @@ sudo $spdk_dir/build/bin/spdk_tgt --rpc-socket $work_dir/cn1.sock --wait-for-rpc
 sleep 1
 
 sudo $spdk_dir/scripts/rpc.py -s $work_dir/dn0.sock bdev_set_options -d
+sudo $spdk_dir/scripts/rpc.py -s $work_dir/dn0.sock nvmf_set_crdt -t1 $nvmf_crdt1 -t2 $nvmf_crdt2 -t3 $nvmf_crdt3
 sudo $spdk_dir/scripts/rpc.py -s $work_dir/dn0.sock framework_start_init
 sudo $spdk_dir/scripts/rpc.py -s $work_dir/dn0.sock framework_wait_init
 sudo chmod 777 $work_dir/dn0.sock
 
 sudo $spdk_dir/scripts/rpc.py -s $work_dir/dn1.sock bdev_set_options -d
+sudo $spdk_dir/scripts/rpc.py -s $work_dir/dn1.sock nvmf_set_crdt -t1 $nvmf_crdt1 -t2 $nvmf_crdt2 -t3 $nvmf_crdt3
 sudo $spdk_dir/scripts/rpc.py -s $work_dir/dn1.sock framework_start_init
 sudo $spdk_dir/scripts/rpc.py -s $work_dir/dn1.sock framework_wait_init
 sudo chmod 777 $work_dir/dn1.sock
 
 sudo $spdk_dir/scripts/rpc.py -s $work_dir/cn0.sock bdev_set_options -d
+sudo $spdk_dir/scripts/rpc.py -s $work_dir/cn0.sock nvmf_set_crdt -t1 $nvmf_crdt1 -t2 $nvmf_crdt2 -t3 $nvmf_crdt3
 sudo $spdk_dir/scripts/rpc.py -s $work_dir/cn0.sock framework_start_init
 sudo $spdk_dir/scripts/rpc.py -s $work_dir/cn0.sock framework_wait_init
 sudo chmod 777 $work_dir/cn0.sock
 
 sudo $spdk_dir/scripts/rpc.py -s $work_dir/cn1.sock bdev_set_options -d
+sudo $spdk_dir/scripts/rpc.py -s $work_dir/cn1.sock nvmf_set_crdt -t1 $nvmf_crdt1 -t2 $nvmf_crdt2 -t3 $nvmf_crdt3
 sudo $spdk_dir/scripts/rpc.py -s $work_dir/cn1.sock framework_start_init
 sudo $spdk_dir/scripts/rpc.py -s $work_dir/cn1.sock framework_wait_init
 sudo chmod 777 $work_dir/cn1.sock
