@@ -266,12 +266,9 @@ $vda_dir/vda_cli exp create --da-name da3 --exp-name exp3c \
                  --initiator-nqn $host_nqn
 exp_verify da3 exp3c
 nvmf_connect da3 exp3c $host_nqn
-sudo dd if=/dev/nvme0n1 of=$work_dir/da3.img bs=1M count=1
+# sudo dd if=/dev/nvme0n1 of=$work_dir/da3.img bs=1M count=1
 
-# nvmf_mount da3 exp3c "$work_dir/da3"
-
-# $vda_dir/vda_monitor --etcd-endpoints localhost:$etcd_port > $work_dir/monitor_0.log 2>&1 &
-                     
+nvmf_mount da3 exp3c "$work_dir/da3"
 
 sock_addr=`$vda_dir/vda_cli da get --da-name da3 | jq -r ".disk_array.cntlr_list[] | select(.is_primary==true).sock_addr"`
 echo "primary sock_addr: $sock_addr"
@@ -332,9 +329,6 @@ done
 echo "new primary ready"
 
 grp_verify da3
-
-sudo dd if=/dev/nvme0n1 of=/tmp/vdatest/da3.img bs=1M count=1
-nvmf_mount da3 exp3c "$work_dir/da3"
 
 sudo touch "$work_dir/da3/bar"
 
