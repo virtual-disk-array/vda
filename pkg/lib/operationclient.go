@@ -3,6 +3,7 @@ package lib
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/virtual-disk-array/vda/pkg/logger"
 )
@@ -663,6 +664,7 @@ func (oc *OperationClient) lvsExist(lvsName string) (bool, error) {
 		return false, nil
 	}
 }
+
 func (oc *OperationClient) CreatePdLvs(pdLvsName, bdevName string) error {
 	logger.Info("CreatePdLvs: pdLvsName %v bdevName %v",
 		pdLvsName, bdevName)
@@ -1377,7 +1379,7 @@ func (oc *OperationClient) DeleteDaLvs(daLvsName string) error {
 	return oc.deleteLvs(daLvsName)
 }
 
-func (oc *OperationClient) CreateDaLvs(daLvsName, aggBdevName string, reqId string) error {
+func (oc *OperationClient) CreateDaLvs(daLvsName, aggBdevName string) error {
 	logger.Info("CreateDaLvs: daLvsName %v aggBdevName %v",
 		daLvsName, aggBdevName)
 	exist, err := oc.lvsExist(daLvsName)
@@ -1386,10 +1388,6 @@ func (oc *OperationClient) CreateDaLvs(daLvsName, aggBdevName string, reqId stri
 	}
 	if exist {
 		return nil
-	}
-
-	if reqId == "???" {
-		return fmt.Errorf("Can not find lvs")
 	}
 
 	params := &struct {
@@ -1417,6 +1415,23 @@ func (oc *OperationClient) CreateDaLvs(daLvsName, aggBdevName string, reqId stri
 			rsp.Error.Code, rsp.Error.Message)
 	}
 	return nil
+}
+
+func (oc *OperationClient) WaitForLvs(daLvsName string) error {
+	logger.Info("WaitForLvs: daLvsName %s", daLvsName)
+
+	for i := 0; i < 10; i++ {
+		exist, err := oc.lvsExist(daLvsName)
+		if err != nil {
+			return err
+		}
+		if exist {
+			return nil
+		}
+		time.Sleep(time.Second)
+	}
+	logger.Warning("Can not find lvs: %s", daLvsName)
+	return fmt.Errorf("Can not find lvs: %s", daLvsName)
 }
 
 func (oc *OperationClient) GetAggBdevList(prefix string) ([]string, error) {

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"sort"
 	"sync/atomic"
-	"time"
 
 	"github.com/virtual-disk-array/vda/pkg/lib"
 	"github.com/virtual-disk-array/vda/pkg/logger"
@@ -205,8 +204,11 @@ func (sh *syncupHelper) syncupPrimary(cntlrFeReq *pbcn.CntlrFeReq,
 	daLvsName := sh.nf.DaLvsName(cntlrFeReq.CntlrFeConf.DaId)
 	sh.daLvsMap[daLvsName] = true
 	if cntlrFeErr == nil {
-		time.Sleep(time.Second)
-		cntlrFeErr = sh.oc.CreateDaLvs(daLvsName, aggBdevName, sh.reqId)
+		if cntlrFeReq.IsInit {
+			cntlrFeErr = sh.oc.WaitForLvs(daLvsName)
+		} else {
+			cntlrFeErr = sh.oc.CreateDaLvs(daLvsName, aggBdevName)
+		}
 	}
 
 	if cntlrFeErr == nil {

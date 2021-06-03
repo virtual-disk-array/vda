@@ -80,8 +80,8 @@ $vda_dir/vda_portal --portal-address '127.0.0.1:9520' --portal-network tcp \
              --etcd-endpoints localhost:$etcd_port \
              > $work_dir/portal_0.log 2>&1 &
 
-# $vda_dir/vda_monitor --etcd-endpoints localhost:$etcd_port \
-#               > $work_dir/monitor_0.log 2>&1 &
+$vda_dir/vda_monitor --etcd-endpoints localhost:$etcd_port \
+              > $work_dir/monitor_0.log 2>&1 &
 
 
 echo "prepare pd file"
@@ -270,7 +270,7 @@ sudo dd if=/dev/nvme0n1 of=$work_dir/da3.img bs=1M count=1
 
 # nvmf_mount da3 exp3c "$work_dir/da3"
 
-$vda_dir/vda_monitor --etcd-endpoints localhost:$etcd_port > $work_dir/monitor_0.log 2>&1 &
+# $vda_dir/vda_monitor --etcd-endpoints localhost:$etcd_port > $work_dir/monitor_0.log 2>&1 &
                      
 
 sock_addr=`$vda_dir/vda_cli da get --da-name da3 | jq -r ".disk_array.cntlr_list[] | select(.is_primary==true).sock_addr"`
