@@ -49,6 +49,7 @@ build: proto mock compile test
 .PHONY: image
 image:
 	docker build -t virtualdiskarray/vdacsi:$(VERSION) -f scripts/csi/Dockerfile .
+	docker build -t virtualdiskarray/vdacsi:dev -f scripts/csi/Dockerfile .
 
 .PHONY: push
 push:

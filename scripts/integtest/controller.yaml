@@ -40,8 +40,8 @@ spec:
         - name: socket-dir
           mountPath: /csi
       - name: vdacsi-controller
-        image: virtualdiskarray/vdacsi:v0.0.1
-        imagePullPolicy: "IfNotPresent"
+        image: virtualdiskarray/vdacsi:dev
+        imagePullPolicy: "Never"
         args:
         - "--endpoint=unix:///csi/csi.sock"
         - "--enable-cs"
