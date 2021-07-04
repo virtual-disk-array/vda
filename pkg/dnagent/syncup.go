@@ -63,7 +63,7 @@ func (sh *syncupHelper) syncupVdBe(vdBeReq *pbdn.VdBeReq,
 	return vdBeRsp
 }
 
-func (sh *syncupHelper) syncupPd(pdReq *pbdn.PdReq) *pbdn.PdRsp {
+func (sh *syncupHelper) syncupPd(pdReq *pbdn.PdReq) func() *pbdn.PdRsp {
 	var pdErr error
 	vdBeRspList := make([]*pbdn.VdBeRsp, 0)
 	var realName string
@@ -99,6 +99,7 @@ func (sh *syncupHelper) syncupPd(pdReq *pbdn.PdReq) *pbdn.PdRsp {
 	if pdErr == nil {
 		pdErr = sh.oc.CreatePdLvs(pdLvsName, realName)
 	}
+
 	if pdErr == nil {
 		for _, vdBeReq := range pdReq.VdBeReqList {
 			vdBeRsp := sh.syncupVdBe(vdBeReq, pdReq.PdId, pdLvsName)
@@ -106,37 +107,45 @@ func (sh *syncupHelper) syncupPd(pdReq *pbdn.PdReq) *pbdn.PdRsp {
 		}
 	}
 
-	totalSize := uint64(0)
-	freeSize := uint64(0)
-	if pdErr == nil {
-		lvsInfo, pdErr := sh.oc.GetLvsInfo(pdLvsName)
+	// Return a function which can get the PdRsp
+	// We will invoke it after we cleanup all the logical volumes.
+	// We may get a wrong freeSize right now, because the logical volume(s)
+	// may be deleted later.
+	return func() *pbdn.PdRsp {
+		totalSize := uint64(0)
+		freeSize := uint64(0)
 		if pdErr == nil {
-			totalSize = lvsInfo.TotalDataClusters * lvsInfo.ClusterSize
-			freeSize = lvsInfo.FreeClusters * lvsInfo.ClusterSize
+			lvsInfo, pdErr := sh.oc.GetLvsInfo(pdLvsName)
+			if pdErr == nil {
+				totalSize = lvsInfo.TotalDataClusters * lvsInfo.ClusterSize
+				freeSize = lvsInfo.FreeClusters * lvsInfo.ClusterSize
+			}
+		}
+
+		return &pbdn.PdRsp{
+			PdId: pdReq.PdId,
+			PdInfo: &pbdn.PdInfo{
+				ErrInfo: newErrInfo(pdErr),
+			},
+			PdCapacity: &pbdn.PdCapacity{
+				TotalSize: totalSize,
+				FreeSize:  freeSize,
+			},
+			VdBeRspList: vdBeRspList,
 		}
 	}
 
-	return &pbdn.PdRsp{
-		PdId: pdReq.PdId,
-		PdInfo: &pbdn.PdInfo{
-			ErrInfo: newErrInfo(pdErr),
-		},
-		PdCapacity: &pbdn.PdCapacity{
-			TotalSize: totalSize,
-			FreeSize:  freeSize,
-		},
-		VdBeRspList: vdBeRspList,
-	}
 }
 
 func (sh *syncupHelper) syncupDn(dnReq *pbdn.DnReq) *pbdn.DnRsp {
 	var dnErr error
 	pdRspList := make([]*pbdn.PdRsp, 0)
 	dnErr = sh.oc.LoadNvmfs()
+	getPdRspFuncList := make([]func() *pbdn.PdRsp, 0)
 	if dnErr == nil {
 		for _, pdReq := range dnReq.PdReqList {
-			pdRsp := sh.syncupPd(pdReq)
-			pdRspList = append(pdRspList, pdRsp)
+			getPdRspFunc := sh.syncupPd(pdReq)
+			getPdRspFuncList = append(getPdRspFuncList, getPdRspFunc)
 		}
 	}
 
@@ -206,6 +215,11 @@ func (sh *syncupHelper) syncupDn(dnReq *pbdn.DnReq) *pbdn.DnRsp {
 				}
 			}
 		}
+	}
+
+	for _, getPdRspFunc := range getPdRspFuncList {
+		pdRsp := getPdRspFunc()
+		pdRspList = append(pdRspList, pdRsp)
 	}
 
 	return &pbdn.DnRsp{
