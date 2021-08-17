@@ -2,6 +2,7 @@ package lib
 
 import (
 	"fmt"
+	"strings"
 )
 
 const (
@@ -84,6 +85,12 @@ func (nf *NameFmt) SecNqnPrefix() string {
 
 func (nf *NameFmt) PdBdevName(pdId string) string {
 	return fmt.Sprintf("%s-%s", nf.PdBdevPrefix(), pdId)
+}
+
+func (nf *NameFmt) PdId(pdBdevName string) string {
+	pdId := strings.Replace(pdBdevName, nf.PdBdevPrefix()+"-", "", 1)
+	pdId = strings.Replace(pdId, "n1", "", 1) // in the case of Nvme type bdevName
+	return pdId
 }
 
 func (nf *NameFmt) PdLvsName(pdId string) string {

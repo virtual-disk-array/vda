@@ -7,6 +7,7 @@ package dnagentapi;
 service DnAgent {
   rpc SyncupDn(SyncupDnRequest) returns(SyncupDnReply) {}
   rpc DnHeartbeat (DnHeartbeatRequest) returns (DnHeartbeatReply) {}
+  rpc BdevGetMetrics (BdevMetricsRequest) returns (BdevMetricsReply) {}
 }
 
 message ReplyInfo {
@@ -49,10 +50,16 @@ message BdevIostat {
   uint64 weighted_io_time = 14;
 }
 
-message BdevHistgram {
+message BdevHistogram {
   string histogram = 1;
   uint64 tsc_rate = 2;
   uint32 bucket_shift = 3;
+}
+
+message BdevMetrics {
+  string pd_id = 1;
+  BdevIostat bdev_iostat = 2;
+  BdevHistogram bdev_histogram = 3;
 }
 
 message BdevQos {
@@ -145,4 +152,13 @@ message DnHeartbeatRequest {
 
 message DnHeartbeatReply {
   ReplyInfo reply_info = 1;
+}
+
+message BdevMetricsRequest {
+  string req_id = 1;
+}
+
+message BdevMetricsReply {
+  ReplyInfo reply_info = 1;
+  repeated BdevMetrics bdev_metrics = 2;
 }
