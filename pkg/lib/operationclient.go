@@ -234,16 +234,20 @@ func (oc *OperationClient) setQosLimit(name string,
 }
 
 func (oc *OperationClient) getBdevByPrefix(prefix string) ([]string, error) {
-	beLvolList := make([]string, 0)
+	bdevList := make([]string, 0)
 	for _, bdev := range oc.nameToBdev {
-		for _, alias := range bdev.Aliases {
-			if strings.HasPrefix(alias, prefix) {
-				beLvolList = append(beLvolList, alias)
-				break
+		if strings.HasPrefix(bdev.Name, prefix) {
+			bdevList = append(bdevList, bdev.Name)
+		} else {
+			for _, alias := range bdev.Aliases {
+				if strings.HasPrefix(alias, prefix) {
+					bdevList = append(bdevList, alias)
+					break
+				}
 			}
 		}
 	}
-	return beLvolList, nil
+	return bdevList, nil
 }
 
 func (oc *OperationClient) GetBeNqnList(prefix string) ([]string, error) {
