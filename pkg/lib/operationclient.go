@@ -28,7 +28,7 @@ type Iostat struct {
 	NumReadOps              uint64
 	BytesWritten            uint64
 	NumWriteOps             uint64
-	ByetsUnampped           uint64
+	BytesUnmapped           uint64
 	NumUnmapOps             uint64
 	ReadLatencyTicks        uint64
 	WriteLatencyTicks       uint64
@@ -37,6 +37,12 @@ type Iostat struct {
 	QueueDepth              uint64
 	IoTime                  uint64
 	WeightedIoTime          uint64
+}
+
+type Histogram struct {
+	Histogram   string
+	TscRate     uint64
+	BucketShift uint32
 }
 
 type LvsInfo struct {
@@ -60,7 +66,7 @@ type nvmfConf struct {
 		Trtype  string `json:"trtype"`
 		Adrfam  string `json:"adrfam"`
 		TrAddr  string `json:"traddr"`
-		TrSvcId string `json:trsvcid`
+		TrSvcId string `json:"trsvcid"`
 	} `json:"listen_addresses"`
 	Hosts []struct {
 		Nqn string `json:"nqn"`
@@ -86,8 +92,8 @@ type spdkErr struct {
 	Message string `json:"message"`
 }
 
-func (oc *OperationClient) BdevGetIosat(bdevName string) (*Iostat, error) {
-	logger.Info("BdevGetIosat: bdevName %v", bdevName)
+func (oc *OperationClient) BdevGetIostat(bdevName string) (*Iostat, error) {
+	logger.Info("BdevGetIostat: bdevName %v", bdevName)
 	params := &struct {
 		Name string `json:"name"`
 	}{
@@ -98,11 +104,12 @@ func (oc *OperationClient) BdevGetIosat(bdevName string) (*Iostat, error) {
 		Result *struct {
 			TickRate uint64 `json:"tick_rate"`
 			Bdevs    []struct {
+				Name                    string `json:"name"`
 				BytesRead               uint64 `json:"bytes_read"`
 				NumReadOps              uint64 `json:"num_read_ops"`
 				BytesWritten            uint64 `json:"bytes_written"`
 				NumWriteOps             uint64 `json:"num_write_ops"`
-				ByetsUnampped           uint64 `json:"num_unmap_ops"`
+				BytesUnmapped           uint64 `json:"bytes_unmapped"`
 				NumUnmapOps             uint64 `json:"num_unmap_ops"`
 				ReadLatencyTicks        uint64 `json:"read_latency_ticks"`
 				WriteLatencyTicks       uint64 `json:"write_latency_ticks"`
@@ -110,7 +117,7 @@ func (oc *OperationClient) BdevGetIosat(bdevName string) (*Iostat, error) {
 				QueueDepthPollingPeriod uint64 `json:"queue_depth_polling_period"`
 				QueueDepth              uint64 `json:"queue_depth"`
 				IoTime                  uint64 `json:"io_time"`
-				WeightedIoTime          uint64 `json:"WeightedIoTime"`
+				WeightedIoTime          uint64 `json:"weighted_io_time"`
 			}
 		}
 	}{}
@@ -120,12 +127,12 @@ func (oc *OperationClient) BdevGetIosat(bdevName string) (*Iostat, error) {
 		return nil, err
 	}
 	if rsp.Error != nil {
-		logger.Error("bdev_get_iostat rsp err: %v", *rsp.Error)
+		logger.Warning("bdev_get_iostat rsp err: %v", *rsp.Error)
 		return nil, fmt.Errorf("bdev_get_iostat rsp err: %d %s",
 			rsp.Error.Code, rsp.Error.Message)
 	}
 	if rsp.Result == nil {
-		logger.Error("bdev_get_iostat result is nil")
+		logger.Warning("bdev_get_iostat result is nil")
 		return nil, fmt.Errorf("bdev_get_iostat result is nil")
 	}
 	cnt := len(rsp.Result.Bdevs)
@@ -138,7 +145,7 @@ func (oc *OperationClient) BdevGetIosat(bdevName string) (*Iostat, error) {
 		NumReadOps:              rsp.Result.Bdevs[0].NumReadOps,
 		BytesWritten:            rsp.Result.Bdevs[0].BytesWritten,
 		NumWriteOps:             rsp.Result.Bdevs[0].NumWriteOps,
-		ByetsUnampped:           rsp.Result.Bdevs[0].ByetsUnampped,
+		BytesUnmapped:           rsp.Result.Bdevs[0].BytesUnmapped,
 		NumUnmapOps:             rsp.Result.Bdevs[0].NumUnmapOps,
 		ReadLatencyTicks:        rsp.Result.Bdevs[0].ReadLatencyTicks,
 		WriteLatencyTicks:       rsp.Result.Bdevs[0].WriteLatencyTicks,
@@ -147,6 +154,46 @@ func (oc *OperationClient) BdevGetIosat(bdevName string) (*Iostat, error) {
 		QueueDepth:              rsp.Result.Bdevs[0].QueueDepth,
 		IoTime:                  rsp.Result.Bdevs[0].IoTime,
 		WeightedIoTime:          rsp.Result.Bdevs[0].WeightedIoTime,
+	}, nil
+}
+
+func (oc *OperationClient) BdevGetHistogram(bdevName string) (*Histogram, error) {
+	logger.Info("BdevGetHistogram: bdevName %v", bdevName)
+	params := &struct {
+		Name string `json:"name"`
+	}{
+		Name: bdevName,
+	}
+
+	rsp := &struct {
+		Error  *spdkErr `json:"error"`
+		Result *struct {
+			Histogram   string `json:"histogram"`
+			TscRate     uint64 `json:"tsc_rate"`
+			BucketShift uint32 `json:"bucket_shift"`
+		}
+	}{}
+
+	err := oc.sc.Invoke("bdev_get_histogram", params, rsp)
+	if err != nil {
+		logger.Error("bdev_get_histogram failed: %v", err)
+		return nil, err
+	}
+
+	if rsp.Error != nil {
+		logger.Warning("bdev_get_histogram rsp err: %v", *rsp.Error)
+		return nil, fmt.Errorf("bdev_get_histogram rsp err: %d %s", rsp.Error.Code, rsp.Error.Message)
+	}
+
+	if rsp.Result == nil {
+		logger.Warning("bdev_get_histogram result is nil")
+		return nil, fmt.Errorf("bdev_get_histogram result is nil")
+	}
+
+	return &Histogram{
+		Histogram:   rsp.Result.Histogram,
+		TscRate:     rsp.Result.TscRate,
+		BucketShift: rsp.Result.BucketShift,
 	}, nil
 }
 
@@ -1700,9 +1747,10 @@ func (oc *OperationClient) EnableHistogram(bdevName string) error {
 }
 
 func NewOperationClient(sc *SpdkClient) *OperationClient {
-	return &OperationClient{
+	oc := &OperationClient{
 		sc:         sc,
 		nameToBdev: make(map[string]*bdevConf),
 		nqnToNvmf:  make(map[string]*nvmfConf),
 	}
+	return oc
 }
