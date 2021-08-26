@@ -245,9 +245,9 @@ func (sh *syncupHelper) syncupSecExpFe(cntlrFeReq *pbcn.CntlrFeReq,
 	expFeReq *pbcn.ExpFeReq, primCntlr *pbcn.Controller) *pbcn.ExpFeRsp {
 	logger.Info("syncupSecExpFe: %v", cntlrFeReq)
 	var expFeErr error
-	secNvmeName := sh.nf.SecNvmeName(primCntlr.CntlrId)
+	secNvmeName := sh.nf.SecNvmeName(expFeReq.ExpId)
 	sh.secNvmeMap[secNvmeName] = true
-	secBdevName := sh.nf.SecBdevName(primCntlr.CntlrId)
+	secBdevName := sh.nf.SecBdevName(expFeReq.ExpId)
 	expNqnName := sh.nf.ExpNqnName(expFeReq.ExpFeConf.DaName, expFeReq.ExpFeConf.ExpName)
 	sh.expNqnMap[expNqnName] = true
 	secNqnName := sh.nf.SecNqnName(cntlrFeReq.CntlrId)

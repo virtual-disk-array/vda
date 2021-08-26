@@ -155,12 +155,12 @@ func (nf *NameFmt) SecNqnName(cntlrId string) string {
 	return fmt.Sprintf("%s-%s", nf.SecNqnPrefix(), cntlrId)
 }
 
-func (nf *NameFmt) SecNvmeName(primCntlrId string) string {
-	return fmt.Sprintf("%s-%s", nf.SecNvmePrefix(), primCntlrId)
+func (nf *NameFmt) SecNvmeName(expId string) string {
+	return fmt.Sprintf("%s-%s", nf.SecNvmePrefix(), expId)
 }
 
-func (nf *NameFmt) SecBdevName(primCntlrId string) string {
-	return fmt.Sprintf("%sn1", nf.SecNvmeName(primCntlrId))
+func (nf *NameFmt) SecBdevName(expId string) string {
+	return fmt.Sprintf("%sn1", nf.SecNvmeName(expId))
 }
 
 func NewNameFmt(vdaPrefix, nqnPrefix string) *NameFmt {
