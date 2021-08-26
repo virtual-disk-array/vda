@@ -7,6 +7,7 @@ package cnagentapi;
 service CnAgent {
   rpc SyncupCn(SyncupCnRequest) returns(SyncupCnReply) {}
   rpc CnHeartbeat(CnHeartbeatRequest) returns(CnHeartbeatReply) {}
+  rpc BdevGetMetrics (BdevMetricsRequest) returns (BdevMetricsReply) {}
 }
 
 message ReplyInfo {
@@ -44,10 +45,17 @@ message BdevIostat {
   uint64 weighted_io_time = 14;
 }
 
-message BdevHistgram {
+message BdevHistogram {
   string histogram = 1;
   uint64 tsc_rate = 2;
   uint32 bucket_shift = 3;
+}
+
+message BdevMetrics {
+  string snap_full_name = 1;
+  string exp_id = 2;
+  BdevIostat bdev_iostat = 3;
+  BdevHistogram bdev_histogram = 4;
 }
 
 message Lvstore {
@@ -216,4 +224,13 @@ message CnHeartbeatRequest {
 
 message CnHeartbeatReply {
   ReplyInfo reply_info = 1;
+}
+
+message BdevMetricsRequest {
+  string req_id = 1;
+}
+
+message BdevMetricsReply {
+  ReplyInfo reply_info = 1;
+  repeated BdevMetrics bdev_metrics = 2;
 }
