@@ -32,6 +32,7 @@ service Portal {
   rpc ModifyExp(ModifyExpRequest) returns (ModifyExpReply) {}
   rpc ListExp(ListExpRequest) returns (ListExpReply) {}
   rpc GetExp(GetExpRequest) returns (GetExpReply) {}
+  rpc CreateSnap(CreateSnapRequest) returns (CreateSnapReply) {}
 }
 
 message ReplyInfo {
@@ -583,4 +584,17 @@ message GetExpRequest {
 message GetExpReply {
   ReplyInfo reply_info = 1;
   Exporter exporter = 2;
+}
+
+message CreateSnapRequest {
+  string da_name = 1;
+  string snap_name = 2;
+  string description = 3;
+  string ori_name = 4;
+  bool   is_clone = 5;
+  uint64 size = 6;
+}
+
+message CreateSnapReply {
+  ReplyInfo reply_info = 1;
 }
