@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"sync/atomic"
+	"strings"
 
 	"github.com/virtual-disk-array/vda/pkg/lib"
 	"github.com/virtual-disk-array/vda/pkg/logger"
@@ -405,14 +406,30 @@ func (sh *syncupHelper) syncupCn(cnReq *pbcn.CnReq) *pbcn.CnRsp {
 		snapFullNamePrefix := sh.nf.SnapFullNamePrefix()
 		snapFullNameList, cnErr := sh.oc.GetSnapList(snapFullNamePrefix)
 		if cnErr == nil {
+			toBeDeleted1 := make([]string, 0)
+			toBeDeleted2 := make([]string, 0)
 			for _, snapFullName := range snapFullNameList {
 				_, ok := sh.snapMap[snapFullName]
 				if !ok {
-					cnErr = sh.oc.DeleteSnap(snapFullName)
-					if cnErr != nil {
-						break
+					toBeDeleted1 = append(toBeDeleted1, snapFullName)
+				}
+			}
+			for {
+				for _, snapFullName := range toBeDeleted1 {
+					tmpErr := sh.oc.DeleteSnap(snapFullName)
+					if tmpErr != nil {
+						toBeDeleted2 = append(toBeDeleted2, snapFullName)
 					}
 				}
+				if (len(toBeDeleted1) == len(toBeDeleted2)) {
+					break
+				}
+				toBeDeleted1 = toBeDeleted2
+				toBeDeleted2 = make([]string, 0)
+			}
+			if (len(toBeDeleted1) != 0) {
+				cnErr = fmt.Errorf("can not delete snap(s): %s",
+					strings.Join(toBeDeleted1, ","))
 			}
 		}
 	}
