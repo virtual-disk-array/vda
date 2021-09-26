@@ -135,6 +135,7 @@ func (po *portalServer) CreateExp(ctx context.Context, req *pbpo.CreateExpReques
 				cnSockAddrList = append(cnSockAddrList, controllerNode.SockAddr)
 			}
 			targetCntlrFe.ExpFeList = append(targetCntlrFe.ExpFeList, expFe)
+			controllerNode.Version++
 			newCnEntityVal, err := proto.Marshal(controllerNode)
 			if err != nil {
 				logger.Error("Marshal controllerNode err: %v %v", controllerNode, err)
@@ -295,6 +296,7 @@ func (po *portalServer) DeleteExp(ctx context.Context, req *pbpo.DeleteExpReques
 			length := len(targetCntlrFe.ExpFeList)
 			targetCntlrFe.ExpFeList[targetIdx] = targetCntlrFe.ExpFeList[length-1]
 			targetCntlrFe.ExpFeList = targetCntlrFe.ExpFeList[:length-1]
+			controllerNode.Version++
 			newCnEntityVal, err := proto.Marshal(controllerNode)
 			if err != nil {
 				logger.Error("Marshal controllerNode err: %v %v", controllerNode, err)
