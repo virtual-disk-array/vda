@@ -159,8 +159,16 @@ func (nf *NameFmt) SecNvmeName(expId string) string {
 	return fmt.Sprintf("%s-%s", nf.SecNvmePrefix(), expId)
 }
 
+func (nf *NameFmt) ExpId(secNvmeName string) string {
+	return strings.Replace(secNvmeName, nf.SecNvmePrefix()+"-", "", 1)
+}
+
 func (nf *NameFmt) SecBdevName(expId string) string {
 	return fmt.Sprintf("%sn1", nf.SecNvmeName(expId))
+}
+
+func (nf *NameFmt) SecNvmeNameToBdevName(secNvmeName string) string {
+	return fmt.Sprintf("%sn1", secNvmeName)
 }
 
 func NewNameFmt(vdaPrefix, nqnPrefix string) *NameFmt {
