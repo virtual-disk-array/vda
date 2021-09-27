@@ -191,11 +191,22 @@ $kubectl_cmd delete pod vdacsi-test
 wait_for_pod 5 10
 
 echo "check exp_cnt after deleting testpod"
-exp_cnt=`$vda_dir/vda_cli exp list --da-name $da_name | jq ".exp_summary_list | length"`
-if [ $exp_cnt -ne 0 ]; then
+retry_cnt=0
+max_retry=10
+while true; do
+    exp_cnt=`$vda_dir/vda_cli exp list --da-name $da_name | jq ".exp_summary_list | length"`
+    if [ $exp_cnt -eq 0 ]; then
+	echo "exp_cnt is 0"
+	break
+    fi
     echo "exp_cnt is not 0: $exp_cnt"
-    exit 1
-fi
+    if [ $retry_cnt -ge $max_retry ]; then
+        echo "check exp_cnt timeout"
+        exit 1
+    fi
+    sleep 1
+    ((retry_cnt=retry_cnt+1))
+done
 
 echo "deleve pvc"
 $kubectl_cmd delete pvc vdacsi-pvc
