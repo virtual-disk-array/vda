@@ -47,7 +47,9 @@ docker push virtualdiskarray/vdacsi
 os_and_arch="linux_amd64"
 folder_name="vda_${os_and_arch}_${version}"
 zip_name="${folder_name}.zip"
+targz_name="${folder_name}.tar.gz"
 cp -r _out/$os_and_arch $folder_name
 zip -r $zip_name $folder_name
+tar zcvf $targz_name $folder_name
 
-gh release create $version $zip_name --title "vda $version" --notes-file $notes_file --draft
+gh release create $version $zip_name $targz_name --title "vda $version" --notes-file $notes_file --draft

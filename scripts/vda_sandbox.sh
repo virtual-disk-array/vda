@@ -2,11 +2,15 @@
 
 set -e
 
-work_dir=/tmp/vda_sandbox
+work_dir=$VDA_SANDBOX_WORK_DIR
+if [ "$work_dir" == "" ]; then
+    work_dir=/tmp/vda_sandbox
+fi
+
 spdk_dir=${work_dir}/spdk
 etcd_version="3.5.0"
 vda_version="0.1.0"
-vda_dir=${work_dir}/vda_linux_amd64_v${vda_version}
+vda_dir=${work_dir}/vda
 
 
 function wait_for_socket() {
@@ -56,10 +60,11 @@ function start() {
 
     cd $work_dir
     if [ ! -f vda_linux_amd64_v${vda_version}.zip ]; then
-	curl -L -O https://github.com/virtual-disk-array/vda/releases/download/v${vda_version}/vda_linux_amd64_v${vda_version}.zip
+	curl -L -O https://github.com/virtual-disk-array/vda/releases/download/v${vda_version}/vda_linux_amd64_v${vda_version}.tar.gz
     fi
     if [ ! -d $vda_dir ]; then
-	unzip vda_linux_amd64_v${vda_version}.zip
+	tar xvf vda_linux_amd64_v${vda_version}.tar.gz
+	mv vda_linux_amd64_v${vda_version} $vda_dir
     fi
 
     cd $spdk_dir
