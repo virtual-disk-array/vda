@@ -9,7 +9,7 @@ fi
 
 spdk_dir=${work_dir}/spdk
 etcd_version="3.5.0"
-vda_version="0.1.0"
+vda_version="0.1.1"
 vda_dir=${work_dir}/vda
 
 
