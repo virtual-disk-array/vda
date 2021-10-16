@@ -42,7 +42,7 @@ git tag -a $version -m "vda version $version"
 git push
 git push --tags
 
-docker push virtualdiskarray/vdacsi
+docker push virtualdiskarray/vdacsi:$version
 
 os_and_arch="linux_amd64"
 folder_name="vda_${os_and_arch}_${version}"
