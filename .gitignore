@@ -3,3 +3,4 @@ _out
 mockclient.go
 mockutils.go
 conf.sh
+spdk
