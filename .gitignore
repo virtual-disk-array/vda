@@ -5,3 +5,5 @@ mockutils.go
 conf.sh
 spdk
 vda_dataplane
+*.o
+*.a

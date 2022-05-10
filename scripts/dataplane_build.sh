@@ -14,5 +14,6 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$SPDK_LIB_DIR:$DPDK_LIB_DIR:$VFIO_LIB_DI
 
 export SPDK_HEADER_DIR="$SPDK_DIR/include"
 
+make -C $dataplane_dir/raid1 raid1
 rm -f $dataplane_dir/app/vda_dataplane
 make -C $dataplane_dir/app vda_dataplane

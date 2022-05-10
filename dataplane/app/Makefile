@@ -11,5 +11,5 @@ SYS_LIB := $(shell PKG_CONFIG_PATH="$(PKG_CONFIG_PATH)" pkg-config --libs --stat
 
 # Shows how to compile and external bdev and application against the SPDK archives.
 vda_dataplane:
-	$(CC) $(COMMON_CFLAGS) -march=$(TARGET_ARCHITECTURE) -o vda_dataplane ./app.c -pthread -Wl,--whole-archive,-Bstatic $(SPDK_DPDK_LIB) \
+	$(CC) $(COMMON_CFLAGS) -march=$(TARGET_ARCHITECTURE) -L../raid1 -o vda_dataplane ./app.c -pthread -Wl,--whole-archive,-Bstatic -lraid1_external $(SPDK_DPDK_LIB) \
 	-Wl,--no-whole-archive,-Bdynamic $(SYS_LIB)
