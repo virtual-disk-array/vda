@@ -814,6 +814,197 @@ raid1_delete_from_queue(struct raid1_bdev *r1_bdev)
 	TAILQ_REMOVE(&g_raid1_bdev_head, r1_bdev, link);
 }
 
+static const struct spdk_bdev_fn_table g_raid1_bdev_fn_table = {
+	.destruct = NULL,
+	.submit_request = NULL,
+	.io_type_supported = NULL,
+	.get_io_channel = NULL,
+};
+
+static int
+raid1_bdev_ch_create_cb(void *io_device, void *ctx_buf)
+{
+    return 0;
+}
+
+static void
+raid1_bdev_ch_destroy_cb(void *io_device, void *ctx_buf)
+{
+    return;
+}
+
+#define RAID1_PENDING_HASH_RATIO (PAGE_SIZE)
+#define RAID1_PRODUCT_NAME "raid1"
+
+struct raid1_init_params {
+	const char *raid1_name;
+	const char *bdev0_name;
+	const char *bdev1_name;
+	struct raid1_per_bdev *per_bdev0;
+	struct raid1_per_bdev *per_bdev1;
+	struct raid1_sb *sb;
+	const char *bm_buf;
+};
+
+static void
+raid1_resync_allocate(struct raid1_bdev *r1_bdev)
+{
+}
+
+static void
+raid1_resync_free(struct raid1_bdev *r1_bdev)
+{
+}
+
+static int
+raid1_bdev_init(struct raid1_bdev **_r1_bdev, struct raid1_init_params *params)
+{
+	struct raid1_bdev *r1_bdev;
+	struct raid1_region *region;
+	struct raid1_io_head *io_head;
+	uint32_t i;
+	int rc;
+
+	r1_bdev = calloc(1, sizeof(*r1_bdev));
+	if (r1_bdev == NULL) {
+		SPDK_ERRLOG("Could not allocate raid1_bdev\n");
+		rc = -ENOMEM;
+		goto err_out;
+	}
+
+	strncpy(r1_bdev->raid1_name, params->raid1_name, RAID1_MAX_NAME_LEN);
+	strncpy(r1_bdev->bdev0_name, params->bdev0_name, RAID1_MAX_NAME_LEN);
+	strncpy(r1_bdev->bdev1_name, params->bdev1_name, RAID1_MAX_NAME_LEN);
+	memcpy(&r1_bdev->per_bdev[0], &params->per_bdev0, sizeof(struct raid1_per_bdev));
+	memcpy(&r1_bdev->per_bdev[1], &params->per_bdev1, sizeof(struct raid1_per_bdev));
+	r1_bdev->degraded = false;
+	r1_bdev->buf_align = spdk_max(r1_bdev->per_bdev[0].buf_align,
+		r1_bdev->per_bdev[1].buf_align);
+	r1_bdev->sb_buf = spdk_dma_zmalloc(RAID1_SB_SIZE, r1_bdev->buf_align, NULL);
+	if (r1_bdev->sb_buf == NULL) {
+		SPDK_ERRLOG("Could not allocate sb_buf\n");
+		rc = -ENOMEM;
+		goto free_r1_bdev;
+	}
+	memcpy(r1_bdev->sb_buf, params->sb, sizeof(struct raid1_sb));
+	raid1_calc_strip_and_region(from_le64(&params->sb->data_size), from_le64(&params->sb->strip_size),
+		&r1_bdev->strip_cnt, &r1_bdev->region_cnt);
+	r1_bdev->strip_size = from_le64(&params->sb->strip_size);
+	r1_bdev->region_size = RAID1_BYTESZ * PAGE_SIZE * r1_bdev->strip_size;
+	r1_bdev->bm_size = r1_bdev->region_cnt * PAGE_SIZE;
+
+	r1_bdev->bm_buf = spdk_dma_zmalloc(r1_bdev->bm_size, r1_bdev->buf_align, NULL);
+	if (r1_bdev->bm_buf == NULL) {
+		SPDK_ERRLOG("Could not allocate bm_buf\n");
+		rc = -ENOMEM;
+		goto free_sb_buf;
+	}
+	memcpy(r1_bdev->bm_buf, params->bm_buf, r1_bdev->bm_size);
+
+	r1_bdev->inflight_cnt = calloc(r1_bdev->strip_cnt, sizeof(uint8_t));
+	if (r1_bdev->inflight_cnt == NULL) {
+		SPDK_ERRLOG("Could not allocate inflight_cnt, size: %" PRIu64 "\n", r1_bdev->strip_cnt);
+		rc = -ENOMEM;
+		goto free_bm_buf;
+	}
+
+	r1_bdev->regions = calloc(r1_bdev->region_cnt, sizeof(struct raid1_region));
+	if (r1_bdev->regions == NULL) {
+		SPDK_ERRLOG("Could not allocate regions\n");
+		rc = -ENOMEM;
+		goto free_inflight_cnt;
+	}
+
+	for (i = 0; i < r1_bdev->region_cnt; i++) {
+		region = &r1_bdev->regions[i];
+		region->r1_bdev = r1_bdev;
+		region->idx = i;
+		region->bm_buf = r1_bdev->bm_buf + PAGE_SIZE * i;
+		region->bdev_offset = RAID1_BM_START_BYTE + PAGE_SIZE * i;
+		region->queue_type = RAID1_QUEUE_NONE;
+		TAILQ_INIT(&region->delay_queue);
+		TAILQ_INIT(&region->pending_queue);
+		region->frozen = false;
+	}
+
+	raid1_resync_allocate(r1_bdev);
+	if (r1_bdev->resyncs == NULL) {
+		SPDK_ERRLOG("Could not allocate r1_bdev->resync\n");
+		rc = -ENOMEM;
+		goto free_regions;
+	}
+
+	r1_bdev->resync_released = false;
+	r1_bdev->sb_writing = false;
+	r1_bdev->bm_io_cnt = 0;
+	r1_bdev->data_io_cnt = 0;
+
+	r1_bdev->r1_thread = spdk_get_thread();
+	assert(r1_bdev->r1_thread);
+	r1_bdev->status = RAID1_BDEV_NORMAL;
+	r1_bdev->online[0] = true;
+	r1_bdev->online[0] = true;
+
+	r1_bdev->read_idx = 0;
+
+	TAILQ_INIT(&r1_bdev->set_queue);
+	TAILQ_INIT(&r1_bdev->clear_queue);
+	TAILQ_INIT(&r1_bdev->sb_region_queue);
+	TAILQ_INIT(&r1_bdev->sb_io_queue);
+
+	r1_bdev->pending_hash_size = SPDK_CEIL_DIV(
+		r1_bdev->bm_size, RAID1_PENDING_HASH_RATIO);
+	r1_bdev->pending_io_hash = malloc(
+		r1_bdev->pending_hash_size * sizeof(struct raid1_io_head));
+	if (r1_bdev->pending_io_hash == NULL) {
+		SPDK_ERRLOG("Could not allocate pending_io_hash\n");
+		rc = -ENOMEM;
+		goto free_resync;
+	}
+	for (i = 0; i < r1_bdev->pending_hash_size; i++) {
+		io_head = &r1_bdev->pending_io_hash[i];
+		TAILQ_INIT(io_head);
+	}
+
+	r1_bdev->bdev.name = r1_bdev->raid1_name;
+	r1_bdev->bdev.product_name = RAID1_PRODUCT_NAME;
+	r1_bdev->bdev.write_cache = false;
+	r1_bdev->bdev.required_alignment = spdk_max(
+		r1_bdev->per_bdev[0].required_alignment,
+		r1_bdev->per_bdev[1].required_alignment);
+	r1_bdev->bdev.optimal_io_boundary = r1_bdev->strip_size;
+	r1_bdev->bdev.split_on_optimal_io_boundary = true;
+	r1_bdev->bdev.blocklen = spdk_min(r1_bdev->per_bdev[0].block_size,
+		r1_bdev->per_bdev[1].block_size);
+	r1_bdev->bdev.blockcnt = from_le64(&r1_bdev->sb->data_size) / r1_bdev->bdev.blocklen;
+	r1_bdev->bdev.ctxt = r1_bdev;
+	r1_bdev->bdev.fn_table = &g_raid1_bdev_fn_table;
+	r1_bdev->bdev.module = &g_raid1_if;
+
+	r1_bdev->delete_ctx.deleted = false;
+
+	spdk_io_device_register(r1_bdev, raid1_bdev_ch_create_cb,
+		raid1_bdev_ch_destroy_cb, 0, r1_bdev->raid1_name);
+
+	*_r1_bdev = r1_bdev;
+	return 0;
+
+free_resync:
+	raid1_resync_free(r1_bdev);
+free_regions:
+	free(r1_bdev->regions);
+free_inflight_cnt:
+	free(r1_bdev->inflight_cnt);
+free_bm_buf:
+	spdk_dma_free(r1_bdev->bm_buf);
+free_sb_buf:
+	spdk_dma_free(r1_bdev->sb_buf);
+free_r1_bdev:
+	free(r1_bdev);
+err_out:
+	return rc;
+}
+
 struct raid1_create_ctx {
 	char raid1_name[RAID1_MAX_NAME_LEN+1];
 	char bdev0_name[RAID1_MAX_NAME_LEN+1];
@@ -837,105 +1028,6 @@ raid1_create_finish(struct raid1_create_ctx *create_ctx, int rc)
 	create_ctx->cb_fn(create_ctx->cb_arg, rc);
 	spdk_dma_free(create_ctx->wbuf);
 	free(create_ctx);
-}
-
-struct raid1_init_params {
-	const char *raid1_name;
-	const char *bdev0_name;
-	const char *bdev1_name;
-	struct raid1_per_bdev *per_bdev0;
-	struct raid1_per_bdev *per_bdev1;
-	struct raid1_sb *sb;
-	const char *bm_buf;
-};
-
-static int
-raid1_bdev_init(struct raid1_bdev **_r1_bdev, struct raid1_init_params *params)
-{
-	return 0;
-/* 	struct raid1_bdev *r1_bdev; */
-/* 	struct raid1_region *region; */
-/* 	struct raid1_io_head *io_head; */
-/* 	uint32_t i; */
-/* 	int rc; */
-
-/* 	r1_bdev = calloc(1, sizeof(*r1_bdev)); */
-/* 	if (r1_bdev == NULL) { */
-/* 		SPDK_ERRLOG("Could not allocate raid1_bdev\n"); */
-/* 		rc = -ENOMEM; */
-/* 		goto err_out; */
-/* 	} */
-
-/* 	strncpy(r1_bdev->raid1_name, params->raid1_name, RAID1_MAX_NAME_LEN); */
-/* 	strncpy(r1_bdev->bdev0_name, params->bdev0_name, RAID1_MAX_NAME_LEN); */
-/* 	strncpy(r1_bdev->bdev1_name, params->bdev1_name, RAID1_MAX_NAME_LEN); */
-/* 	memcpy(&r1_bdev->per_bdev[0], &params->per_bdev[0], sizeof(struct raid1_per_bdev)); */
-/* 	memcpy(&r1_bdev->per_bdev[1], &params->per_bdev[1], sizeof(struct raid1_per_bdev)); */
-/* 	r1_bdev->degraded = false; */
-/* 	r1_bdev->buf_align = spdk_max(r1_bdev->per_bdev[0].buf_align, */
-/* 		r1_bdev->per_bdev[1].buf_align); */
-/* 	r1_bdev->sb_buf = spdk_dma_zmalloc(RAID1_SB_SIZE, r1_bdev->buf_align, NULL); */
-/* 	if (r1_bdev->sb_buf == NULL) { */
-/* 		SPDK_ERRLOG("Could not allocate sb_buf\n"); */
-/* 		rc = -ENOMEM; */
-/* 		goto free_r1_bdev; */
-/* 	} */
-/* 	memcpy(r1_bdev->sb_buf, params->sb, sizeof(struct raid1_sb)); */
-/* 	raid1_calc_strip_and_region(from_le64(&params->sb->data_size), params->strip_size, */
-/* 		&r1_bdev->strip_cnt, &r1_bdev->region_cnt); */
-/* 	r1_bdev->strip_size = params->strip_size; */
-/* 	r1_bdev->region_size = RAID1_BYTES * PAGE_SIZE * r1_bdev->strip_size; */
-/* 	r1_bdev->bm_size = r1_bdev->region_cnt * PAGE_SIZE; */
-
-/* 	r1_bdev->bm_buf = spdk_dma_zmalloc(r1_bdev->bm_size, r1_bdev->buf_align, NULL); */
-/* 	if (r1_bdev->bm_buf == NULL) { */
-/* 		SPDK_ERRLOG("Could not allocate bm_buf\n"); */
-/* 		rc = -ENOMEM; */
-/* 		goto free_sb_buf; */
-/* 	} */
-/* 	memcpy(r1_bdev->bm_buf, params->bm_buf, r1_bdev->bm_size); */
-
-/* 	r1_bdev->inflight_cnt = calloc(r1_bdev->strip_cnt, sizeof(uint8_t)); */
-/* 	if (r1_bdev->inflight_cnt == NULL) { */
-/* 		SPDK_ERRLOG("Could not allocate inflight_cnt, size: %" PRIu64 "\n", r1_bdev->strip_cnt); */
-/* 		rc = -ENOMEM; */
-/* 		goto free_bm_buf; */
-/* 	} */
-
-/* 	r1_bdev->regions = calloc(r1_bdev->region_cnt, sizeof(struct raid1_region)); */
-/* 	if (r1_bdev->regions == NULL) { */
-/* 		SPDK_ERRLOG("Could not allocate regions\n"); */
-/* 		rc = -ENOMEM; */
-/* 		goto free_inflight_cnt; */
-/* 	} */
-
-/* 	for (i = 0; i < r1_bdev->region_cnt; i++) { */
-/* 		region = &r1_bdev->regions[i]; */
-/* 		region->r1_bdev = r1_bdev; */
-/* 		region->idx = i; */
-/* 		region->bm_buf = r1_bdev->bm_buf + PAGE_SIZE * i; */
-/* 		region->bdev_offset = RAID1_BM_START_BYTE + PAGE_SIZE * i; */
-/* 		region->queue_type = RAID1_QUEUE_NONE; */
-/* 		TAILQ_INIT(&region->delay_queue); */
-/* 		TAILQ_INIT(&region->pending_queue); */
-/* 		region->frozen = false; */
-/* 	} */
-
-/* 	raid1_resync_allocate(r1_bdev); */
-/* 	if (r1_bdev->resync == NULL) { */
-/* 	} */
-
-
-/* free_inflight_cnt: */
-/* 	free(r1_bdev->inflight_cnt); */
-/* free_bm_buf: */
-/* 	spdk_dma_free(r1_bdev->bm_buf); */
-/* free_sb_buf: */
-/* 	spdk_dma_free(r1_bdev->sb_buf); */
-/* free_r1_bdev: */
-/* 	free(r1_bdev); */
-/* err_out: */
-/* 	return rc; */
 }
 
 static void
