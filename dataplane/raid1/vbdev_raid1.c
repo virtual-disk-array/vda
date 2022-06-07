@@ -763,7 +763,7 @@ struct raid1_bdev {
 	char *bm_buf;
 	uint8_t *inflight_cnt;
 	struct raid1_region *regions;
-	struct raid1_resync *resyncs;
+	struct raid1_resync *resync;
 	bool resync_released;
 	bool sb_writing;
 	uint64_t bm_io_cnt;
@@ -846,14 +846,109 @@ struct raid1_init_params {
 	const char *bm_buf;
 };
 
+#define RAID1_RESYNC_HASH_RATIO (10)
+
 static void
 raid1_resync_allocate(struct raid1_bdev *r1_bdev)
 {
+	struct raid1_resync *resync;
+	struct raid1_resync_ctx *resync_ctx;
+	uint32_t i, j;
+	uint64_t max_resync;
+
+	resync = malloc(sizeof(*resync));
+	if (resync == NULL) {
+		SPDK_ERRLOG("Could not allocate raid1_resync\n");
+		goto err_out;
+	}
+
+	resync->curr_bit = 0;
+	resync->num_inflight = 0;
+
+	resync->needed_bm = malloc(r1_bdev->bm_size);
+	if (resync->needed_bm == NULL) {
+		SPDK_ERRLOG("Could not allocate needed_bm\n");
+		goto free_resync;
+	}
+	memcpy(resync->needed_bm, r1_bdev->bm_buf, r1_bdev->bm_size);
+
+	resync->active_bm = calloc(1, r1_bdev->bm_size);
+	if (resync->active_bm == NULL) {
+		SPDK_ERRLOG("Could not allocate active_bm\n");
+		goto free_needed_bm;
+	}
+
+	max_resync = from_le64(&r1_bdev->sb->max_resync);
+	resync->hash_size = SPDK_CEIL_DIV(max_resync, RAID1_RESYNC_HASH_RATIO);
+
+	resync->ctx_hash = calloc(resync->hash_size,
+		sizeof(struct raid1_resync_head));
+	if (resync->ctx_hash == NULL) {
+		SPDK_ERRLOG("Could not allocate resync->ctx_hash\n");
+		goto free_active_bm;
+	}
+	for (i = 0; i < resync->hash_size; i++) {
+		TAILQ_INIT(&resync->ctx_hash[i]);
+	}
+
+	resync->resync_ctx_array = malloc(max_resync * sizeof(struct raid1_resync_ctx));
+	if (resync->resync_ctx_array == NULL) {
+		SPDK_ERRLOG("Could not allocate resync_ctx_array\n");
+		goto free_ctx_hash;
+	}
+
+	TAILQ_INIT(&resync->available_ctx);
+	for (i = 0; i < max_resync; i++) {
+		resync_ctx = &resync->resync_ctx_array[i];
+		resync_ctx->buf = spdk_dma_malloc(r1_bdev->strip_size,
+			r1_bdev->buf_align, NULL);
+		if (resync_ctx->buf == NULL) {
+			for (j = 0; j < i; j++) {
+				resync_ctx = &resync->resync_ctx_array[j];
+				spdk_dma_free(resync_ctx->buf);
+			}
+			goto free_resync_ctx_array;
+		}
+		resync_ctx->r1_bdev = r1_bdev;
+		TAILQ_INSERT_TAIL(&resync->available_ctx, resync_ctx, link);
+	}
+
+	r1_bdev->resync = resync;
+	return;
+
+free_resync_ctx_array:
+	free(resync->resync_ctx_array);
+free_ctx_hash:
+	free(resync->ctx_hash);
+free_active_bm:
+	free(resync->active_bm);
+free_needed_bm:
+	free(resync->needed_bm);
+free_resync:
+	free(resync);
+err_out:
+	r1_bdev->resync = NULL;
 }
 
 static void
 raid1_resync_free(struct raid1_bdev *r1_bdev)
 {
+	struct raid1_resync *resync = r1_bdev->resync;
+	struct raid1_resync_ctx *resync_ctx;
+	uint64_t max_resync;
+	uint32_t i;
+
+	max_resync = from_le64(&r1_bdev->sb->max_resync);
+	for (i = 0; i < max_resync; i++) {
+		resync_ctx = &resync->resync_ctx_array[i];
+		spdk_dma_free(resync_ctx->buf);
+	}
+	free(resync->resync_ctx_array);
+	free(resync->ctx_hash);
+	free(resync->active_bm);
+	free(resync->needed_bm);
+	free(resync);
+	r1_bdev->resync = NULL;
 }
 
 static int
@@ -928,7 +1023,7 @@ raid1_bdev_init(struct raid1_bdev **_r1_bdev, struct raid1_init_params *params)
 	}
 
 	raid1_resync_allocate(r1_bdev);
-	if (r1_bdev->resyncs == NULL) {
+	if (r1_bdev->resync == NULL) {
 		SPDK_ERRLOG("Could not allocate r1_bdev->resync\n");
 		rc = -ENOMEM;
 		goto free_regions;
@@ -1003,6 +1098,21 @@ free_r1_bdev:
 	free(r1_bdev);
 err_out:
 	return rc;
+}
+
+static void raid1_release(struct raid1_bdev *r1_bdev)
+{
+	spdk_io_device_unregister(r1_bdev, NULL);
+	free(r1_bdev->pending_io_hash);
+	if (r1_bdev->resync) {
+		raid1_resync_free(r1_bdev);
+	}
+	free(r1_bdev->regions);
+	free(r1_bdev->inflight_cnt);
+	spdk_dma_free(r1_bdev->bm_buf);
+	spdk_dma_free(r1_bdev->sb_buf);
+	spdk_bdev_destruct_done(&r1_bdev->bdev, 0);
+	free(r1_bdev);
 }
 
 struct raid1_create_ctx {
