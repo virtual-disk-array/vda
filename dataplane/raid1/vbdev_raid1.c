@@ -836,6 +836,12 @@ raid1_bdev_ch_destroy_cb(void *io_device, void *ctx_buf)
 #define RAID1_PENDING_HASH_RATIO (PAGE_SIZE)
 #define RAID1_PRODUCT_NAME "raid1"
 
+static int
+raid1_io_poller(void *arg)
+{
+	return 0;
+}
+
 struct raid1_init_params {
 	const char *raid1_name;
 	const char *bdev0_name;
@@ -1100,6 +1106,54 @@ err_out:
 	return rc;
 }
 
+static int
+raid1_bdev_init_in_thread(void *arg)
+{
+	struct raid1_bdev *r1_bdev = arg;
+	int rc;
+
+	rc = raid1_per_thread_open(
+		&r1_bdev->per_bdev[0], &r1_bdev->per_thread[0]);
+	if (rc) {
+		SPDK_ERRLOG("Could not open meta0 per thread\n");
+		goto err_out;
+	}
+	r1_bdev->per_thread_ptr[0] = &r1_bdev->per_thread[0];
+
+	rc = raid1_per_thread_open(
+		&r1_bdev->per_bdev[1], &r1_bdev->per_thread[1]);
+	if (rc) {
+		SPDK_ERRLOG("Could not open meta1 per thread\n");
+		goto close_bdev0_per_thread;
+	}
+	r1_bdev->per_thread_ptr[1] = &r1_bdev->per_thread[1];
+
+	r1_bdev->poller = spdk_poller_register(raid1_io_poller,
+		r1_bdev, from_le64(&r1_bdev->sb->write_delay));
+	if (r1_bdev->poller == NULL) {
+		SPDK_ERRLOG("Could not register raid1_io_poller\n");
+		rc = -EIO;
+		goto close_bdev1_per_thread;
+	}
+
+	return 0;
+
+close_bdev1_per_thread:
+	raid1_per_thread_close(&r1_bdev->per_thread[1]);
+close_bdev0_per_thread:
+	raid1_per_thread_close(&r1_bdev->per_thread[0]);
+err_out:
+	return rc;
+}
+
+static void
+raid1_bdev_release_in_thread(struct raid1_bdev *r1_bdev)
+{
+	raid1_per_thread_close(&r1_bdev->per_thread[0]);
+	raid1_per_thread_close(&r1_bdev->per_thread[1]);
+	spdk_poller_unregister(&r1_bdev->poller);
+}
+
 static void raid1_release(struct raid1_bdev *r1_bdev)
 {
 	spdk_io_device_unregister(r1_bdev, NULL);
@@ -1129,6 +1183,7 @@ struct raid1_create_ctx {
 	raid1_create_cb cb_fn;
 	void *cb_arg;
 	struct raid1_bdev *r1_bdev;
+	struct raid1_msg_ctx msg_ctx;
 	int rc;
 };
 
@@ -1138,6 +1193,45 @@ raid1_create_finish(struct raid1_create_ctx *create_ctx, int rc)
 	create_ctx->cb_fn(create_ctx->cb_arg, rc);
 	spdk_dma_free(create_ctx->wbuf);
 	free(create_ctx);
+}
+
+static int
+raid1_bdev_init_rollback(void *arg)
+{
+	struct raid1_bdev *r1_bdev = arg;
+	raid1_bdev_release_in_thread(r1_bdev);
+	return 0;
+}
+
+static void
+raid1_bdev_init_rollback_complete(void *arg, int rc)
+{
+	struct raid1_create_ctx *create_ctx = arg;
+	assert(rc == 0);
+	raid1_create_finish(create_ctx, create_ctx->rc);
+}
+
+static void
+raid1_bdev_init_complete(void *arg, int rc)
+{
+	struct raid1_create_ctx *create_ctx = arg;
+	struct raid1_bdev *r1_bdev = create_ctx->r1_bdev;
+
+	if (rc) {
+		raid1_create_finish(create_ctx, rc);
+	} else {
+		rc = spdk_bdev_register(&r1_bdev->bdev);
+		if (rc) {
+			SPDK_ERRLOG("Could not register bdev: %s %s %d\n",
+				r1_bdev->bdev.name, spdk_strerror(-rc), rc);
+			create_ctx->rc = rc;
+			raid1_msg_submit(&create_ctx->msg_ctx, r1_bdev->r1_thread,
+				raid1_bdev_init_rollback, r1_bdev,
+				raid1_bdev_init_rollback_complete, create_ctx);
+		} else {
+			raid1_create_finish(create_ctx, rc);
+		}
+	}
 }
 
 static void
