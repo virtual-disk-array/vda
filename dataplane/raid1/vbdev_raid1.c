@@ -1559,11 +1559,32 @@ raid1_bdev_submit_request(struct spdk_io_channel *ch, struct spdk_bdev_io *bdev_
 	}
 }
 
+static bool
+raid1_bdev_io_type_supported(void *ctx, enum spdk_bdev_io_type io_type)
+{
+	switch (io_type) {
+	case SPDK_BDEV_IO_TYPE_READ:
+	case SPDK_BDEV_IO_TYPE_WRITE:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static struct spdk_io_channel *
+raid1_bdev_get_io_channel(void *ctx)
+{
+	struct raid1_bdev *r1_bdev = ctx;
+	struct spdk_io_channel *ch = NULL;
+	ch = spdk_get_io_channel(r1_bdev);
+	return ch;
+}
+
 static const struct spdk_bdev_fn_table g_raid1_bdev_fn_table = {
 	.destruct = raid1_bdev_destruct,
 	.submit_request = raid1_bdev_submit_request,
-	/* .io_type_supported = raid1_bdev_io_type_supported, */
-	/* .get_io_channel = raid1_bdev_get_io_channel, */
+	.io_type_supported = raid1_bdev_io_type_supported,
+	.get_io_channel = raid1_bdev_get_io_channel,
 };
 
 static int
