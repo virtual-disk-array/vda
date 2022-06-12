@@ -805,6 +805,9 @@ static void raid1_bdev_write_handler(struct raid1_bdev *r1_bdev, struct raid1_bd
 static void raid1_bdev_read_hander(struct raid1_bdev *r1_bdev, struct raid1_bdev_io *raid1_io);
 static void raid1_deliver_region_degraded(struct raid1_bdev *r1_bdev, struct raid1_region *region);
 static void raid1_update_status(struct raid1_bdev *r1_bdev);
+static void raid1_resync_free(struct raid1_bdev *r1_bdev);
+static void raid1_bdev_release_in_thread(struct raid1_bdev *r1_bdev);
+static void raid1_release_ack_send(struct raid1_bdev *r1_bdev);
 static int raid1_io_poller(void *arg);
 
 static uint8_t
@@ -1605,7 +1608,73 @@ raid1_bdev_ch_destroy_cb(void *io_device, void *ctx_buf)
 static int
 raid1_io_poller(void *arg)
 {
-	return 0;
+	struct raid1_bdev *r1_bdev = arg;
+	int event_cnt = 0;
+	if (r1_bdev->delete_ctx.deleted) {
+		if (r1_bdev->resync) {
+			if (r1_bdev->resync->num_inflight == 0) {
+				raid1_resync_free(r1_bdev);
+				event_cnt++;
+			}
+		}
+		if (!r1_bdev->resync && !r1_bdev->sb_writing
+			&& r1_bdev->bm_io_cnt == 0 && r1_bdev->data_io_cnt == 0) {
+			raid1_bdev_release_in_thread(r1_bdev);
+			raid1_release_ack_send(r1_bdev);
+			event_cnt++;
+		}
+		return event_cnt;
+	} else {
+		if (r1_bdev->resync_released && r1_bdev->resync
+			&& r1_bdev->resync->num_inflight == 0) {
+			raid1_resync_free(r1_bdev);
+			event_cnt++;
+		}
+		if (!r1_bdev->sb_writing) {
+			if (r1_bdev->resync) {
+				struct raid1_resync *resync = r1_bdev->resync;
+				uint32_t i;
+				for (i = 0; i < from_le64(&r1_bdev->sb->max_resync); i++) {
+					if (resync->curr_bit == r1_bdev->strip_cnt) {
+						r1_bdev->resync_released = true;
+						break;
+					}
+					assert(resync->curr_bit < r1_bdev->strip_cnt);
+					if (TAILQ_EMPTY(&resync->available_ctx))
+						break;
+					if (raid1_bm_test(resync->needed_bm, resync->curr_bit)) {
+						assert(!raid1_bm_test(resync->active_bm, resync->curr_bit));
+						struct raid1_resync_ctx *resync_ctx = TAILQ_FIRST(&resync->available_ctx);
+						resync_ctx->bit_idx = resync->curr_bit;
+						uint8_t inflight_cnt = r1_bdev->inflight_cnt[resync->curr_bit];
+						if (inflight_cnt > 0) {
+							uint64_t key = resync->curr_bit % resync->hash_size;
+							struct raid1_resync_head *resync_head = &resync->ctx_hash[key];
+							TAILQ_INSERT_TAIL(resync_head, resync_ctx, link);
+						} else {
+							raid1_resync_handler(r1_bdev, resync, resync_ctx);
+						}
+					}
+					resync->curr_bit++;
+				}
+			}
+			while (!TAILQ_EMPTY(&r1_bdev->set_queue)) {
+				struct raid1_region *region = TAILQ_FIRST(&r1_bdev->set_queue);
+				raid1_write_trigger(r1_bdev, region);
+				event_cnt++;
+			}
+			r1_bdev->clean_ratio++;
+			r1_bdev->clean_ratio %= from_le64(&r1_bdev->sb->clean_ratio);
+			if (r1_bdev->clean_ratio == 0) {
+				while (!TAILQ_EMPTY(&r1_bdev->clear_queue)) {
+					struct raid1_region *region = TAILQ_FIRST(&r1_bdev->clear_queue);
+					raid1_clear_trigger(r1_bdev, region);
+					event_cnt++;
+				}
+			}
+		}
+		return event_cnt;
+	}
 }
 
 struct raid1_init_params {
@@ -1934,6 +2003,23 @@ static void raid1_release(struct raid1_bdev *r1_bdev)
 	spdk_bdev_destruct_done(&r1_bdev->bdev, 0);
 	free(r1_bdev);
 }
+
+static void
+raid1_release_ack_recv(void *arg)
+{
+	struct raid1_bdev *r1_bdev = arg;
+	raid1_find_and_remove(r1_bdev->raid1_name);
+	raid1_release(r1_bdev);
+}
+
+static void
+raid1_release_ack_send(struct raid1_bdev *r1_bdev)
+{
+	assert(r1_bdev->delete_ctx.orig_thread);
+	spdk_thread_send_msg(r1_bdev->delete_ctx.orig_thread,
+		raid1_release_ack_recv, r1_bdev);
+}
+
 
 struct raid1_create_ctx {
 	char raid1_name[RAID1_MAX_NAME_LEN+1];
