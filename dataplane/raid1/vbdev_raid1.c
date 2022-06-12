@@ -2270,3 +2270,23 @@ call_cb:
 
 	return;
 }
+
+void
+raid1_bdev_delete(const char *raid1_name, raid1_delete_cb cb_fn, void *cb_arg)
+{
+	struct raid1_bdev *r1_bdev;
+	int rc;
+
+	SPDK_DEBUGLOG(SPDK_LOG_BDEV_RAID1, "raid1_bdev_delete\n");
+	r1_bdev = raid1_find_by_name(raid1_name);
+	if (r1_bdev == NULL) {
+		SPDK_ERRLOG("raid1 bdev %s is not found\n", raid1_name);
+		rc = -ENODEV;
+		goto err_out;
+	}
+	spdk_bdev_unregister(&r1_bdev->bdev, cb_fn, cb_arg);
+	return;
+
+err_out:
+	cb_fn(cb_arg, rc);
+}

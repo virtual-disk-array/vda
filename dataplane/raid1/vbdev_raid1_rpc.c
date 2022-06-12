@@ -76,3 +76,52 @@ cleanup:
 	free_rpc_bdev_raid1_create(&req);
 }
 SPDK_RPC_REGISTER("bdev_raid1_create", rpc_bdev_raid1_create, SPDK_RPC_RUNTIME)
+
+struct rpc_delete_raid1_bdev {
+	char *raid1_name;
+};
+
+static void
+free_rpc_delete_raid1_bdev(struct rpc_delete_raid1_bdev *r)
+{
+	free(r->raid1_name);
+}
+
+static void
+raid1_bdev_delete_cb(void *cb_arg, int rc)
+{
+	struct spdk_jsonrpc_request *request = cb_arg;
+	struct spdk_json_write_ctx *w;
+
+	if (rc) {
+		spdk_jsonrpc_send_error_response(request, rc, spdk_strerror(-rc));
+	} else {
+		w = spdk_jsonrpc_begin_result(request);
+		spdk_json_write_bool(w, true);
+		spdk_jsonrpc_end_result(request, w);
+	}
+}
+
+static const struct spdk_json_object_decoder rpc_delete_raid1_bdev_decoders[] = {
+	{"raid1_name", offsetof(struct rpc_delete_raid1_bdev, raid1_name), spdk_json_decode_string},
+};
+
+static void
+spdk_rpc_delete_raid1_bdev(struct spdk_jsonrpc_request *request,
+	const struct spdk_json_val *params)
+{
+	struct rpc_delete_raid1_bdev req = {};
+	if (spdk_json_decode_object(params, rpc_delete_raid1_bdev_decoders,
+			SPDK_COUNTOF(rpc_delete_raid1_bdev_decoders),
+			&req)) {
+		spdk_jsonrpc_send_error_response(request, SPDK_JSONRPC_ERROR_INTERNAL_ERROR,
+			"spdk_json_decode_object failed");
+		goto cleanup;
+	}
+
+	raid1_bdev_delete(req.raid1_name, raid1_bdev_delete_cb, request);
+
+cleanup:
+	free_rpc_delete_raid1_bdev(&req);
+}
+SPDK_RPC_REGISTER("delete_raid1_bdev", spdk_rpc_delete_raid1_bdev, SPDK_RPC_RUNTIME)
