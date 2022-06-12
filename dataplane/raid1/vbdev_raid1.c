@@ -599,7 +599,6 @@ raid1_bdev_finish(void)
 #define RAID1_BM_START_BYTE (RAID1_BM_START_PAGE * PAGE_SIZE)
 #define RAID1_MAJOR_VERSION (1)
 #define RAID1_MINOR_VERSION (0)
-// #define RAID1_REGION_SIZE (PAGE_SIZE)
 #define RAID1_STRIP_PER_REGION (PAGE_SIZE * RAID1_BYTESZ)
 
 #define RAID1_MAX_DELAY_CNT (255)
@@ -626,22 +625,6 @@ struct raid1_sb {
 }__attribute__((packed));
 
 SPDK_STATIC_ASSERT(sizeof(struct raid1_sb)<RAID1_SB_SIZE, "sb size is too large");
-
-struct raid1_config {
-	const char *magic;
-	const char *raid1_name;
-	struct spdk_uuid *uuid;
-	uint64_t meta_size;
-	uint64_t data_size;
-	uint64_t counter;
-	uint32_t major_version;
-	uint32_t minor_version;
-	uint64_t strip_size;
-	uint64_t write_delay;
-	uint64_t clean_ratio;
-	uint64_t max_pending;
-	uint64_t max_resync;
-};
 
 enum raid1_bdev_status {
     RAID1_BDEV_NORMAL = 0,
@@ -741,6 +724,8 @@ raid1_bdev_get_ctx_size(void)
 	return sizeof(struct raid1_bdev_io);
 }
 
+#define RAID1_MAX_INFLIGHT_PER_STRIP (255)
+
 struct raid1_bdev {
 	char raid1_name[RAID1_MAX_NAME_LEN+1];
 	char bdev0_name[RAID1_MAX_NAME_LEN+1];
@@ -753,7 +738,7 @@ struct raid1_bdev {
 	size_t buf_align;
 	char *sb_buf;
 	struct raid1_sb *sb;
-	struct raid1_config cfg;
+	struct raid1_multi_io sb_io;
 	uint64_t strip_size;
 	uint64_t clean_ratio;
 	uint64_t region_size;
@@ -814,11 +799,771 @@ raid1_delete_from_queue(struct raid1_bdev *r1_bdev)
 	TAILQ_REMOVE(&g_raid1_bdev_head, r1_bdev, link);
 }
 
+static void raid1_io_failed(struct raid1_bdev_io *raid1_io);
+static void raid1_write_complete_hook(struct raid1_bdev *r1_bdev, struct raid1_bdev_io *raid1_io);
+static void raid1_bdev_write_handler(struct raid1_bdev *r1_bdev, struct raid1_bdev_io *raid1_io);
+static void raid1_bdev_read_hander(struct raid1_bdev *r1_bdev, struct raid1_bdev_io *raid1_io);
+static void raid1_deliver_region_degraded(struct raid1_bdev *r1_bdev, struct raid1_region *region);
+static void raid1_update_status(struct raid1_bdev *r1_bdev);
+static int raid1_io_poller(void *arg);
+
+static uint8_t
+raid1_read_choose_bdev(struct raid1_bdev *r1_bdev, struct raid1_bdev_io *raid1_io)
+{
+    if (r1_bdev->resync) {
+        if (raid1_bm_test(r1_bdev->resync->needed_bm, raid1_io->strip_idx))
+            return 0;
+    }
+    if (r1_bdev->status == RAID1_BDEV_DEGRADED)
+        return r1_bdev->health_idx;
+    r1_bdev->read_idx = 1 - r1_bdev->read_idx;
+    return r1_bdev->read_idx;
+}
+
+static inline void
+raid1_sb_counter_add(struct raid1_sb *sb, uint64_t n)
+{
+    uint64_t counter = from_le64(&sb->counter);
+    counter += n;
+    to_le64(&sb->counter, counter);
+}
+
+static void
+raid1_resync_write_complete(void *arg, int rc)
+{
+    struct raid1_resync_ctx *resync_ctx = arg;
+    struct raid1_bdev *r1_bdev = resync_ctx->r1_bdev;
+    struct raid1_resync *resync = r1_bdev->resync;
+    resync->num_inflight--;
+    if (rc) {
+        if (r1_bdev->online[1] == true) {
+            r1_bdev->online[1] = false;
+            assert(!r1_bdev->sb_writing);
+            raid1_update_status(r1_bdev);
+        }
+    } else {
+        uint64_t region_idx = resync_ctx->bit_idx / (PAGE_SIZE * RAID1_BYTESZ);
+        uint64_t idx_in_region = resync_ctx->bit_idx % (PAGE_SIZE * RAID1_BYTESZ);
+        struct raid1_region *region = &r1_bdev->regions[region_idx];
+        assert(raid1_bm_test(resync->needed_bm, resync_ctx->bit_idx));
+        assert(raid1_bm_test(resync->active_bm, resync_ctx->bit_idx));
+        assert(raid1_bm_test(region->bm_buf, idx_in_region));
+        raid1_bm_clear(resync->needed_bm, resync_ctx->bit_idx);
+        raid1_bm_clear(resync->active_bm, resync_ctx->bit_idx);
+        raid1_bm_clear(region->bm_buf, idx_in_region);
+        assert(region->queue_type != RAID1_QUEUE_SB_UPDATE);
+        if (region->queue_type == RAID1_QUEUE_NONE) {
+            region->queue_type = RAID1_QUEUE_CLEAR;
+            TAILQ_INSERT_TAIL(&r1_bdev->clear_queue, region, link);
+        }
+    }
+}
+
+static void
+raid1_resync_read_complete(void *arg, int rc)
+{
+    struct raid1_resync_ctx *resync_ctx = arg;
+    struct raid1_bdev *r1_bdev = resync_ctx->r1_bdev;
+    struct raid1_resync *resync = r1_bdev->resync;
+    if (rc) {
+        resync->num_inflight--;
+        if (r1_bdev->online[0] == true) {
+            r1_bdev->online[0] = false;
+            assert(!r1_bdev->sb_writing);
+            raid1_update_status(r1_bdev);
+        }
+    } else {
+        struct raid1_per_io *per_io = &resync_ctx->per_io;
+        struct raid1_per_thread *per_thread = r1_bdev->per_thread_ptr[1];
+        raid1_per_io_init(per_io, per_thread, resync_ctx->buf, resync_ctx->offset,
+                r1_bdev->strip_size, RAID1_IO_WRITE,
+                raid1_resync_write_complete, resync_ctx);
+        raid1_per_io_submit(per_io);
+    }
+}
+
+static void
+raid1_resync_handler(struct raid1_bdev *r1_bdev,
+        struct raid1_resync *resync, struct raid1_resync_ctx *resync_ctx)
+{
+    struct raid1_per_io *per_io = &resync_ctx->per_io;
+    struct raid1_per_thread *per_thread = r1_bdev->per_thread_ptr[0];
+    resync->num_inflight++;
+    assert(raid1_bm_test(resync->needed_bm, resync_ctx->bit_idx));
+    assert(!raid1_bm_test(resync->active_bm, resync_ctx->bit_idx));
+    raid1_bm_set(resync->active_bm, resync_ctx->bit_idx);
+    resync_ctx->offset = r1_bdev->strip_size * resync_ctx->bit_idx;
+    raid1_per_io_init(per_io, per_thread, resync_ctx->buf, resync_ctx->offset,
+            r1_bdev->strip_size, RAID1_IO_READ,
+            raid1_resync_read_complete, resync_ctx);
+    raid1_per_io_submit(per_io);
+}
+
+static inline void
+raid1_set_delete_flag(void *ctx)
+{
+	struct raid1_bdev *r1_bdev = ctx;
+	r1_bdev->delete_ctx.deleted = true;
+}
+
+static inline void
+raid1_bdev_failed_hook(struct raid1_bdev *r1_bdev)
+{
+	struct raid1_bdev_io *raid1_io;
+	struct raid1_region *region;
+	while (!TAILQ_EMPTY(&r1_bdev->sb_io_queue)) {
+		raid1_io = TAILQ_FIRST(&r1_bdev->sb_io_queue);
+		TAILQ_REMOVE(&r1_bdev->sb_io_queue, raid1_io, link);
+		raid1_io_failed(raid1_io);
+	}
+	while (!TAILQ_EMPTY(&r1_bdev->sb_region_queue)) {
+		region = TAILQ_FIRST(&r1_bdev->sb_region_queue);
+		TAILQ_REMOVE(&r1_bdev->sb_region_queue, region, link);
+		while (!TAILQ_EMPTY(&region->delay_queue)) {
+			raid1_io = TAILQ_FIRST(&region->delay_queue);
+			TAILQ_REMOVE(&region->delay_queue, raid1_io, link);
+			raid1_io_failed(raid1_io);
+			raid1_write_complete_hook(r1_bdev, raid1_io);
+		}
+	}
+}
+
+static void
+raid1_update_sb_complete(void *arg, int rc)
+{
+	struct raid1_bdev *r1_bdev = arg;
+	assert(r1_bdev->sb_writing);
+	r1_bdev->sb_writing = false;
+	if (rc) {
+		r1_bdev->online[0] = false;
+		r1_bdev->online[1] = false;
+		r1_bdev->resync_released = true;
+		r1_bdev->status = RAID1_BDEV_FAILED;
+		raid1_bdev_failed_hook(r1_bdev);
+	} else {
+		struct raid1_bdev_io *raid1_io;
+		while (!TAILQ_EMPTY(&r1_bdev->sb_io_queue)) {
+			raid1_io = TAILQ_FIRST(&r1_bdev->sb_io_queue);
+			TAILQ_REMOVE(&r1_bdev->sb_io_queue, raid1_io, link);
+			raid1_bdev_write_handler(r1_bdev, raid1_io);
+		}
+		while (!TAILQ_EMPTY(&r1_bdev->sb_region_queue)) {
+			struct raid1_region *region = TAILQ_FIRST(&r1_bdev->sb_region_queue);
+			TAILQ_REMOVE(&r1_bdev->sb_region_queue, region, link);
+			raid1_deliver_region_degraded(r1_bdev, region);
+		}
+		raid1_io_poller(r1_bdev);
+	}
+}
+
+static void
+raid1_update_sb(struct raid1_bdev *r1_bdev)
+{
+	struct raid1_per_thread *per_thread = r1_bdev->per_thread_ptr[r1_bdev->health_idx];
+	struct raid1_per_io *per_io = &r1_bdev->sb_io.io_leg[r1_bdev->health_idx].per_io;
+	raid1_sb_counter_add(r1_bdev->sb, 1);
+	assert(!r1_bdev->sb_writing);
+	r1_bdev->sb_writing = true;
+	raid1_per_io_init(per_io, per_thread, r1_bdev->sb_buf, RAID1_SB_START_BYTE,
+		RAID1_SB_SIZE, RAID1_IO_WRITE, raid1_update_sb_complete, r1_bdev);
+	raid1_per_io_submit(per_io);
+}
+
+static void
+raid1_update_status(struct raid1_bdev *r1_bdev)
+{
+	assert(!r1_bdev->online[0] || !r1_bdev->online[1]);
+	r1_bdev->resync_released = true;
+	if (!r1_bdev->online[0] && !r1_bdev->online[1]) {
+		r1_bdev->status = RAID1_BDEV_FAILED;
+		raid1_bdev_failed_hook(r1_bdev);
+		return;
+	}
+	if (!r1_bdev->online[0] && r1_bdev->resync) {
+		assert(r1_bdev->status == RAID1_BDEV_NORMAL);
+		r1_bdev->online[0] = false;
+		r1_bdev->status = RAID1_BDEV_FAILED;
+		raid1_bdev_failed_hook(r1_bdev);
+		return;
+	}
+	if (r1_bdev->online[0]) {
+		r1_bdev->health_idx = 0;
+	} else {
+		r1_bdev->health_idx = 1;
+	}
+	assert(r1_bdev->status == RAID1_BDEV_NORMAL);
+	r1_bdev->status = RAID1_BDEV_DEGRADED;
+	raid1_update_sb(r1_bdev);
+}
+
+static int
+raid1_bdev_destruct(void *ctx)
+{
+	struct raid1_bdev *r1_bdev = ctx;
+	r1_bdev->delete_ctx.orig_thread = spdk_get_thread();
+	spdk_thread_send_msg(r1_bdev->r1_thread, raid1_set_delete_flag, r1_bdev);
+	return 1;
+}
+
+static inline void
+raid1_init_pos(struct raid1_bdev *r1_bdev, struct spdk_bdev_io *bdev_io,
+        struct raid1_bdev_io *raid1_io)
+{
+	uint64_t offset = bdev_io->u.bdev.offset_blocks * r1_bdev->bdev.blocklen;
+	raid1_io->strip_idx = offset / r1_bdev->strip_size;
+	raid1_io->region_idx = offset / r1_bdev->region_size;
+	raid1_io->strip_in_region = raid1_io->strip_idx % r1_bdev->region_size;
+}
+
+static void
+raid1_bdev_io_complete(void *ctx)
+{
+	struct raid1_bdev_io *raid1_io = ctx;
+	struct spdk_bdev_io *bdev_io = SPDK_CONTAINEROF(raid1_io,
+		struct spdk_bdev_io, driver_ctx);
+	spdk_bdev_io_complete(bdev_io, raid1_io->status);
+}
+
+static void
+raid1_read_complete_on_success(struct raid1_bdev_io *raid1_io)
+{
+	raid1_io->status = SPDK_BDEV_IO_STATUS_SUCCESS;
+	spdk_thread_send_msg(raid1_io->orig_thread, raid1_bdev_io_complete, raid1_io);
+}
+
+static void
+raid1_read_complete_on_err(struct raid1_bdev *r1_bdev, struct raid1_bdev_io *raid1_io)
+{
+	if (r1_bdev->online[raid1_io->u.read_ctx.read_idx]) {
+		r1_bdev->online[raid1_io->u.read_ctx.read_idx] = false;
+		raid1_update_status(r1_bdev);
+	}
+	raid1_bdev_read_hander(r1_bdev, raid1_io);
+}
+
+static void
+raid1_read_complete(void *arg, int rc)
+{
+	struct raid1_bdev_io *raid1_io = arg;
+	struct spdk_bdev_io *bdev_io = SPDK_CONTAINEROF(raid1_io,
+		struct spdk_bdev_io, driver_ctx);
+	struct raid1_bdev *r1_bdev = SPDK_CONTAINEROF(bdev_io->bdev,
+		struct raid1_bdev, bdev);
+	r1_bdev->data_io_cnt--;
+	if (rc) {
+		raid1_read_complete_on_err(r1_bdev, raid1_io);
+	} else {
+		raid1_read_complete_on_success(raid1_io);
+	}
+}
+
+static void
+raid1_read_deliver(struct raid1_bdev *r1_bdev, struct raid1_bdev_io *raid1_io)
+{
+	struct spdk_bdev_io *bdev_io = SPDK_CONTAINEROF(raid1_io,
+		struct spdk_bdev_io, driver_ctx);
+	raid1_io->u.read_ctx.read_idx = raid1_read_choose_bdev(r1_bdev, raid1_io);
+	struct raid1_per_thread *per_thread = r1_bdev->per_thread_ptr[raid1_io->u.read_ctx.read_idx];
+	struct raid1_per_iov *per_iov = &raid1_io->u.read_ctx.per_iov;
+	r1_bdev->data_io_cnt++;
+	raid1_per_iov_init(per_iov, per_thread,
+		bdev_io->u.bdev.iovs, bdev_io->u.bdev.iovcnt,
+		bdev_io->u.bdev.offset_blocks, bdev_io->u.bdev.num_blocks,
+		RAID1_IO_READ, raid1_read_complete, raid1_io);
+	raid1_per_iov_submit(per_iov);
+}
+
+static void
+raid1_io_failed(struct raid1_bdev_io *raid1_io)
+{
+	raid1_io->status = SPDK_BDEV_IO_STATUS_FAILED;
+	spdk_thread_send_msg(raid1_io->orig_thread, raid1_bdev_io_complete, raid1_io);
+}
+
+static void
+raid1_io_success(struct raid1_bdev_io *raid1_io)
+{
+	raid1_io->status = SPDK_BDEV_IO_STATUS_SUCCESS;
+	spdk_thread_send_msg(raid1_io->orig_thread, raid1_bdev_io_complete, raid1_io);
+}
+
+static void
+raid1_bdev_read_hander(struct raid1_bdev *r1_bdev, struct raid1_bdev_io *raid1_io)
+{
+	if (r1_bdev->delete_ctx.deleted) {
+		raid1_io_failed(raid1_io);
+		return;
+	}
+	if (r1_bdev->status == RAID1_BDEV_FAILED) {
+		raid1_io_failed(raid1_io);
+		return;
+	}
+	raid1_read_deliver(r1_bdev, raid1_io);
+}
+
+static void
+raid1_bdev_read(void *ctx)
+{
+	struct raid1_bdev_io *raid1_io = ctx;
+	struct spdk_bdev_io *bdev_io = SPDK_CONTAINEROF(raid1_io,
+		struct spdk_bdev_io, driver_ctx);
+	struct raid1_bdev *r1_bdev = SPDK_CONTAINEROF(bdev_io->bdev,
+		struct raid1_bdev, bdev);
+	raid1_init_pos(r1_bdev, bdev_io, raid1_io);
+	raid1_bdev_read_hander(r1_bdev, raid1_io);
+}
+
+static inline void
+raid1_write_sb_pending(struct raid1_bdev *r1_bdev, struct raid1_bdev_io *raid1_io)
+{
+	TAILQ_INSERT_TAIL(&r1_bdev->sb_io_queue, raid1_io, link);
+}
+
+static inline void
+raid1_write_resync_pending(struct raid1_bdev *r1_bdev, struct raid1_bdev_io *raid1_io)
+{
+	struct raid1_resync *resync = r1_bdev->resync;
+	uint64_t key = raid1_io->strip_idx % resync->hash_size;
+	struct raid1_resync_head *resync_ctx_head = &resync->ctx_hash[key];
+	struct raid1_resync_ctx *tmp, *resync_ctx;
+	resync_ctx = NULL;
+	TAILQ_FOREACH(tmp, resync_ctx_head, link) {
+		if (tmp->bit_idx == raid1_io->strip_idx) {
+			resync_ctx = tmp;
+			break;
+		}
+	}
+	assert(resync_ctx != NULL);
+	TAILQ_INSERT_TAIL(&resync_ctx->pending_queue, raid1_io, link);
+}
+
+static inline void
+raid1_write_frozen_pending(struct raid1_region *region, struct raid1_bdev_io *raid1_io)
+{
+	TAILQ_INSERT_TAIL(&region->pending_queue, raid1_io, link);
+}
+
+static inline void
+raid1_write_delay(struct raid1_bdev *r1_bdev,
+        struct raid1_region *region, struct raid1_bdev_io *raid1_io)
+{
+	r1_bdev->inflight_cnt[raid1_io->strip_idx]++;
+	r1_bdev->data_io_cnt++;
+	region->delay_cnt++;
+	raid1_bm_set(region->bm_buf, raid1_io->strip_in_region);
+	TAILQ_INSERT_TAIL(&region->delay_queue, raid1_io, link);
+	switch (region->queue_type) {
+	case RAID1_QUEUE_NONE:
+		TAILQ_INSERT_TAIL(&r1_bdev->set_queue, region, link);
+		region->queue_type = RAID1_QUEUE_SET;
+		break;
+	case RAID1_QUEUE_CLEAR:
+		TAILQ_REMOVE(&r1_bdev->clear_queue, region, link);
+		TAILQ_INSERT_TAIL(&r1_bdev->set_queue, region, link);
+		region->queue_type = RAID1_QUEUE_SET;
+		break;
+	case RAID1_QUEUE_SET:
+		break;
+	default:
+		assert(false);
+	}
+}
+
+static inline void
+raid1_write_inflight_pending(struct raid1_bdev *r1_bdev, struct raid1_bdev_io *raid1_io)
+{
+	uint64_t key = raid1_io->strip_idx % r1_bdev->pending_hash_size;
+	struct raid1_io_head *io_head = &r1_bdev->pending_io_hash[key];
+	TAILQ_INSERT_TAIL(io_head, raid1_io, link);
+}
+
+static void
+raid1_abort_region(struct raid1_bdev *r1_bdev, struct raid1_region *region)
+{
+	struct raid1_bdev_io *raid1_io;
+	while (!TAILQ_EMPTY(&region->delay_queue)) {
+		r1_bdev->data_io_cnt--;
+		raid1_io = TAILQ_FIRST(&region->delay_queue);
+		TAILQ_REMOVE(&region->delay_queue, raid1_io, link);
+		raid1_io_failed(raid1_io);
+	}
+}
+
+static void
+raid1_write_complete_hook(struct raid1_bdev *r1_bdev, struct raid1_bdev_io *raid1_io)
+{
+	uint8_t inflight_cnt = r1_bdev->inflight_cnt[raid1_io->strip_idx];
+	struct raid1_resync *resync = r1_bdev->resync;
+	assert(inflight_cnt > 0);
+	inflight_cnt--;
+	r1_bdev->inflight_cnt[raid1_io->strip_idx] = inflight_cnt;
+	assert(r1_bdev->data_io_cnt > 0);
+	r1_bdev->data_io_cnt--;
+	if (inflight_cnt == (RAID1_MAX_INFLIGHT_PER_STRIP - 1)) {
+		uint64_t key = raid1_io->strip_idx % r1_bdev->pending_hash_size;
+		struct raid1_io_head *io_head = &r1_bdev->pending_io_hash[key];
+		struct raid1_bdev_io *tmp, *next_raid1_io;
+		next_raid1_io = NULL;
+		TAILQ_FOREACH_SAFE(next_raid1_io, io_head, link, tmp) {
+			if (next_raid1_io->strip_idx == raid1_io->strip_idx) {
+				TAILQ_REMOVE(io_head, next_raid1_io, link);
+				raid1_bdev_write_handler(r1_bdev, next_raid1_io);
+				if (r1_bdev->inflight_cnt[raid1_io->strip_idx] == RAID1_MAX_INFLIGHT_PER_STRIP) {
+					break;
+				}
+			}
+
+		}
+	} else if (inflight_cnt == 0) {
+		if (!r1_bdev->resync_released && resync) {
+			uint64_t key = raid1_io->strip_idx % resync->hash_size;
+			struct raid1_resync_head *resync_ctx_head = &resync->ctx_hash[key];
+			struct raid1_resync_ctx *tmp, *resync_ctx;
+			resync_ctx = NULL;
+			TAILQ_FOREACH(tmp, resync_ctx_head, link) {
+				if (tmp->bit_idx == raid1_io->strip_idx) {
+					resync_ctx = tmp;
+					break;
+				}
+			}
+			if (resync_ctx) {
+				TAILQ_REMOVE(resync_ctx_head, resync_ctx, link);
+				raid1_resync_handler(r1_bdev, resync, resync_ctx);
+			}
+		}
+		bool need_clear = false;
+		struct raid1_region *region = &r1_bdev->regions[raid1_io->region_idx];
+		if (!r1_bdev->resync_released && resync) {
+			if (!raid1_bm_test(resync->needed_bm, raid1_io->strip_idx)) {
+				assert(!raid1_bm_test(resync->active_bm, raid1_io->strip_idx));
+				need_clear = true;
+			}
+		} else {
+			need_clear = true;
+		}
+		if (need_clear) {
+			assert(raid1_bm_test(region->bm_buf, raid1_io->strip_in_region));
+			raid1_bm_clear(region->bm_buf, raid1_io->strip_in_region);
+		}
+		if (region->queue_type == RAID1_QUEUE_NONE) {
+			TAILQ_INSERT_TAIL(&r1_bdev->clear_queue, region, link);
+			region->queue_type = RAID1_QUEUE_CLEAR;
+		}
+	}
+}
+
+static void
+raid1_deliver_region_degraded_complete(void *ctx, int rc)
+{
+	struct raid1_bdev_io *raid1_io = ctx;
+	struct spdk_bdev_io *bdev_io = SPDK_CONTAINEROF(raid1_io,
+		struct spdk_bdev_io, driver_ctx);
+	struct raid1_bdev *r1_bdev = SPDK_CONTAINEROF(bdev_io->bdev,
+		struct raid1_bdev, bdev);
+	if (rc) {
+		if (r1_bdev->online[r1_bdev->health_idx] == true) {
+			assert(r1_bdev->status == RAID1_BDEV_DEGRADED);
+			r1_bdev->online[r1_bdev->health_idx] = false;
+			TAILQ_INSERT_TAIL(&r1_bdev->sb_io_queue, raid1_io, link);
+			raid1_update_status(r1_bdev);
+		} else {
+			assert(r1_bdev->status == RAID1_BDEV_FAILED);
+			raid1_io_failed(raid1_io);
+		}
+	} else {
+		raid1_io_success(raid1_io);
+	}
+	raid1_write_complete_hook(r1_bdev, raid1_io);
+}
+
+static void
+raid1_deliver_region_degraded(struct raid1_bdev *r1_bdev, struct raid1_region *region)
+{
+	struct raid1_bdev_io *raid1_io;
+	struct raid1_per_thread *per_thread = r1_bdev->per_thread_ptr[r1_bdev->health_idx];
+	while (!TAILQ_EMPTY(&region->delay_queue)) {
+		raid1_io = TAILQ_FIRST(&region->delay_queue);
+		TAILQ_REMOVE(&region->delay_queue, raid1_io, link);
+		struct spdk_bdev_io *bdev_io = SPDK_CONTAINEROF(raid1_io,
+			struct spdk_bdev_io, driver_ctx);
+		struct raid1_per_iov *per_iov = &raid1_io->u.write_ctx.multi_iov.iov_leg[r1_bdev->health_idx].per_iov;
+		raid1_per_iov_init(per_iov, per_thread,
+			bdev_io->u.bdev.iovs, bdev_io->u.bdev.iovcnt,
+			bdev_io->u.bdev.offset_blocks, bdev_io->u.bdev.num_blocks,
+			RAID1_IO_WRITE, raid1_deliver_region_degraded_complete, raid1_io);
+		raid1_per_iov_submit(per_iov);
+	}
+}
+
+static void
+raid1_deliver_region_multi_complete(void *ctx, uint8_t err_mask)
+{
+	struct raid1_bdev_io *raid1_io = ctx;
+	struct spdk_bdev_io *bdev_io = SPDK_CONTAINEROF(raid1_io,
+		struct spdk_bdev_io, driver_ctx);
+	struct raid1_bdev *r1_bdev = SPDK_CONTAINEROF(bdev_io->bdev,
+		struct raid1_bdev, bdev);
+	if (err_mask) {
+		bool status_changed = false;
+		if ((err_mask & 0x1) && (r1_bdev->online[0] == true)) {
+			r1_bdev->online[0] = false;
+			status_changed = true;
+		}
+		if ((err_mask & 0x2) && (r1_bdev->online[1] == true)) {
+			r1_bdev->online[1] = false;
+			status_changed = true;
+		}
+		if (status_changed) {
+			TAILQ_INSERT_TAIL(&r1_bdev->sb_io_queue, raid1_io, link);
+			raid1_update_status(r1_bdev);
+		} else {
+			if (r1_bdev->status == RAID1_BDEV_FAILED) {
+				raid1_io_failed(raid1_io);
+			} else {
+				assert(r1_bdev->status == RAID1_BDEV_DEGRADED);
+				if (r1_bdev->sb_writing) {
+					TAILQ_INSERT_TAIL(&r1_bdev->sb_io_queue, raid1_io, link);
+				} else {
+					raid1_io_success(raid1_io);
+				}
+			}
+		}
+	} else {
+		raid1_io_success(raid1_io);
+	}
+	raid1_write_complete_hook(r1_bdev, raid1_io);
+}
+
+static void
+raid1_deliver_region_multi(struct raid1_bdev *r1_bdev, struct raid1_region *region)
+{
+	struct raid1_bdev_io *raid1_io;
+	while (!TAILQ_EMPTY(&region->delay_queue)) {
+		raid1_io = TAILQ_FIRST(&region->delay_queue);
+		TAILQ_REMOVE(&region->delay_queue, raid1_io, link);
+		struct spdk_bdev_io *bdev_io = SPDK_CONTAINEROF(raid1_io,
+			struct spdk_bdev_io, driver_ctx);
+		struct raid1_multi_iov *multi_iov = &raid1_io->u.write_ctx.multi_iov;
+		raid1_multi_iov_write(multi_iov, r1_bdev->per_thread_ptr,
+			bdev_io->u.bdev.iovs, bdev_io->u.bdev.iovcnt,
+			bdev_io->u.bdev.offset_blocks, bdev_io->u.bdev.num_blocks,
+			raid1_deliver_region_multi_complete, raid1_io);
+	}
+}
+
+static void
+raid1_write_bm_degraded_complete(void *ctx, int rc)
+{
+	struct raid1_region *region = ctx;
+	struct raid1_bdev *r1_bdev = region->r1_bdev;
+	region->frozen = false;
+	if (rc) {
+		if (r1_bdev->online[r1_bdev->health_idx] == true) {
+			r1_bdev->online[r1_bdev->health_idx] = false;
+			TAILQ_INSERT_TAIL(&r1_bdev->sb_region_queue, region, link);
+			region->queue_type = RAID1_QUEUE_SB_UPDATE;
+			raid1_update_status(r1_bdev);
+			return;
+		} else {
+			assert(r1_bdev->status == RAID1_BDEV_FAILED);
+			if (r1_bdev->sb_writing) {
+				TAILQ_INSERT_TAIL(&r1_bdev->sb_region_queue, region, link);
+				region->queue_type = RAID1_QUEUE_SB_UPDATE;
+				return;
+			} else {
+				raid1_abort_region(r1_bdev, region);
+				return;
+			}
+		}
+	} else {
+		raid1_deliver_region_degraded(r1_bdev, region);
+		return;
+	}
+	assert(false);
+}
+
+static void
+raid1_write_bm_multi_complete(void *ctx, uint8_t err_mask)
+{
+	struct raid1_region *region = ctx;
+	struct raid1_bdev *r1_bdev = region->r1_bdev;
+	bool status_changed;
+	r1_bdev->bm_io_cnt--;
+	region->frozen = false;
+	assert(region->queue_type == RAID1_QUEUE_NONE);
+	if (err_mask) {
+		status_changed = false;
+		if ((err_mask & 0x1) && (r1_bdev->online[0] == true)) {
+			r1_bdev->online[0] = false;
+			status_changed = true;
+		}
+		if ((err_mask & 0x2) && (r1_bdev->online[1] == true)) {
+			r1_bdev->online[1] = false;
+			status_changed = true;
+		}
+		if (status_changed) {
+			TAILQ_INSERT_TAIL(&r1_bdev->sb_region_queue, region, link);
+			region->queue_type = RAID1_QUEUE_SB_UPDATE;
+			raid1_update_status(r1_bdev);
+			return;
+		} else {
+			if (r1_bdev->status == RAID1_BDEV_FAILED) {
+				raid1_abort_region(r1_bdev, region);
+				return;
+			} else {
+				assert(r1_bdev->status == RAID1_BDEV_DEGRADED);
+				if (r1_bdev->sb_writing) {
+					TAILQ_INSERT_TAIL(&r1_bdev->sb_region_queue, region, link);
+					region->queue_type = RAID1_QUEUE_SB_UPDATE;
+					return;
+				} else {
+					raid1_deliver_region_degraded(r1_bdev, region);
+					return;
+				}
+			}
+		}
+	} else {
+		raid1_deliver_region_multi(r1_bdev, region);
+		return;
+	}
+	assert(false);
+}
+
+static void
+raid1_write_bm(struct raid1_bdev *r1_bdev, struct raid1_region *region)
+{
+	r1_bdev->bm_io_cnt++;
+	region->frozen = true;
+	region->delay_cnt = 0;
+	if (r1_bdev->status == RAID1_BDEV_DEGRADED) {
+		struct raid1_per_io *per_io = &region->region_io.io_leg[r1_bdev->health_idx].per_io;
+		struct raid1_per_thread *per_thread = r1_bdev->per_thread_ptr[r1_bdev->health_idx];
+		raid1_per_io_init(per_io, per_thread, region->bm_buf, region->bdev_offset,
+			PAGE_SIZE, RAID1_IO_WRITE,
+			raid1_write_bm_degraded_complete, region);
+		raid1_per_io_submit(per_io);
+	} else {
+		raid1_multi_io_write(&region->region_io, r1_bdev->per_thread_ptr, region->bm_buf,
+			region->bdev_offset, PAGE_SIZE,
+			raid1_write_bm_multi_complete, region);
+	}
+}
+
+static void
+raid1_clear_trigger(struct raid1_bdev *r1_bdev, struct raid1_region *region)
+{
+	assert(region->queue_type == RAID1_QUEUE_CLEAR);
+	TAILQ_REMOVE(&r1_bdev->clear_queue, region, link);
+	region->queue_type = RAID1_QUEUE_NONE;
+	assert(TAILQ_EMPTY(&region->delay_queue));
+	raid1_write_bm(r1_bdev, region);
+}
+static void
+raid1_write_trigger(struct raid1_bdev *r1_bdev, struct raid1_region *region)
+{
+	assert(region->queue_type == RAID1_QUEUE_SET);
+	TAILQ_REMOVE(&r1_bdev->set_queue, region, link);
+	region->queue_type = RAID1_QUEUE_NONE;
+	raid1_write_bm(r1_bdev, region);
+}
+
+static void
+raid1_bdev_write_handler(struct raid1_bdev *r1_bdev, struct raid1_bdev_io *raid1_io)
+{
+	struct raid1_region *region;
+	uint8_t inflight_cnt;
+	if (r1_bdev->delete_ctx.deleted) {
+		raid1_io_failed(raid1_io);
+		return;
+	}
+	if (r1_bdev->status == RAID1_BDEV_FAILED) {
+		raid1_io_failed(raid1_io);
+		return;
+	}
+	if (r1_bdev->sb_writing) {
+		raid1_write_sb_pending(r1_bdev, raid1_io);
+		return;
+	}
+	if (r1_bdev->resync && raid1_bm_test(
+			r1_bdev->resync->active_bm, raid1_io->strip_idx)) {
+		raid1_write_resync_pending(r1_bdev, raid1_io);
+		return;
+	}
+	region = &r1_bdev->regions[raid1_io->region_idx];
+	if (region->frozen) {
+		raid1_write_frozen_pending(region, raid1_io);
+		return;
+	}
+	inflight_cnt = r1_bdev->inflight_cnt[raid1_io->strip_idx];
+	if (inflight_cnt == RAID1_MAX_INFLIGHT_PER_STRIPE) {
+		assert(raid1_bm_test(region->bm_buf, raid1_io->strip_in_region));
+		raid1_write_inflight_pending(r1_bdev, raid1_io);
+	} else {
+		raid1_write_delay(r1_bdev, region, raid1_io);
+	}
+	if (region->delay_cnt >= RAID1_MAX_DELAY_CNT)
+		raid1_write_trigger(r1_bdev, region);
+}
+
+static void
+raid1_bdev_write(void *ctx)
+{
+	struct raid1_bdev_io *raid1_io = ctx;
+	struct spdk_bdev_io *bdev_io = SPDK_CONTAINEROF(raid1_io,
+		struct spdk_bdev_io, driver_ctx);
+	struct raid1_bdev *r1_bdev = SPDK_CONTAINEROF(bdev_io->bdev,
+		struct raid1_bdev, bdev);
+
+	raid1_init_pos(r1_bdev, bdev_io, raid1_io);
+	raid1_bdev_write_handler(r1_bdev, raid1_io);
+}
+
+static void
+raid1_bdev_get_buf_cb(struct spdk_io_channel *ch,
+        struct spdk_bdev_io *bdev_io, bool success)
+{
+	struct raid1_bdev *r1_bdev = SPDK_CONTAINEROF(bdev_io->bdev,
+		struct raid1_bdev, bdev);
+	if (!success) {
+		spdk_bdev_io_complete(bdev_io, SPDK_BDEV_IO_STATUS_FAILED);
+	} else {
+		spdk_thread_send_msg(r1_bdev->r1_thread, raid1_bdev_read, bdev_io);
+	}
+}
+
+
+static void
+raid1_bdev_submit_request(struct spdk_io_channel *ch, struct spdk_bdev_io *bdev_io)
+{
+	struct raid1_bdev *r1_bdev = SPDK_CONTAINEROF(bdev_io->bdev,
+		struct raid1_bdev, bdev);
+	struct raid1_bdev_io *raid1_io = (struct raid1_bdev_io *)bdev_io->driver_ctx;
+	raid1_io->orig_thread = spdk_get_thread();
+	switch (bdev_io->type) {
+	case SPDK_BDEV_IO_TYPE_READ:
+		if (bdev_io->u.bdev.iovs == NULL ||
+			bdev_io->u.bdev.iovs[0].iov_base == NULL) {
+			spdk_bdev_io_get_buf(bdev_io, raid1_bdev_get_buf_cb,
+				bdev_io->u.bdev.num_blocks * bdev_io->bdev->blocklen);
+		} else {
+			spdk_thread_send_msg(r1_bdev->r1_thread, raid1_bdev_read, raid1_io);
+		}
+		break;
+	case SPDK_BDEV_IO_TYPE_WRITE:
+		spdk_thread_send_msg(r1_bdev->r1_thread, raid1_bdev_write, raid1_io);
+		break;
+	default:
+		SPDK_ERRLOG("Unsupported I/O type %d\n", bdev_io->type);
+		spdk_bdev_io_complete(bdev_io, SPDK_BDEV_IO_STATUS_FAILED);
+		break;
+	}
+}
+
 static const struct spdk_bdev_fn_table g_raid1_bdev_fn_table = {
-	.destruct = NULL,
-	.submit_request = NULL,
-	.io_type_supported = NULL,
-	.get_io_channel = NULL,
+	.destruct = raid1_bdev_destruct,
+	.submit_request = raid1_bdev_submit_request,
+	/* .io_type_supported = raid1_bdev_io_type_supported, */
+	/* .get_io_channel = raid1_bdev_get_io_channel, */
 };
 
 static int
@@ -1268,10 +2013,10 @@ raid1_meta_write_complete(struct raid1_create_ctx *create_ctx, int rc)
 
 	TAILQ_INSERT_TAIL(&g_raid1_bdev_head, r1_bdev, link);
 
-	/* target_thread = raid1_choose_thread(); */
-	/* raid1_msg_submit(&create_ctx->msg_ctx, target_thread, */
-	/* 	raid1_bdev_init_in_thread, r1_bdev, */
-	/* 	raid1_bdev_init_complete, create_ctx); */
+	target_thread = raid1_choose_thread();
+	raid1_msg_submit(&create_ctx->msg_ctx, target_thread,
+		raid1_bdev_init_in_thread, r1_bdev,
+		raid1_bdev_init_complete, create_ctx);
 	return;
 
 err_out:
