@@ -101,12 +101,20 @@ struct raid1_per_iov {
 	void *cb_arg;
 };
 
+// FIXME: set the raid1 status
+static void
+raid1_bdev_event_cb(enum spdk_bdev_event_type type,  struct spdk_bdev *bdev,
+	void *event_ctx)
+{
+	return;
+}
+
 static int
 raid1_per_bdev_open(const char *bdev_name, struct raid1_per_bdev *per_bdev)
 {
 	int rc;
 
-	rc = spdk_bdev_open_ext(bdev_name, true, NULL, NULL, &per_bdev->desc);
+	rc = spdk_bdev_open_ext(bdev_name, true, raid1_bdev_event_cb, NULL, &per_bdev->desc);
 	if (rc) {
 		SPDK_ERRLOG("Could not open bdev: %s %s %d\n",
 			bdev_name, spdk_strerror(-rc), rc);
@@ -1811,21 +1819,23 @@ raid1_bdev_init(struct raid1_bdev **_r1_bdev, struct raid1_init_params *params)
 	strncpy(r1_bdev->raid1_name, params->raid1_name, RAID1_MAX_NAME_LEN);
 	strncpy(r1_bdev->bdev0_name, params->bdev0_name, RAID1_MAX_NAME_LEN);
 	strncpy(r1_bdev->bdev1_name, params->bdev1_name, RAID1_MAX_NAME_LEN);
-	memcpy(&r1_bdev->per_bdev[0], &params->per_bdev0, sizeof(struct raid1_per_bdev));
-	memcpy(&r1_bdev->per_bdev[1], &params->per_bdev1, sizeof(struct raid1_per_bdev));
+	memcpy(&r1_bdev->per_bdev[0], params->per_bdev0, sizeof(struct raid1_per_bdev));
+	memcpy(&r1_bdev->per_bdev[1], params->per_bdev1, sizeof(struct raid1_per_bdev));
 	r1_bdev->degraded = false;
 	r1_bdev->buf_align = spdk_max(r1_bdev->per_bdev[0].buf_align,
 		r1_bdev->per_bdev[1].buf_align);
 	r1_bdev->sb_buf = spdk_dma_zmalloc(RAID1_SB_SIZE, r1_bdev->buf_align, NULL);
 	if (r1_bdev->sb_buf == NULL) {
-		SPDK_ERRLOG("Could not allocate sb_buf\n");
+		SPDK_ERRLOG("Could not allocate sb_buf, size=%ld align=%ld\n",
+			RAID1_SB_SIZE, r1_bdev->buf_align);
 		rc = -ENOMEM;
 		goto free_r1_bdev;
 	}
 	memcpy(r1_bdev->sb_buf, params->sb, sizeof(struct raid1_sb));
-	raid1_calc_strip_and_region(from_le64(&params->sb->data_size), from_le64(&params->sb->strip_size),
+	r1_bdev->sb = (struct raid1_sb *)(r1_bdev->sb_buf);
+	raid1_calc_strip_and_region(from_le64(&r1_bdev->sb->data_size), from_le64(&r1_bdev->sb->strip_size),
 		&r1_bdev->strip_cnt, &r1_bdev->region_cnt);
-	r1_bdev->strip_size = from_le64(&params->sb->strip_size);
+	r1_bdev->strip_size = from_le64(&r1_bdev->sb->strip_size);
 	r1_bdev->region_size = RAID1_BYTESZ * PAGE_SIZE * r1_bdev->strip_size;
 	r1_bdev->bm_size = r1_bdev->region_cnt * PAGE_SIZE;
 
@@ -2030,7 +2040,6 @@ struct raid1_create_ctx {
 	struct raid1_per_thread *per_thread_ptr[2];
 	struct raid1_multi_io multi_io;
 	struct raid1_io_leg io_leg[2];
-	struct raid1_sb *sb;
 	char *wbuf;
 	raid1_create_cb cb_fn;
 	void *cb_arg;
@@ -2111,12 +2120,13 @@ raid1_meta_write_complete(struct raid1_create_ctx *create_ctx, int rc)
 	params.bdev1_name = create_ctx->bdev1_name;
 	params.per_bdev0 = &create_ctx->per_bdev[0];
 	params.per_bdev1 = &create_ctx->per_bdev[1];
-	params.sb = create_ctx->sb;
+	params.sb = (struct raid1_sb *)(create_ctx->wbuf);
 	params.bm_buf = create_ctx->wbuf + RAID1_BM_START_BYTE;
-	rc = raid1_bdev_init(&create_ctx->r1_bdev, &params);
+	rc = raid1_bdev_init(&r1_bdev, &params);
 	if (rc) {
 		goto err_out;
 	}
+	create_ctx->r1_bdev = r1_bdev;
 
 	TAILQ_INSERT_TAIL(&g_raid1_bdev_head, r1_bdev, link);
 

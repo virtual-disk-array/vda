@@ -41,7 +41,7 @@ static const struct spdk_json_object_decoder rpc_bdev_raid1_create_decoders[] = 
 	{"raid1_name",  offsetof(struct rpc_bdev_raid1_create, raid1_name), spdk_json_decode_string},
 	{"bdev0_name",  offsetof(struct rpc_bdev_raid1_create, bdev0_name), spdk_json_decode_string},
 	{"bdev1_name",  offsetof(struct rpc_bdev_raid1_create, bdev1_name), spdk_json_decode_string},
-	{"strip_size_kb",  offsetof(struct rpc_bdev_raid1_create, strip_size_kb), spdk_json_decode_uint64},
+	{"strip_size_kb",  offsetof(struct rpc_bdev_raid1_create, strip_size_kb), spdk_json_decode_uint64, true},
 	{"write_delay",  offsetof(struct rpc_bdev_raid1_create, write_delay), spdk_json_decode_uint64, true},
 	{"clean_ratio",  offsetof(struct rpc_bdev_raid1_create, clean_ratio), spdk_json_decode_uint64, true},
 	{"max_pending",  offsetof(struct rpc_bdev_raid1_create, max_pending), spdk_json_decode_uint64, true},
@@ -67,8 +67,12 @@ rpc_bdev_raid1_create(struct spdk_jsonrpc_request *request,
 
 	param.bdev0_name = req.bdev0_name;
 	param.bdev1_name = req.bdev1_name;
-	param.strip_size = req.strip_size_kb * 1024;
+	param.strip_size = req.strip_size_kb == 0 ? RAID1_DEFAULT_STRIP_SIZE : req.strip_size_kb * 1024;
 	param.write_delay = req.write_delay == 0 ? RAID1_DEFAULT_WRITE_DELAY : req.write_delay;
+	param.clean_ratio = req.clean_ratio == 0 ? RAID1_DEFAULT_CLEAN_RATIO : req.clean_ratio;
+	param.max_pending = req.max_pending == 0 ? RAID1_DEFAULT_MAX_PENDING : req.max_pending;
+	param.max_resync = req.max_resync == 0 ? RAID1_DEFAULT_MAX_RESYNC : req.max_resync;
+	param.synced = req.synced;
 
 	raid1_bdev_create(req.raid1_name, &param, bdev_raid1_create_cb, request);
 
@@ -124,4 +128,4 @@ spdk_rpc_delete_raid1_bdev(struct spdk_jsonrpc_request *request,
 cleanup:
 	free_rpc_delete_raid1_bdev(&req);
 }
-SPDK_RPC_REGISTER("delete_raid1_bdev", spdk_rpc_delete_raid1_bdev, SPDK_RPC_RUNTIME)
+SPDK_RPC_REGISTER("bdev_raid1_delete", spdk_rpc_delete_raid1_bdev, SPDK_RPC_RUNTIME)
