@@ -101,15 +101,14 @@ struct raid1_per_iov {
 	void *cb_arg;
 };
 
-static void raid1_bdev_remove_base_bdev(struct spdk_bdev *base_bdev);
-
 static void
 raid1_bdev_event_cb(enum spdk_bdev_event_type type,  struct spdk_bdev *bdev,
 	void *event_ctx)
 {
 	switch (type) {
 	case SPDK_BDEV_EVENT_REMOVE:
-		raid1_bdev_remove_base_bdev(bdev);
+		/* FIXME support revoving base bdev */
+		SPDK_ERRLOG("Removing base bdev: %s\n", bdev->name);
 		break;
 	default:
 		SPDK_NOTICELOG("Unsupported bdev event: type %d\n", type);
@@ -1692,60 +1691,6 @@ raid1_io_poller(void *arg)
 		}
 		return event_cnt;
 	}
-}
-
-struct raid1_remove_base_ctx {
-	struct raid1_bdev *r1_bdev;
-	int idx;
-	struct raid1_msg_ctx msg_ctx;
-};
-
-static int
-raid1_bdev_remove_base_bdev_ping(void *arg)
-{
-	struct raid1_move_base_ctx *ctx = arg;
-	SPDK_ERRLOG("raid1_bdev_remove_base_bdev_ping: %p\n", ctx);
-	return 0;
-}
-
-static void
-raid1_bdev_remove_base_bdev_pong(void *arg, int rc)
-{
-	SPDK_ERRLOG("raid1_bdev_remove_base_bdev_pong\n");
-}
-
-static void
-raid1_bdev_remove_base_bdev(struct spdk_bdev *base_bdev)
-{
-	struct raid1_bdev *r1_bdev, *tmp;
-	int idx;
-	struct raid1_remove_base_ctx *ctx;
-	r1_bdev = NULL;
-	TAILQ_FOREACH(tmp, &g_raid1_bdev_head, link) {
-		if (tmp->per_bdev[0].bdev == base_bdev) {
-			r1_bdev = tmp;
-			idx = 0;
-			break;
-		}
-		if (tmp->per_bdev[1].bdev == base_bdev) {
-			r1_bdev = tmp;
-			idx = 1;
-			break;
-		}
-	}
-	if (r1_bdev == NULL) {
-		SPDK_ERRLOG("Can not find base bdev: %s\n", base_bdev->name);
-		return;
-	}
-
-	ctx = malloc(sizeof(*ctx));
-	if (ctx == NULL) {
-		SPDK_ERRLOG("Can not allocate ctx for removing %s\n", base_bdev->name);
-		return;
-	}
-	raid1_msg_submit(&ctx->msg_ctx, r1_bdev->r1_thread,
-		raid1_bdev_remove_base_bdev_ping, ctx,
-		raid1_bdev_remove_base_bdev_pong, ctx);
 }
 
 struct raid1_init_params {
