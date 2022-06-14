@@ -1656,11 +1656,13 @@ raid1_io_poller(void *arg)
 						break;
 					}
 					assert(resync->curr_bit < r1_bdev->strip_cnt);
-					if (TAILQ_EMPTY(&resync->available_ctx))
+					if (TAILQ_EMPTY(&resync->available_ctx)) {
 						break;
+					}
 					if (raid1_bm_test(resync->needed_bm, resync->curr_bit)) {
 						assert(!raid1_bm_test(resync->active_bm, resync->curr_bit));
 						struct raid1_resync_ctx *resync_ctx = TAILQ_FIRST(&resync->available_ctx);
+						TAILQ_REMOVE(&resync->available_ctx, resync_ctx, link);
 						resync_ctx->bit_idx = resync->curr_bit;
 						uint8_t inflight_cnt = r1_bdev->inflight_cnt[resync->curr_bit];
 						if (inflight_cnt > 0) {
