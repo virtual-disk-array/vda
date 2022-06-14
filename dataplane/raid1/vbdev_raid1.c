@@ -101,11 +101,20 @@ struct raid1_per_iov {
 	void *cb_arg;
 };
 
-// FIXME: set the raid1 status
+static void raid1_bdev_remove_base_bdev(struct spdk_bdev *base_bdev);
+
 static void
 raid1_bdev_event_cb(enum spdk_bdev_event_type type,  struct spdk_bdev *bdev,
 	void *event_ctx)
 {
+	switch (type) {
+	case SPDK_BDEV_EVENT_REMOVE:
+		raid1_bdev_remove_base_bdev(bdev);
+		break;
+	default:
+		SPDK_NOTICELOG("Unsupported bdev event: type %d\n", type);
+		break;
+	}
 	return;
 }
 
@@ -1685,6 +1694,60 @@ raid1_io_poller(void *arg)
 	}
 }
 
+struct raid1_remove_base_ctx {
+	struct raid1_bdev *r1_bdev;
+	int idx;
+	struct raid1_msg_ctx msg_ctx;
+};
+
+static int
+raid1_bdev_remove_base_bdev_ping(void *arg)
+{
+	struct raid1_move_base_ctx *ctx = arg;
+	SPDK_ERRLOG("raid1_bdev_remove_base_bdev_ping: %p\n", ctx);
+	return 0;
+}
+
+static void
+raid1_bdev_remove_base_bdev_pong(void *arg, int rc)
+{
+	SPDK_ERRLOG("raid1_bdev_remove_base_bdev_pong\n");
+}
+
+static void
+raid1_bdev_remove_base_bdev(struct spdk_bdev *base_bdev)
+{
+	struct raid1_bdev *r1_bdev, *tmp;
+	int idx;
+	struct raid1_remove_base_ctx *ctx;
+	r1_bdev = NULL;
+	TAILQ_FOREACH(tmp, &g_raid1_bdev_head, link) {
+		if (tmp->per_bdev[0].bdev == base_bdev) {
+			r1_bdev = tmp;
+			idx = 0;
+			break;
+		}
+		if (tmp->per_bdev[1].bdev == base_bdev) {
+			r1_bdev = tmp;
+			idx = 1;
+			break;
+		}
+	}
+	if (r1_bdev == NULL) {
+		SPDK_ERRLOG("Can not find base bdev: %s\n", base_bdev->name);
+		return;
+	}
+
+	ctx = malloc(sizeof(*ctx));
+	if (ctx == NULL) {
+		SPDK_ERRLOG("Can not allocate ctx for removing %s\n", base_bdev->name);
+		return;
+	}
+	raid1_msg_submit(&ctx->msg_ctx, r1_bdev->r1_thread,
+		raid1_bdev_remove_base_bdev_ping, ctx,
+		raid1_bdev_remove_base_bdev_pong, ctx);
+}
+
 struct raid1_init_params {
 	const char *raid1_name;
 	const char *bdev0_name;
@@ -2001,6 +2064,8 @@ raid1_bdev_release_in_thread(struct raid1_bdev *r1_bdev)
 
 static void raid1_release(struct raid1_bdev *r1_bdev)
 {
+	raid1_per_bdev_close(&r1_bdev->per_bdev[0]);
+	raid1_per_bdev_close(&r1_bdev->per_bdev[1]);
 	spdk_io_device_unregister(r1_bdev, NULL);
 	free(r1_bdev->pending_io_hash);
 	if (r1_bdev->resync) {
@@ -2069,6 +2134,7 @@ raid1_bdev_init_rollback_complete(void *arg, int rc)
 {
 	struct raid1_create_ctx *create_ctx = arg;
 	assert(rc == 0);
+	raid1_release(create_ctx->r1_bdev);
 	raid1_create_finish(create_ctx, create_ctx->rc);
 }
 
@@ -2079,6 +2145,7 @@ raid1_bdev_init_complete(void *arg, int rc)
 	struct raid1_bdev *r1_bdev = create_ctx->r1_bdev;
 
 	if (rc) {
+		raid1_release(r1_bdev);
 		raid1_create_finish(create_ctx, rc);
 	} else {
 		rc = spdk_bdev_register(&r1_bdev->bdev);
