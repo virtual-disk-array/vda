@@ -1,7 +1,7 @@
 package portal
 
 import (
-	"github.com/coreos/etcd/clientv3"
+	clientv3 "go.etcd.io/etcd/client/v3"
 
 	"github.com/virtual-disk-array/vda/pkg/lib"
 	pbpo "github.com/virtual-disk-array/vda/pkg/proto/portalapi"

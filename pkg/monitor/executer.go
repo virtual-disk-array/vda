@@ -6,7 +6,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/coreos/etcd/clientv3"
+	clientv3 "go.etcd.io/etcd/client/v3"
 	"github.com/spf13/cobra"
 
 	"github.com/virtual-disk-array/vda/pkg/lib"

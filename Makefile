@@ -6,13 +6,13 @@ VERSION := v0.1.1
 .PHONY: proto
 proto:
 	protoc --go_out=. --go_opt=paths=source_relative pkg/proto/dataschema/dataschema.proto
-	protoc --go_out=plugins=grpc:. --go_opt=paths=source_relative pkg/proto/portalapi/portalapi.proto
-	protoc --go_out=plugins=grpc:. --go_opt=paths=source_relative pkg/proto/dnagentapi/dnagentapi.proto
-	protoc --go_out=plugins=grpc:. --go_opt=paths=source_relative pkg/proto/cnagentapi/cnagentapi.proto
+	protoc --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative pkg/proto/portalapi/portalapi.proto
+	protoc --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative pkg/proto/dnagentapi/dnagentapi.proto
+	protoc --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative pkg/proto/cnagentapi/cnagentapi.proto
 
 .PHONY: mock
 mock:
-	mockgen -destination=pkg/mocks/mockclient/mockclient.go -package=mockclient -source pkg/proto/portalapi/portalapi.pb.go
+	mockgen -destination=pkg/mocks/mockclient/mockclient.go -package=mockclient -source pkg/proto/portalapi/portalapi_grpc.pb.go
 	mockgen -destination=pkg/mocks/mockcsi/mockutils.go -package=mockcsi -source pkg/csi/utils.go
 
 .PHONY: compile

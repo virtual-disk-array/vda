@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/protobuf/proto"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/virtual-disk-array/vda/pkg/lib"
 	"github.com/virtual-disk-array/vda/pkg/mocks/mockdnagent"
@@ -17,7 +17,6 @@ import (
 func TestCreateDn(t *testing.T) {
 	sockPath := "/tmp/vdatestdn.sock"
 	etcdPort := "30000"
-	return
 	mockEtcd, err := mocketcd.NewMockEtcdServer(etcdPort, t)
 	if err != nil {
 		t.Errorf("Create mock etcd err: %v", err)
@@ -93,7 +92,6 @@ func TestCreateDn(t *testing.T) {
 func TestGetDn(t *testing.T) {
 	etcdPort := "30000"
 	mockEtcd, err := mocketcd.NewMockEtcdServer(etcdPort, t)
-	return
 	if err != nil {
 		t.Errorf("Create mock etcd err: %v", err)
 		return

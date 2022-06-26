@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/coreos/etcd/clientv3"
-	"github.com/golang/protobuf/proto"
+	clientv3 "go.etcd.io/etcd/client/v3"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/virtual-disk-array/vda/pkg/logger"
 	pbds "github.com/virtual-disk-array/vda/pkg/proto/dataschema"
