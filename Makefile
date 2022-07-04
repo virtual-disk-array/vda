@@ -59,6 +59,10 @@ push:
 dp:
 	bash scripts/dataplane/dataplane_build.sh
 
-.PHONY: dp_clean
-dp_clean:
+.PHONY: dpc
+dpc:
 	bash scripts/dataplane/dataplane_clean.sh
+
+.PHONY: dpc_all
+dpc_all:
+	bash scripts/dataplane/dataplane_clean.sh all

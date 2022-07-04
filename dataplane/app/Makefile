@@ -17,5 +17,5 @@ SYS_LIB := $(shell PKG_CONFIG_PATH="$(PKG_CONFIG_PATH)" pkg-config --libs --stat
 
 .PHONY: app
 app:
-	$(CC) $(COMMON_CFLAGS) -march=$(TARGET_ARCHITECTURE) -L../raid1 -o vda_dataplane ./app.c -pthread -Wl,--whole-archive,-Bstatic -lraid1_external $(SPDK_DPDK_LIB) \
-	-Wl,--no-whole-archive,-Bdynamic $(SYS_LIB)
+	$(CC) $(COMMON_CFLAGS) -march=$(TARGET_ARCHITECTURE) -L../raid1 -L../susres -o vda_dataplane ./app.c -pthread -Wl,--whole-archive,-Bstatic \
+	-lraid1 -lsusres $(SPDK_DPDK_LIB) -Wl,--no-whole-archive,-Bdynamic $(SYS_LIB)

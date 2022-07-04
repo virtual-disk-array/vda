@@ -26,6 +26,9 @@ if [ ! -d $DATAPLANE_DIR/spdk ]; then
     git checkout $LIBVFIO_USER_VERSION
     cd $DATAPLANE_DIR/spdk/ocf
     git checkout $OCF_VERSION
+fi
+
+if [ ! -d $DATAPLANE_DIR/spdk/build ]; then
     cd $DATAPLANE_DIR/spdk
     configure_params="--target-arch=${VDA_DATAPLANE_ARCHITECTURE:-core2}"
     if [ "${VDA_DATAPLANE_DEBUG}" == "y" ]; then
@@ -44,4 +47,5 @@ export DPDK_LIB_DIR="$DATAPLANE_DIR/spdk/dpdk/build/lib"
 export VFIO_LIB_DIR="$DATAPLANE_DIR/spdk/libvfio-user/build/release/lib"
 
 make -C $DATAPLANE_DIR/raid1 raid1
+make -C $DATAPLANE_DIR/susres susres
 make -C $DATAPLANE_DIR/app app

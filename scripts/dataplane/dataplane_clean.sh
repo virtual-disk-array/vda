@@ -6,6 +6,12 @@ CURR_DIR=$(readlink -f $(dirname $0))
 ROOT_DIR=$CURR_DIR/../..
 DATAPLANE_DIR=$ROOT_DIR/dataplane
 
-rm -rf $DATAPLANE_DIR/spdk
-rm -f $DATAPLANE_DIR/*.[oa]
-rm -f $DATAPLANE_DIR/vda_dataplane
+if [ "$1" == "all" ]; then
+    rm -rf $DATAPLANE_DIR/spdk
+else
+    cd $DATAPLANE_DIR/spdk
+    make clean
+fi
+rm -f $DATAPLANE_DIR/raid1/*.[oa]
+rm -f $DATAPLANE_DIR/susres/*.[oa]
+rm -f $DATAPLANE_DIR/app/vda_dataplane

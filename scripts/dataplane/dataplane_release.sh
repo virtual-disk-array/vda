@@ -9,7 +9,7 @@ DATAPLANE_DIR=$ROOT_DIR/dataplane
 export VDA_DATAPLANE_ARCHITECTURE=core2
 export VDA_DATAPLANE_DEBUG=n
 
-# bash $CURR_DIR/dataplane_clean.sh
+bash $CURR_DIR/dataplane_clean.sh
 bash $CURR_DIR/dataplane_build.sh
 
 cp $DATAPLANE_DIR/app/vda_dataplane $ROOT_DIR/_out/linux_amd64/vda_dataplane

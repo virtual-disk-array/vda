@@ -15,4 +15,4 @@ endif
 raid1:
 	$(CC) $(COMMON_CFLAGS) -march=$(TARGET_ARCHITECTURE) -c ./vbdev_raid1_rpc.c -o ./vbdev_raid1_rpc.o
 	$(CC) $(COMMON_CFLAGS) -march=$(TARGET_ARCHITECTURE) -c ./vbdev_raid1.c -o ./vbdev_raid1.o
-	$(AR) rcs ./libraid1_external.a ./vbdev_raid1_rpc.o ./vbdev_raid1.o
+	$(AR) rcs ./libraid1.a ./vbdev_raid1_rpc.o ./vbdev_raid1.o
