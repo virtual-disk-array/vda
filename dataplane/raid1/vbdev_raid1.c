@@ -2180,8 +2180,6 @@ raid1_bdev_create(const char *raid1_name, struct raid1_create_param *param, raid
 	char *bm;
 	int rc, remains, i;
 
-	SPDK_DEBUGLOG(bdev_raid1, "raid1_bdev_create\n");
-
 	create_ctx = calloc(1, sizeof(*create_ctx));
 	if (create_ctx == NULL) {
 		SPDK_ERRLOG("Could not allocate raid1_create_ctx\n");
@@ -2304,7 +2302,6 @@ raid1_bdev_delete(const char *raid1_name, raid1_delete_cb cb_fn, void *cb_arg)
 	struct raid1_bdev *r1_bdev;
 	int rc;
 
-	SPDK_DEBUGLOG(bdev_raid1, "raid1_bdev_delete\n");
 	r1_bdev = raid1_find_by_name(raid1_name);
 	if (r1_bdev == NULL) {
 		SPDK_ERRLOG("raid1 bdev %s is not found\n", raid1_name);
@@ -2317,6 +2314,3 @@ raid1_bdev_delete(const char *raid1_name, raid1_delete_cb cb_fn, void *cb_arg)
 err_out:
 	cb_fn(cb_arg, rc);
 }
-
-/* Log component for bdev raid1 bdev module */
-SPDK_LOG_REGISTER_COMPONENT(bdev_raid1)
