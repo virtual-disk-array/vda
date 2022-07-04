@@ -54,3 +54,11 @@ image:
 .PHONY: push
 push:
 	docker push virtualdiskarray/vdacsi
+
+.PHONY: dp
+dp:
+	bash scripts/dataplane/dataplane_build.sh
+
+.PHONY: dp_clean
+dp_clean:
+	bash scripts/dataplane/dataplane_clean.sh
