@@ -26,7 +26,7 @@ static struct spdk_bdev_module susres_if = {
 	.config_json = vbdev_susres_config_json
 };
 
-SPDK_BDEV_MODULE_REGISTER(ext_susres, &susres_if)
+SPDK_BDEV_MODULE_REGISTER(susres, &susres_if)
 
 /* List of pt_bdev names and their base bdevs via configuration file.
  * Used so we can parse the conf once at init and use this list in examine().
@@ -391,7 +391,7 @@ vbdev_susres_config_json(struct spdk_json_write_ctx *w)
 
 	TAILQ_FOREACH(pt_node, &g_pt_nodes, link) {
 		spdk_json_write_object_begin(w);
-		spdk_json_write_named_string(w, "method", "construct_ext_susres_bdev");
+		spdk_json_write_named_string(w, "method", "construct_susres_bdev");
 		spdk_json_write_named_object_begin(w, "params");
 		spdk_json_write_named_string(w, "base_bdev_name", spdk_bdev_get_name(pt_node->base_bdev));
 		spdk_json_write_named_string(w, "name", spdk_bdev_get_name(&pt_node->pt_bdev));
@@ -652,8 +652,8 @@ vbdev_susres_register(const char *bdev_name)
 			free(pt_node);
 			break;
 		}
-		SPDK_NOTICELOG("ext_pt_bdev registered\n");
-		SPDK_NOTICELOG("created ext_pt_bdev for: %s\n", name->vbdev_name);
+		SPDK_NOTICELOG("pt_bdev registered\n");
+		SPDK_NOTICELOG("created pt_bdev for: %s\n", name->vbdev_name);
 	}
 
 	return rc;
