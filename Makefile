@@ -55,6 +55,10 @@ image:
 push:
 	docker push virtualdiskarray/vdacsi
 
+.PHONY: dpp
+dpp:
+	bash scripts/dataplane/dataplane_prepare.sh
+
 .PHONY: dp
 dp:
 	bash scripts/dataplane/dataplane_build.sh
