@@ -38,6 +38,14 @@ struct bdev_names {
 };
 static TAILQ_HEAD(, bdev_names) g_bdev_names = TAILQ_HEAD_INITIALIZER(g_bdev_names);
 
+enum susres_status {
+	SUSRES_STATUS_RESUMED = 0,
+	SUSRES_STATUS_RESUMING,
+	SUSRES_STATUS_SUSPENDED,
+	SUSRES_STATUS_SUSPENDING_STAGE1,
+	SUSRES_STATUS_SUSPENDING_STAGE2,
+};
+
 /* List of virtual bdevs and associated info for each. */
 struct vbdev_susres {
 	struct spdk_bdev		*base_bdev; /* the thing we're attaching to */
@@ -45,6 +53,7 @@ struct vbdev_susres {
 	struct spdk_bdev		pt_bdev;    /* the PT virtual bdev */
 	TAILQ_ENTRY(vbdev_susres)	link;
 	struct spdk_thread		*thread;    /* thread where base device is opened */
+	enum susres_status		status;
 };
 static TAILQ_HEAD(, vbdev_susres) g_pt_nodes = TAILQ_HEAD_INITIALIZER(g_pt_nodes);
 
@@ -378,6 +387,26 @@ vbdev_susres_dump_info_json(void *ctx, struct spdk_json_write_ctx *w)
 	spdk_json_write_object_begin(w);
 	spdk_json_write_named_string(w, "name", spdk_bdev_get_name(&pt_node->pt_bdev));
 	spdk_json_write_named_string(w, "base_bdev_name", spdk_bdev_get_name(pt_node->base_bdev));
+	switch(pt_node->status) {
+	case SUSRES_STATUS_RESUMED:
+		spdk_json_write_named_string(w, "status", "resumed");
+		break;
+	case SUSRES_STATUS_RESUMING:
+		spdk_json_write_named_string(w, "status", "resuming");
+		break;
+	case SUSRES_STATUS_SUSPENDED:
+		spdk_json_write_named_string(w, "status", "suspended");
+		break;
+	case SUSRES_STATUS_SUSPENDING_STAGE1:
+		spdk_json_write_named_string(w, "status", "suspending_stage1");
+		break;
+	case SUSRES_STATUS_SUSPENDING_STAGE2:
+		spdk_json_write_named_string(w, "status", "suspending_stage2");
+		break;
+	default:
+		assert(false);
+		break;
+	}
 	spdk_json_write_object_end(w);
 
 	return 0;
