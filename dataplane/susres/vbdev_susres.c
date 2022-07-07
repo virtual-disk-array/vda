@@ -470,7 +470,6 @@ vbdev_susres_insert_name(const char *bdev_name, const char *vbdev_name)
 	return 0;
 }
 
-/* On init, just perform bdev module specific initialization. */
 static int
 vbdev_susres_init(void)
 {

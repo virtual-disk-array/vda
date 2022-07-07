@@ -57,7 +57,7 @@ rpc_bdev_susres_create(struct spdk_jsonrpc_request *request,
 cleanup:
 	free_rpc_bdev_susres_create(&req);
 }
-SPDK_RPC_REGISTER("construct_ext_susres_bdev", rpc_bdev_susres_create, SPDK_RPC_RUNTIME)
+SPDK_RPC_REGISTER("bdev_susres_create", rpc_bdev_susres_create, SPDK_RPC_RUNTIME)
 
 struct rpc_bdev_susres_delete {
 	char *name;
@@ -107,4 +107,4 @@ rpc_bdev_susres_delete(struct spdk_jsonrpc_request *request,
 cleanup:
 	free_rpc_bdev_susres_delete(&req);
 }
-SPDK_RPC_REGISTER("delete_ext_susres_bdev", rpc_bdev_susres_delete, SPDK_RPC_RUNTIME)
+SPDK_RPC_REGISTER("bdev_susres_delete", rpc_bdev_susres_delete, SPDK_RPC_RUNTIME)

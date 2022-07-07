@@ -87,6 +87,7 @@
           "method": "nvmf_set_config",
           "params": {
             "discovery_filter": "match_any",
+            "poll_groups_mask": "0x1",
             "admin_cmd_passthru": {
               "identify_ctrlr": false
             }

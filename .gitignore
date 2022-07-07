@@ -7,3 +7,6 @@ spdk
 vda_dataplane
 *.o
 *.a
+GPATH
+GRTAGS
+GTAGS
