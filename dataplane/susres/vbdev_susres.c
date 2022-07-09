@@ -42,8 +42,7 @@ enum susres_status {
 	SUSRES_STATUS_RESUMED = 0,
 	SUSRES_STATUS_RESUMING,
 	SUSRES_STATUS_SUSPENDED,
-	SUSRES_STATUS_SUSPENDING_STAGE1,
-	SUSRES_STATUS_SUSPENDING_STAGE2,
+	SUSRES_STATUS_SUSPENDING,
 };
 
 /* List of virtual bdevs and associated info for each. */
@@ -53,7 +52,13 @@ struct vbdev_susres {
 	struct spdk_bdev		pt_bdev;    /* the PT virtual bdev */
 	TAILQ_ENTRY(vbdev_susres)	link;
 	struct spdk_thread		*thread;    /* thread where base device is opened */
+	bool				offline;
+	bool				delay_free;
 	enum susres_status		status;
+	int 				ack_cnt;
+	struct susres_thread_ctx	*thread_ctx_array;
+	void				*rpc_arg;
+	susres_rpc_cb			rpc_cb_fn;
 };
 static TAILQ_HEAD(, vbdev_susres) g_pt_nodes = TAILQ_HEAD_INITIALIZER(g_pt_nodes);
 
@@ -67,18 +72,28 @@ struct pt_io_channel {
 	struct spdk_io_channel	*base_ch; /* IO channel of base device */
 };
 
-/* Just for fun, this pt_bdev module doesn't need it but this is essentially a per IO
- * context that we get handed by the bdev layer.
- */
 struct susres_bdev_io {
-	uint8_t test;
-
 	/* bdev related */
 	struct spdk_io_channel *ch;
-
 	/* for bdev_io_wait */
 	struct spdk_bdev_io_wait_entry bdev_io_wait;
+	TAILQ_ENTRY(susres_bdev_io) link;
 };
+
+struct susres_thread_ctx {
+	enum susres_status status;
+	uint64_t inflight;
+	TAILQ_HEAD(, susres_bdev_io) io_queue;
+	struct spdk_thread *rpc_thread;
+};
+
+static inline struct susres_thread_ctx *
+vbdev_susres_get_thread_ctx(struct vbdev_susres *pt_node)
+{
+	struct spdk_thread *thread = spdk_get_thread();
+	int idx = spdk_thread_get_id(thread) - 1;
+	return &pt_node->thread_ctx_array[idx];
+}
 
 static void vbdev_susres_submit_request(struct spdk_io_channel *ch, struct spdk_bdev_io *bdev_io);
 
@@ -89,9 +104,16 @@ _device_unregister_cb(void *io_device)
 {
 	struct vbdev_susres *pt_node  = io_device;
 
-	/* Done with this pt_node. */
-	free(pt_node->pt_bdev.name);
-	free(pt_node);
+	if (pt_node->status == SUSRES_STATUS_RESUMED ||
+		pt_node->status == SUSRES_STATUS_SUSPENDED) {
+		/* Done with this pt_node. */
+		free(pt_node->thread_ctx_array);
+		free(pt_node->pt_bdev.name);
+		free(pt_node);
+	} else {
+		pt_node->delay_free = true;
+	}
+	
 }
 
 /* Wrapper for the bdev close operation. */
@@ -120,17 +142,42 @@ vbdev_susres_destruct(void *ctx)
 	/* Unclaim the underlying bdev. */
 	spdk_bdev_module_release_bdev(pt_node->base_bdev);
 
-	/* Close the underlying bdev on its same opened thread. */
-	if (pt_node->thread && pt_node->thread != spdk_get_thread()) {
-		spdk_thread_send_msg(pt_node->thread, _vbdev_susres_destruct, pt_node->base_desc);
-	} else {
-		spdk_bdev_close(pt_node->base_desc);
-	}
+	assert(pt_node->thread == spdk_get_thread());
+	spdk_bdev_close(pt_node->base_desc);
 
 	/* Unregister the io_device. */
 	spdk_io_device_unregister(pt_node, _device_unregister_cb);
 
 	return 0;
+}
+
+static void
+susres_thread_ack(void *arg)
+{
+	struct vbdev_susres *pt_node = arg;
+	pt_node->ack_cnt++;
+	if (pt_node->ack_cnt >= spdk_thread_get_count()) {
+		pt_node->ack_cnt = 0;
+		pt_node->rpc_cb_fn(pt_node->rpc_arg);
+		if (pt_node->delay_free) {
+			free(pt_node->thread_ctx_array);
+			free(pt_node->pt_bdev.name);
+			free(pt_node);
+		}
+	}
+}
+
+static inline void
+susres_io_complete_hook(struct vbdev_susres *pt_node)
+{
+	struct susres_thread_ctx *thread_ctx = vbdev_susres_get_thread_ctx(pt_node);
+	assert(thread_ctx->inflight > 0);
+	thread_ctx->inflight--;
+	if (thread_ctx->inflight == 0 && thread_ctx->status == SUSRES_STATUS_SUSPENDING) {
+		thread_ctx->status = SUSRES_STATUS_SUSPENDED;
+		spdk_thread_send_msg(thread_ctx->rpc_thread, susres_thread_ack, pt_node);
+		thread_ctx->rpc_thread = NULL;
+	}
 }
 
 /* Completion callback for IO that were issued from this bdev. The original bdev_io
@@ -143,19 +190,13 @@ _pt_complete_io(struct spdk_bdev_io *bdev_io, bool success, void *cb_arg)
 	struct spdk_bdev_io *orig_io = cb_arg;
 	int status = success ? SPDK_BDEV_IO_STATUS_SUCCESS : SPDK_BDEV_IO_STATUS_FAILED;
 	struct susres_bdev_io *io_ctx = (struct susres_bdev_io *)orig_io->driver_ctx;
-
-	/* We setup this value in the submission routine, just showing here that it is
-	 * passed back to us.
-	 */
-	if (io_ctx->test != 0x5a) {
-		SPDK_ERRLOG("Error, original IO device_ctx is wrong! 0x%x\n",
-			    io_ctx->test);
-	}
-
+	struct vbdev_susres *pt_node = SPDK_CONTAINEROF(bdev_io->bdev,
+		struct vbdev_susres, pt_bdev);
 	/* Complete the original IO and then free the one that we created here
 	 * as a result of issuing an IO via submit_request.
 	 */
 	spdk_bdev_io_complete(orig_io, status);
+	susres_io_complete_hook(pt_node);
 	spdk_bdev_free_io(bdev_io);
 }
 
@@ -165,20 +206,15 @@ _pt_complete_zcopy_io(struct spdk_bdev_io *bdev_io, bool success, void *cb_arg)
 	struct spdk_bdev_io *orig_io = cb_arg;
 	int status = success ? SPDK_BDEV_IO_STATUS_SUCCESS : SPDK_BDEV_IO_STATUS_FAILED;
 	struct susres_bdev_io *io_ctx = (struct susres_bdev_io *)orig_io->driver_ctx;
-
-	/* We setup this value in the submission routine, just showing here that it is
-	 * passed back to us.
-	 */
-	if (io_ctx->test != 0x5a) {
-		SPDK_ERRLOG("Error, original IO device_ctx is wrong! 0x%x\n",
-			    io_ctx->test);
-	}
+	struct vbdev_susres *pt_node = SPDK_CONTAINEROF(bdev_io->bdev,
+		struct vbdev_susres, pt_bdev);
 
 	/* Complete the original IO and then free the one that we created here
 	 * as a result of issuing an IO via submit_request.
 	 */
 	spdk_bdev_io_set_buf(orig_io, bdev_io->u.bdev.iovs[0].iov_base, bdev_io->u.bdev.iovs[0].iov_len);
 	spdk_bdev_io_complete(orig_io, status);
+	susres_io_complete_hook(pt_node);
 	spdk_bdev_free_io(bdev_io);
 }
 
@@ -196,6 +232,8 @@ vbdev_susres_queue_io(struct spdk_bdev_io *bdev_io)
 {
 	struct susres_bdev_io *io_ctx = (struct susres_bdev_io *)bdev_io->driver_ctx;
 	struct pt_io_channel *pt_ch = spdk_io_channel_get_ctx(io_ctx->ch);
+	struct vbdev_susres *pt_node = SPDK_CONTAINEROF(bdev_io->bdev,
+		struct vbdev_susres, pt_bdev);
 	int rc;
 
 	io_ctx->bdev_io_wait.bdev = bdev_io->bdev;
@@ -207,6 +245,7 @@ vbdev_susres_queue_io(struct spdk_bdev_io *bdev_io)
 	if (rc != 0) {
 		SPDK_ERRLOG("Queue io failed in vbdev_susres_queue_io, rc=%d.\n", rc);
 		spdk_bdev_io_complete(bdev_io, SPDK_BDEV_IO_STATUS_FAILED);
+		susres_io_complete_hook(pt_node);
 	}
 }
 
@@ -226,6 +265,7 @@ pt_read_get_buf_cb(struct spdk_io_channel *ch, struct spdk_bdev_io *bdev_io, boo
 
 	if (!success) {
 		spdk_bdev_io_complete(bdev_io, SPDK_BDEV_IO_STATUS_FAILED);
+		susres_io_complete_hook(pt_node);
 		return;
 	}
 
@@ -251,6 +291,7 @@ pt_read_get_buf_cb(struct spdk_io_channel *ch, struct spdk_bdev_io *bdev_io, boo
 		} else {
 			SPDK_ERRLOG("ERROR on bdev_io submission!\n");
 			spdk_bdev_io_complete(bdev_io, SPDK_BDEV_IO_STATUS_FAILED);
+			susres_io_complete_hook(pt_node);
 		}
 	}
 }
@@ -266,12 +307,13 @@ vbdev_susres_submit_request(struct spdk_io_channel *ch, struct spdk_bdev_io *bde
 	struct pt_io_channel *pt_ch = spdk_io_channel_get_ctx(ch);
 	struct susres_bdev_io *io_ctx = (struct susres_bdev_io *)bdev_io->driver_ctx;
 	int rc = 0;
+	struct susres_thread_ctx *thread_ctx = vbdev_susres_get_thread_ctx(pt_node);
+	if (thread_ctx->status != SUSRES_STATUS_RESUMED) {
+		TAILQ_INSERT_TAIL(&thread_ctx->io_queue, io_ctx, link);
+		return;
+	}
 
-	/* Setup a per IO context value; we don't do anything with it in the vbdev other
-	 * than confirm we get the same thing back in the completion callback just to
-	 * demonstrate.
-	 */
-	io_ctx->test = 0x5a;
+	thread_ctx->inflight++;
 
 	switch (bdev_io->type) {
 	case SPDK_BDEV_IO_TYPE_READ:
@@ -327,16 +369,19 @@ vbdev_susres_submit_request(struct spdk_io_channel *ch, struct spdk_bdev_io *bde
 		break;
 	default:
 		SPDK_ERRLOG("susres: unknown I/O type %d\n", bdev_io->type);
+		thread_ctx->inflight--;
 		spdk_bdev_io_complete(bdev_io, SPDK_BDEV_IO_STATUS_FAILED);
 		return;
 	}
 	if (rc != 0) {
 		if (rc == -ENOMEM) {
 			SPDK_ERRLOG("No memory, start to queue io for susres.\n");
+			thread_ctx->inflight--;
 			io_ctx->ch = ch;
 			vbdev_susres_queue_io(bdev_io);
 		} else {
 			SPDK_ERRLOG("ERROR on bdev_io submission!\n");
+			thread_ctx->inflight--;
 			spdk_bdev_io_complete(bdev_io, SPDK_BDEV_IO_STATUS_FAILED);
 		}
 	}
@@ -397,11 +442,8 @@ vbdev_susres_dump_info_json(void *ctx, struct spdk_json_write_ctx *w)
 	case SUSRES_STATUS_SUSPENDED:
 		spdk_json_write_named_string(w, "status", "suspended");
 		break;
-	case SUSRES_STATUS_SUSPENDING_STAGE1:
-		spdk_json_write_named_string(w, "status", "suspending_stage1");
-		break;
-	case SUSRES_STATUS_SUSPENDING_STAGE2:
-		spdk_json_write_named_string(w, "status", "suspending_stage2");
+	case SUSRES_STATUS_SUSPENDING:
+		spdk_json_write_named_string(w, "status", "suspending");
 		break;
 	default:
 		assert(false);
@@ -550,13 +592,63 @@ static const struct spdk_bdev_fn_table vbdev_susres_fn_table = {
 };
 
 static void
+vbdev_susres_base_bdev_event_cb(enum spdk_bdev_event_type type,
+	struct spdk_bdev *bdev, void *event_ctx);
+
+static void
+susres_open_base_bdev(struct vbdev_susres *pt_node)
+{
+	int rc;
+
+	assert(pt_node->thread == spdk_get_thread());
+	rc = spdk_bdev_open_ext(pt_node->base_bdev->name, true, vbdev_susres_base_bdev_event_cb,
+		NULL, &pt_node->base_desc);
+	if (rc) {
+		SPDK_ERRLOG("Reopen base bdev failed: %s %s %d\n",
+			pt_node->pt_bdev.name, pt_node->base_bdev->name, rc);
+		TAILQ_REMOVE(&g_pt_nodes, pt_node, link);
+		spdk_io_device_unregister(pt_node, NULL);
+		free(pt_node->thread_ctx_array);
+		free(pt_node->pt_bdev.name);
+		free(pt_node);
+		return;
+	}
+	rc = spdk_bdev_module_claim_bdev(pt_node->base_bdev, pt_node->base_desc,
+		pt_node->pt_bdev.module);
+	if (rc) {
+		SPDK_ERRLOG("Reclaim base bdev failed: %s %s %d\n",
+			pt_node->pt_bdev.name, pt_node->base_bdev->name, rc);
+		spdk_bdev_close(pt_node->base_desc);
+		TAILQ_REMOVE(&g_pt_nodes, pt_node, link);
+		spdk_io_device_unregister(pt_node, NULL);
+		free(pt_node->thread_ctx_array);
+		free(pt_node->pt_bdev.name);
+		free(pt_node);
+		return;
+	}
+}
+
+static void
+susres_close_base_bdev(struct vbdev_susres *pt_node)
+{
+	assert(pt_node->thread == spdk_get_thread());
+	spdk_bdev_module_release_bdev(pt_node->base_bdev);
+	spdk_bdev_close(pt_node->base_desc);
+	pt_node->offline = true;
+}
+
+static void
 vbdev_susres_base_bdev_hotremove_cb(struct spdk_bdev *bdev_find)
 {
 	struct vbdev_susres *pt_node, *tmp;
 
 	TAILQ_FOREACH_SAFE(pt_node, &g_pt_nodes, link, tmp) {
 		if (bdev_find == pt_node->base_bdev) {
-			spdk_bdev_unregister(&pt_node->pt_bdev, NULL, NULL);
+			if (pt_node->status == SUSRES_STATUS_SUSPENDED) {
+				susres_close_base_bdev(pt_node);
+			} else {
+				spdk_bdev_unregister(&pt_node->pt_bdev, NULL, NULL);
+			}
 		}
 	}
 }
@@ -585,6 +677,8 @@ vbdev_susres_register(const char *bdev_name)
 	struct bdev_names *name;
 	struct vbdev_susres *pt_node;
 	struct spdk_bdev *bdev;
+	struct susres_thread_ctx *thread_ctx;
+	int thread_count, i;
 	int rc = 0;
 
 	/* Check our list of names from config versus this bdev and if
@@ -612,6 +706,25 @@ vbdev_susres_register(const char *bdev_name)
 		}
 		pt_node->pt_bdev.product_name = "susres";
 
+		thread_count = spdk_thread_get_count();
+		SPDK_NOTICELOG("thread_count: %d\n", thread_count);
+		pt_node->thread_ctx_array = malloc(
+			thread_count * sizeof(struct susres_thread_ctx));
+		if (!pt_node->thread_ctx_array) {
+			rc = -ENOMEM;
+			SPDK_ERRLOG("could not allocate thread_ctx_array %d\n", thread_count);
+			free(pt_node->pt_bdev.name);
+			free(pt_node);
+			break;
+		}
+		for (i = 0; i < thread_count; i++) {
+			thread_ctx = &pt_node->thread_ctx_array[i];
+			thread_ctx->status = SUSRES_STATUS_RESUMED;
+			thread_ctx->inflight = 0;
+			TAILQ_INIT(&thread_ctx->io_queue);
+			thread_ctx->rpc_thread = NULL;
+		}
+
 		/* The base bdev that we're attaching to. */
 		rc = spdk_bdev_open_ext(bdev_name, true, vbdev_susres_base_bdev_event_cb,
 					NULL, &pt_node->base_desc);
@@ -619,6 +732,7 @@ vbdev_susres_register(const char *bdev_name)
 			if (rc != -ENODEV) {
 				SPDK_ERRLOG("could not open bdev %s\n", bdev_name);
 			}
+			free(pt_node->thread_ctx_array);
 			free(pt_node->pt_bdev.name);
 			free(pt_node);
 			break;
@@ -663,6 +777,7 @@ vbdev_susres_register(const char *bdev_name)
 			spdk_bdev_close(pt_node->base_desc);
 			TAILQ_REMOVE(&g_pt_nodes, pt_node, link);
 			spdk_io_device_unregister(pt_node, NULL);
+			free(pt_node->thread_ctx_array);
 			free(pt_node->pt_bdev.name);
 			free(pt_node);
 			break;
@@ -676,6 +791,7 @@ vbdev_susres_register(const char *bdev_name)
 			spdk_bdev_close(pt_node->base_desc);
 			TAILQ_REMOVE(&g_pt_nodes, pt_node, link);
 			spdk_io_device_unregister(pt_node, NULL);
+			free(pt_node->thread_ctx_array);
 			free(pt_node->pt_bdev.name);
 			free(pt_node);
 			break;
@@ -752,7 +868,22 @@ bdev_susres_delete_disk(struct spdk_bdev *bdev, spdk_bdev_unregister_cb cb_fn,
 static void
 vbdev_susres_examine(struct spdk_bdev *bdev)
 {
-	vbdev_susres_register(bdev->name);
+	struct vbdev_susres *pt_node, *tmp, *target_pt_node;
+
+	target_pt_node = NULL;
+	TAILQ_FOREACH_SAFE(pt_node, &g_pt_nodes, link, tmp) {
+		if (strcmp(pt_node->base_bdev->name, bdev->name)) {
+			target_pt_node = pt_node;
+			break;
+		}
+	}
+
+	if (target_pt_node) {
+		assert(target_pt_node->status == SUSRES_STATUS_SUSPENDED);
+		susres_open_base_bdev(target_pt_node);
+	} else {
+		vbdev_susres_register(bdev->name);
+	}
 
 	spdk_bdev_module_examine_done(&susres_if);
 }

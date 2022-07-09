@@ -25,4 +25,6 @@ int bdev_susres_create_disk(const char *bdev_name, const char *vbdev_name);
 void bdev_susres_delete_disk(struct spdk_bdev *bdev,
 	spdk_bdev_unregister_cb cb_fn, void *cb_arg);
 
+typedef void (*susres_rpc_cb)(void *arg);
+
 #endif
