@@ -104,16 +104,10 @@ _device_unregister_cb(void *io_device)
 {
 	struct vbdev_susres *pt_node  = io_device;
 
-	if (pt_node->status == SUSRES_STATUS_RESUMED ||
-		pt_node->status == SUSRES_STATUS_SUSPENDED) {
-		/* Done with this pt_node. */
-		free(pt_node->thread_ctx_array);
-		free(pt_node->pt_bdev.name);
-		free(pt_node);
-	} else {
-		pt_node->delay_free = true;
-	}
-	
+	/* Done with this pt_node. */
+	free(pt_node->thread_ctx_array);
+	free(pt_node->pt_bdev.name);
+	free(pt_node);
 }
 
 /* Wrapper for the bdev close operation. */
@@ -132,6 +126,10 @@ static int
 vbdev_susres_destruct(void *ctx)
 {
 	struct vbdev_susres *pt_node = (struct vbdev_susres *)ctx;
+
+	if (pt_node->rpc_cb_fn) {
+		pt_node->rpc_cb_fn(pt_node->rpc_arg);
+	}
 
 	/* It is important to follow this exact sequence of steps for destroying
 	 * a vbdev...
@@ -154,16 +152,27 @@ vbdev_susres_destruct(void *ctx)
 static void
 susres_thread_ack(void *arg)
 {
-	struct vbdev_susres *pt_node = arg;
+	struct vbdev_susres *pt_node, *tmp;
+
+	pt_node = NULL;
+	TAILQ_FOREACH(tmp, &g_pt_nodes, link) {
+		if (tmp == arg) {
+			pt_node = tmp;
+			break;
+		}
+	}
+
+	if (!pt_node) {
+		SPDK_NOTICELOG("Received ack after the susres bdev is deleted: %p", arg);
+		return;
+	}
+
 	pt_node->ack_cnt++;
 	if (pt_node->ack_cnt >= spdk_thread_get_count()) {
+		assert(pt_node->rpc_cb_fn);
 		pt_node->ack_cnt = 0;
 		pt_node->rpc_cb_fn(pt_node->rpc_arg);
-		if (pt_node->delay_free) {
-			free(pt_node->thread_ctx_array);
-			free(pt_node->pt_bdev.name);
-			free(pt_node);
-		}
+		pt_node->rpc_cb_fn = NULL;
 	}
 }
 
@@ -497,6 +506,16 @@ static void
 pt_bdev_ch_destroy_cb(void *io_device, void *ctx_buf)
 {
 	struct pt_io_channel *pt_ch = ctx_buf;
+	struct vbdev_susres *pt_node = io_device;
+	struct susres_bdev_io *io_ctx;
+	struct susres_thread_ctx *thread_ctx = vbdev_susres_get_thread_ctx(pt_node);
+	while (!TAILQ_EMPTY(&thread_ctx->io_queue)) {
+		TAILQ_REMOVE(&thread_ctx->io_queue, io_ctx, link);
+		struct spdk_bdev_io *orig_io = SPDK_CONTAINEROF(io_ctx,
+			struct spdk_bdev_io, driver_ctx);
+		spdk_bdev_io_complete(orig_io, SPDK_BDEV_IO_STATUS_FAILED);
+		spdk_bdev_free_io(orig_io);
+	}
 
 	spdk_put_io_channel(pt_ch->base_ch);
 }
