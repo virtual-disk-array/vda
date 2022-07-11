@@ -108,3 +108,91 @@ cleanup:
 	free_rpc_bdev_susres_delete(&req);
 }
 SPDK_RPC_REGISTER("bdev_susres_delete", rpc_bdev_susres_delete, SPDK_RPC_RUNTIME)
+
+struct rpc_bdev_susres_suspend {
+	char *name;
+};
+
+static void
+free_rpc_bdev_susres_suspend(struct rpc_bdev_susres_suspend *req)
+{
+	free(req->name);
+}
+
+static const struct spdk_json_object_decoder rpc_bdev_susres_suspend_decoders[] = {
+	{"name", offsetof(struct rpc_bdev_susres_suspend, name), spdk_json_decode_string},
+};
+
+static void
+rpc_bdev_susres_suspend_cb(void *cb_arg, int bdeverrno)
+{
+	struct spdk_jsonrpc_request *request = cb_arg;
+
+	spdk_jsonrpc_send_bool_response(request, bdeverrno == 0);
+}
+
+static void
+rpc_bdev_susres_suspend(struct spdk_jsonrpc_request *request,
+			 const struct spdk_json_val *params)
+{
+	struct rpc_bdev_susres_suspend req = {NULL};
+	struct spdk_bdev *bdev;
+
+	if (spdk_json_decode_object(params, rpc_bdev_susres_suspend_decoders,
+				    SPDK_COUNTOF(rpc_bdev_susres_suspend_decoders),
+				    &req)) {
+		spdk_jsonrpc_send_error_response(request, SPDK_JSONRPC_ERROR_INTERNAL_ERROR,
+						 "spdk_json_decode_object failed");
+		goto cleanup;
+	}
+
+	bdev_susres_suspend_disk(req.name, rpc_bdev_susres_suspend_cb, request);
+
+cleanup:
+	free_rpc_bdev_susres_suspend(&req);
+}
+SPDK_RPC_REGISTER("bdev_susres_suspend", rpc_bdev_susres_suspend, SPDK_RPC_RUNTIME)
+
+struct rpc_bdev_susres_resume {
+	char *name;
+};
+
+static void
+free_rpc_bdev_susres_resume(struct rpc_bdev_susres_resume *req)
+{
+	free(req->name);
+}
+
+static const struct spdk_json_object_decoder rpc_bdev_susres_resume_decoders[] = {
+	{"name", offsetof(struct rpc_bdev_susres_resume, name), spdk_json_decode_string},
+};
+
+static void
+rpc_bdev_susres_resume_cb(void *cb_arg, int bdeverrno)
+{
+	struct spdk_jsonrpc_request *request = cb_arg;
+
+	spdk_jsonrpc_send_bool_response(request, bdeverrno == 0);
+}
+
+static void
+rpc_bdev_susres_resume(struct spdk_jsonrpc_request *request,
+			 const struct spdk_json_val *params)
+{
+	struct rpc_bdev_susres_resume req = {NULL};
+	struct spdk_bdev *bdev;
+
+	if (spdk_json_decode_object(params, rpc_bdev_susres_resume_decoders,
+				    SPDK_COUNTOF(rpc_bdev_susres_resume_decoders),
+				    &req)) {
+		spdk_jsonrpc_send_error_response(request, SPDK_JSONRPC_ERROR_INTERNAL_ERROR,
+						 "spdk_json_decode_object failed");
+		goto cleanup;
+	}
+
+	bdev_susres_resume_disk(req.name, rpc_bdev_susres_resume_cb, request);
+
+cleanup:
+	free_rpc_bdev_susres_resume(&req);
+}
+SPDK_RPC_REGISTER("bdev_susres_resume", rpc_bdev_susres_resume, SPDK_RPC_RUNTIME)

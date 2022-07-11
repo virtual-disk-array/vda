@@ -45,6 +45,23 @@ enum susres_status {
 	SUSRES_STATUS_SUSPENDING,
 };
 
+static inline const char *
+susres_status_to_string(enum susres_status status)
+{
+	switch(status) {
+	case SUSRES_STATUS_RESUMED:
+		return "resumed";
+	case SUSRES_STATUS_RESUMING:
+		return "resuming";
+	case SUSRES_STATUS_SUSPENDED:
+		return "suspended";
+	case SUSRES_STATUS_SUSPENDING:
+		return "suspending";
+	default:
+		assert(false);
+	}
+}
+
 /* List of virtual bdevs and associated info for each. */
 struct vbdev_susres {
 	struct spdk_bdev		*base_bdev; /* the thing we're attaching to */
@@ -53,7 +70,6 @@ struct vbdev_susres {
 	TAILQ_ENTRY(vbdev_susres)	link;
 	struct spdk_thread		*thread;    /* thread where base device is opened */
 	bool				offline;
-	bool				delay_free;
 	enum susres_status		status;
 	int 				ack_cnt;
 	struct susres_thread_ctx	*thread_ctx_array;
@@ -128,7 +144,7 @@ vbdev_susres_destruct(void *ctx)
 	struct vbdev_susres *pt_node = (struct vbdev_susres *)ctx;
 
 	if (pt_node->rpc_cb_fn) {
-		pt_node->rpc_cb_fn(pt_node->rpc_arg);
+		pt_node->rpc_cb_fn(pt_node->rpc_arg, 0);
 	}
 
 	/* It is important to follow this exact sequence of steps for destroying
@@ -170,8 +186,15 @@ susres_thread_ack(void *arg)
 	pt_node->ack_cnt++;
 	if (pt_node->ack_cnt >= spdk_thread_get_count()) {
 		assert(pt_node->rpc_cb_fn);
+		if (pt_node->status == SUSRES_STATUS_SUSPENDING) {
+			pt_node->status = SUSRES_STATUS_SUSPENDED;
+		} else if (pt_node->status == SUSRES_STATUS_RESUMING) {
+			pt_node->status = SUSRES_STATUS_RESUMED;
+		} else {
+			assert(false);
+		}
 		pt_node->ack_cnt = 0;
-		pt_node->rpc_cb_fn(pt_node->rpc_arg);
+		pt_node->rpc_cb_fn(pt_node->rpc_arg, 0);
 		pt_node->rpc_cb_fn = NULL;
 	}
 }
@@ -441,23 +464,8 @@ vbdev_susres_dump_info_json(void *ctx, struct spdk_json_write_ctx *w)
 	spdk_json_write_object_begin(w);
 	spdk_json_write_named_string(w, "name", spdk_bdev_get_name(&pt_node->pt_bdev));
 	spdk_json_write_named_string(w, "base_bdev_name", spdk_bdev_get_name(pt_node->base_bdev));
-	switch(pt_node->status) {
-	case SUSRES_STATUS_RESUMED:
-		spdk_json_write_named_string(w, "status", "resumed");
-		break;
-	case SUSRES_STATUS_RESUMING:
-		spdk_json_write_named_string(w, "status", "resuming");
-		break;
-	case SUSRES_STATUS_SUSPENDED:
-		spdk_json_write_named_string(w, "status", "suspended");
-		break;
-	case SUSRES_STATUS_SUSPENDING:
-		spdk_json_write_named_string(w, "status", "suspending");
-		break;
-	default:
-		assert(false);
-		break;
-	}
+	spdk_json_write_named_string(w, "status",
+		susres_status_to_string(pt_node->status));
 	spdk_json_write_object_end(w);
 
 	return 0;
@@ -905,4 +913,121 @@ vbdev_susres_examine(struct spdk_bdev *bdev)
 	}
 
 	spdk_bdev_module_examine_done(&susres_if);
+}
+
+static void
+susres_msg_cpl(void *arg)
+{
+	return;
+}
+
+static void
+susres_do_suspend(void *arg)
+{
+	struct vbdev_susres *pt_node = arg;
+	struct susres_thread_ctx *thread_ctx;
+	thread_ctx = vbdev_susres_get_thread_ctx(pt_node);
+	assert(thread_ctx->status == SUSRES_STATUS_RESUMED);
+	assert(!thread_ctx->rpc_thread);
+	if (thread_ctx->inflight == 0) {
+		thread_ctx->status = SUSRES_STATUS_SUSPENDED;
+		spdk_thread_send_msg(pt_node->thread, susres_thread_ack, pt_node);
+	} else {
+		thread_ctx->status = SUSRES_STATUS_SUSPENDING;
+		thread_ctx->rpc_thread = pt_node->thread;
+	}
+}
+
+void
+bdev_susres_suspend_disk(const char *vbdev_name,
+	susres_rpc_cb cb_fn, void *cb_arg)
+{
+	struct vbdev_susres *pt_node, *tmp;
+	struct spdk_thread *thread;
+
+	pt_node = NULL;
+	TAILQ_FOREACH(tmp, &g_pt_nodes, link) {
+		if (!strcmp(tmp->pt_bdev.name, vbdev_name)) {
+			pt_node = tmp;
+		}
+	}
+	if (!pt_node) {
+		SPDK_ERRLOG("Can not find susres vbdev: %s\n", vbdev_name);
+		cb_fn(cb_arg, -ENODEV);
+		return;
+	}
+
+	if (pt_node->status != SUSRES_STATUS_RESUMED) {
+		SPDK_ERRLOG("The susres vbdev is not in resumed status: %s %s\n",
+			vbdev_name, susres_status_to_string(pt_node->status));
+		cb_fn(cb_arg, -EINVAL);
+		return;
+	}
+	pt_node->status = SUSRES_STATUS_SUSPENDING;
+	assert(!pt_node->rpc_cb_fn);
+	assert(pt_node->ack_cnt == 0);
+	assert(pt_node->thread == thread);
+	pt_node->rpc_cb_fn = cb_fn;
+	pt_node->rpc_arg = cb_arg;
+	spdk_for_each_thread(susres_do_suspend, pt_node, susres_msg_cpl);
+}
+
+static void
+susres_do_resume(void *arg)
+{
+	struct vbdev_susres *pt_node = arg;
+	struct susres_thread_ctx *thread_ctx;
+	struct susres_bdev_io *io_ctx;
+
+	thread_ctx = vbdev_susres_get_thread_ctx(pt_node);
+	assert(thread_ctx->status == SUSRES_STATUS_SUSPENDED);
+	assert(!thread_ctx->rpc_thread);
+	thread_ctx->status = SUSRES_STATUS_RESUMED;
+	while (!TAILQ_EMPTY(&thread_ctx->io_queue)) {
+		TAILQ_REMOVE(&thread_ctx->io_queue, io_ctx, link);
+		struct spdk_bdev_io *orig_io = SPDK_CONTAINEROF(io_ctx,
+			struct spdk_bdev_io, driver_ctx);
+		vbdev_susres_submit_request(io_ctx->ch, orig_io);
+	}
+	spdk_thread_send_msg(pt_node->thread, susres_thread_ack, pt_node);
+}
+
+void
+bdev_susres_resume_disk(const char *vbdev_name,
+	susres_rpc_cb cb_fn, void *cb_arg)
+{
+	struct vbdev_susres *pt_node, *tmp;
+	struct spdk_thread *thread;
+
+	pt_node = NULL;
+	TAILQ_FOREACH(tmp, &g_pt_nodes, link) {
+		if (!strcmp(tmp->pt_bdev.name, vbdev_name)) {
+			pt_node = tmp;
+		}
+	}
+	if (!pt_node) {
+		SPDK_ERRLOG("Can not find susres vbdev: %s\n", vbdev_name);
+		cb_fn(cb_arg, -ENODEV);
+		return;
+	}
+
+	if (pt_node->status != SUSRES_STATUS_SUSPENDED) {
+		SPDK_ERRLOG("The susres vbdev is not in suspended status: %s %s\n",
+			vbdev_name, susres_status_to_string(pt_node->status));
+		cb_fn(cb_arg, -EINVAL);
+		return;
+	}
+
+	if (pt_node->offline) {
+		SPDK_ERRLOG("The base bdev of %s is offine\n", vbdev_name);
+		cb_fn(cb_arg, -EINVAL);
+		return;
+	}
+	pt_node->status = SUSRES_STATUS_RESUMING;
+	assert(!pt_node->rpc_cb_fn);
+	assert(pt_node->ack_cnt == 0);
+	assert(pt_node->thread == thread);
+	pt_node->rpc_cb_fn = cb_fn;
+	pt_node->rpc_arg = cb_arg;
+	spdk_for_each_thread(susres_do_resume, pt_node, susres_msg_cpl);
 }
