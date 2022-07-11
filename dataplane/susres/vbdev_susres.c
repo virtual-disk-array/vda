@@ -817,6 +817,7 @@ vbdev_susres_register(const char *bdev_name)
 		}
 		SPDK_NOTICELOG("pt_bdev registered\n");
 		SPDK_NOTICELOG("created pt_bdev for: %s\n", name->vbdev_name);
+		break;
 	}
 
 	return rc;
@@ -897,8 +898,7 @@ vbdev_susres_examine(struct spdk_bdev *bdev)
 		}
 	}
 
-	if (target_pt_node) {
-		assert(target_pt_node->status == SUSRES_STATUS_SUSPENDED);
+	if (target_pt_node && target_pt_node->status == SUSRES_STATUS_SUSPENDED) {
 		susres_open_base_bdev(target_pt_node);
 	} else {
 		vbdev_susres_register(bdev->name);
