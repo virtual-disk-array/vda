@@ -247,6 +247,8 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 				},
 				StripCnt:    req.DaConf.StripCnt,
 				StripSizeKb: req.DaConf.StripSizeKb,
+				ClusterSize: req.DaConf.ClusterSize,
+				ExtendRatio: req.DaConf.ExtendRatio,
 			},
 			CntlrList: cntlrList,
 			GrpList:   grpList,

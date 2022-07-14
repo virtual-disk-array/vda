@@ -300,6 +300,8 @@ message DaConf {
   BdevQos qos = 1;
   uint32 strip_cnt = 2;
   uint32 strip_size_kb = 3;
+  uint64 cluster_size = 4;
+  uint32 extend_ratio = 5;
 }
 
 message DiskArray {

@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 	"sort"
-	"sync/atomic"
 	"strings"
+	"sync/atomic"
 
 	"github.com/virtual-disk-array/vda/pkg/lib"
 	"github.com/virtual-disk-array/vda/pkg/logger"
@@ -421,13 +421,13 @@ func (sh *syncupHelper) syncupCn(cnReq *pbcn.CnReq) *pbcn.CnRsp {
 						toBeDeleted2 = append(toBeDeleted2, snapFullName)
 					}
 				}
-				if (len(toBeDeleted1) == len(toBeDeleted2)) {
+				if len(toBeDeleted1) == len(toBeDeleted2) {
 					break
 				}
 				toBeDeleted1 = toBeDeleted2
 				toBeDeleted2 = make([]string, 0)
 			}
-			if (len(toBeDeleted1) != 0) {
+			if len(toBeDeleted1) != 0 {
 				cnErr = fmt.Errorf("can not delete snap(s): %s",
 					strings.Join(toBeDeleted1, ","))
 			}
