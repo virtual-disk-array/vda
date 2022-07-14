@@ -1442,15 +1442,17 @@ func (oc *OperationClient) CreateDaLvs(daLvsName, aggBdevName string) error {
 	}
 
 	params := &struct {
-		LvsName     string `json:"lvs_name"`
-		BdevName    string `json:"bdev_name"`
-		ClearMethod string `json:"clear_method"`
-		ClusterSz   uint64 `json:"cluster_sz"`
+		LvsName                   string `json:"lvs_name"`
+		BdevName                  string `json:"bdev_name"`
+		ClearMethod               string `json:"clear_method"`
+		ClusterSz                 uint64 `json:"cluster_sz"`
+		NumMdPagesPerClusterRatio uint32 `json:"num_md_pages_per_cluster_ratio"`
 	}{
-		LvsName:     daLvsName,
-		BdevName:    aggBdevName,
-		ClearMethod: "unmap",
-		ClusterSz:   CLUSTER_SIZE,
+		LvsName:                   daLvsName,
+		BdevName:                  aggBdevName,
+		ClearMethod:               "unmap",
+		ClusterSz:                 CLUSTER_SIZE,
+		NumMdPagesPerClusterRatio: 100,
 	}
 	rsp := &struct {
 		Error *spdkErr `json:"error"`
