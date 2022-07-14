@@ -716,7 +716,7 @@ func (oc *OperationClient) lvsExist(lvsName string) (bool, error) {
 	}
 }
 
-func (oc *OperationClient) CreatePdLvs(pdLvsName, bdevName string) error {
+func (oc *OperationClient) CreatePdLvs(pdLvsName, bdevName string, clusterSz uint64, extendRatio uint32) error {
 	logger.Info("CreatePdLvs: pdLvsName %v bdevName %v",
 		pdLvsName, bdevName)
 	exist, err := oc.lvsExist(pdLvsName)
@@ -732,11 +732,13 @@ func (oc *OperationClient) CreatePdLvs(pdLvsName, bdevName string) error {
 		BdevName    string `json:"bdev_name"`
 		ClearMethod string `json:"clear_method"`
 		ClusterSz   uint64 `json:"cluster_sz"`
+		ExtendRatio uint32 `json:"num_md_pages_per_cluster_ratio"`
 	}{
 		LvsName:     pdLvsName,
 		BdevName:    bdevName,
 		ClearMethod: "none",
-		ClusterSz:   CLUSTER_SIZE,
+		ClusterSz:   clusterSz,
+		ExtendRatio: extendRatio,
 	}
 	rsp := &struct {
 		Error *spdkErr `json:"error"`
@@ -1430,7 +1432,7 @@ func (oc *OperationClient) DeleteDaLvs(daLvsName string) error {
 	return oc.deleteLvs(daLvsName)
 }
 
-func (oc *OperationClient) CreateDaLvs(daLvsName, aggBdevName string) error {
+func (oc *OperationClient) CreateDaLvs(daLvsName, aggBdevName string, clusterSz uint64, extendRatio uint32) error {
 	logger.Info("CreateDaLvs: daLvsName %v aggBdevName %v",
 		daLvsName, aggBdevName)
 	exist, err := oc.lvsExist(daLvsName)
@@ -1442,17 +1444,17 @@ func (oc *OperationClient) CreateDaLvs(daLvsName, aggBdevName string) error {
 	}
 
 	params := &struct {
-		LvsName                   string `json:"lvs_name"`
-		BdevName                  string `json:"bdev_name"`
-		ClearMethod               string `json:"clear_method"`
-		ClusterSz                 uint64 `json:"cluster_sz"`
-		NumMdPagesPerClusterRatio uint32 `json:"num_md_pages_per_cluster_ratio"`
+		LvsName     string `json:"lvs_name"`
+		BdevName    string `json:"bdev_name"`
+		ClearMethod string `json:"clear_method"`
+		ClusterSz   uint64 `json:"cluster_sz"`
+		ExtendRatio uint32 `json:"num_md_pages_per_cluster_ratio"`
 	}{
-		LvsName:                   daLvsName,
-		BdevName:                  aggBdevName,
-		ClearMethod:               "unmap",
-		ClusterSz:                 CLUSTER_SIZE,
-		NumMdPagesPerClusterRatio: 100,
+		LvsName:     daLvsName,
+		BdevName:    aggBdevName,
+		ClearMethod: "unmap",
+		ClusterSz:   clusterSz,
+		ExtendRatio: extendRatio,
 	}
 	rsp := &struct {
 		Error *spdkErr `json:"error"`

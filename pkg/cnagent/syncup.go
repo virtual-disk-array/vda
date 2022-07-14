@@ -208,7 +208,8 @@ func (sh *syncupHelper) syncupPrimary(cntlrFeReq *pbcn.CntlrFeReq,
 		if cntlrFeReq.IsInit {
 			cntlrFeErr = sh.oc.WaitForLvs(daLvsName)
 		} else {
-			cntlrFeErr = sh.oc.CreateDaLvs(daLvsName, aggBdevName)
+			// TODO: get clusterSz and extendRatio from daConf
+			cntlrFeErr = sh.oc.CreateDaLvs(daLvsName, aggBdevName, 1024*1024*uint64(4), 100)
 		}
 	}
 
