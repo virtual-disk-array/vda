@@ -18,6 +18,8 @@ type daCreateArgsStruct struct {
 	rwMbytesPerSec uint64
 	rMbytesPerSec  uint64
 	wMbytesPerSec  uint64
+	clusterSz      uint64
+	extendRatio    uint32
 }
 
 type daDeleteArgsStruct struct {
@@ -106,6 +108,10 @@ func init() {
 		"da read mbytes per second")
 	daCreateCmd.Flags().Uint64VarP(&daCreateArgs.wMbytesPerSec, "w-mbytes-per-sec", "", 0,
 		"da write mbytes per second")
+	daCreateCmd.Flags().Uint64VarP(&daCreateArgs.clusterSz, "cluster-sz", "", 1024*1024*uint64(4),
+		"cluster size of the logical volume store in bytes")
+	daCreateCmd.Flags().Uint32VarP(&daCreateArgs.extendRatio, "extend-ratio", "", 100,
+		"reserved metadata pages per cluster")
 	daCmd.AddCommand(daCreateCmd)
 
 	daDeleteCmd.Flags().StringVarP(&daDeleteArgs.daName, "da-name", "", "",
@@ -152,6 +158,8 @@ func (cli *client) createDa(args *daCreateArgsStruct) string {
 			},
 			StripCnt:    args.stripCnt,
 			StripSizeKb: args.stripSizeKb,
+			ClusterSize: args.clusterSz,
+			ExtendRatio: args.extendRatio,
 		},
 	}
 	reply, err := cli.c.CreateDa(cli.ctx, req)
