@@ -153,11 +153,12 @@ vbdev_susres_destruct(void *ctx)
 
 	TAILQ_REMOVE(&g_pt_nodes, pt_node, link);
 
-	/* Unclaim the underlying bdev. */
-	spdk_bdev_module_release_bdev(pt_node->base_bdev);
-
-	assert(pt_node->thread == spdk_get_thread());
-	spdk_bdev_close(pt_node->base_desc);
+	if (!pt_node->offline) {
+		/* Unclaim the underlying bdev. */
+		spdk_bdev_module_release_bdev(pt_node->base_bdev);
+		assert(pt_node->thread == spdk_get_thread());
+		spdk_bdev_close(pt_node->base_desc);
+	}
 
 	/* Unregister the io_device. */
 	spdk_io_device_unregister(pt_node, _device_unregister_cb);
@@ -463,7 +464,9 @@ vbdev_susres_dump_info_json(void *ctx, struct spdk_json_write_ctx *w)
 	spdk_json_write_name(w, "susres");
 	spdk_json_write_object_begin(w);
 	spdk_json_write_named_string(w, "name", spdk_bdev_get_name(&pt_node->pt_bdev));
-	spdk_json_write_named_string(w, "base_bdev_name", spdk_bdev_get_name(pt_node->base_bdev));
+	if (pt_node->status != SUSRES_STATUS_SUSPENDED) {
+		spdk_json_write_named_string(w, "base_bdev_name", spdk_bdev_get_name(pt_node->base_bdev));
+	}
 	spdk_json_write_named_string(w, "status",
 		susres_status_to_string(pt_node->status));
 	spdk_json_write_object_end(w);
@@ -623,12 +626,12 @@ vbdev_susres_base_bdev_event_cb(enum spdk_bdev_event_type type,
 	struct spdk_bdev *bdev, void *event_ctx);
 
 static void
-susres_open_base_bdev(struct vbdev_susres *pt_node)
+susres_open_base_bdev(struct vbdev_susres *pt_node, const char *bdev_name)
 {
 	int rc;
 
 	assert(pt_node->thread == spdk_get_thread());
-	rc = spdk_bdev_open_ext(pt_node->base_bdev->name, true, vbdev_susres_base_bdev_event_cb,
+	rc = spdk_bdev_open_ext(bdev_name, true, vbdev_susres_base_bdev_event_cb,
 		NULL, &pt_node->base_desc);
 	if (rc) {
 		SPDK_ERRLOG("Reopen base bdev failed: %s %s %d\n",
@@ -640,6 +643,7 @@ susres_open_base_bdev(struct vbdev_susres *pt_node)
 		free(pt_node);
 		return;
 	}
+	pt_node->base_bdev = spdk_bdev_desc_get_bdev(pt_node->base_desc);
 	rc = spdk_bdev_module_claim_bdev(pt_node->base_bdev, pt_node->base_desc,
 		pt_node->pt_bdev.module);
 	if (rc) {
@@ -653,6 +657,7 @@ susres_open_base_bdev(struct vbdev_susres *pt_node)
 		free(pt_node);
 		return;
 	}
+	pt_node->offline = false;
 }
 
 static void
@@ -897,21 +902,35 @@ static void
 vbdev_susres_examine(struct spdk_bdev *bdev)
 {
 	struct vbdev_susres *pt_node, *tmp, *target_pt_node;
+	struct bdev_names *name, *tmp_name;
+
+	name = NULL;
+	TAILQ_FOREACH(tmp_name, &g_bdev_names, link) {
+		if (strcmp(tmp_name->bdev_name, bdev->name) == 0) {
+			name = tmp_name;
+			break;
+		}
+	}
+
+	if (!name) {
+		goto out;
+	}
 
 	target_pt_node = NULL;
 	TAILQ_FOREACH_SAFE(pt_node, &g_pt_nodes, link, tmp) {
-		if (strcmp(pt_node->base_bdev->name, bdev->name)) {
+		if (strcmp(pt_node->pt_bdev.name, name->vbdev_name) == 0) {
 			target_pt_node = pt_node;
 			break;
 		}
 	}
 
 	if (target_pt_node && target_pt_node->status == SUSRES_STATUS_SUSPENDED) {
-		susres_open_base_bdev(target_pt_node);
+		susres_open_base_bdev(target_pt_node, name->bdev_name);
 	} else {
 		vbdev_susres_register(bdev->name);
 	}
 
+out:
 	spdk_bdev_module_examine_done(&susres_if);
 }
 
@@ -966,6 +985,11 @@ bdev_susres_suspend_disk(const char *vbdev_name,
 	pt_node->status = SUSRES_STATUS_SUSPENDING;
 	assert(!pt_node->rpc_cb_fn);
 	assert(pt_node->ack_cnt == 0);
+	thread = spdk_get_thread();
+	if (pt_node->thread != thread) {
+		SPDK_ERRLOG("different_thread: [%s] [%s]\n",  spdk_thread_get_name(pt_node->thread),
+			spdk_thread_get_name(thread));
+	}
 	assert(pt_node->thread == thread);
 	pt_node->rpc_cb_fn = cb_fn;
 	pt_node->rpc_arg = cb_arg;
@@ -997,7 +1021,7 @@ bdev_susres_resume_disk(const char *vbdev_name,
 	susres_rpc_cb cb_fn, void *cb_arg)
 {
 	struct vbdev_susres *pt_node, *tmp;
-	struct spdk_thread *thread;
+	struct spdk_thread *thread = spdk_get_thread();
 
 	pt_node = NULL;
 	TAILQ_FOREACH(tmp, &g_pt_nodes, link) {
@@ -1031,3 +1055,5 @@ bdev_susres_resume_disk(const char *vbdev_name,
 	pt_node->rpc_arg = cb_arg;
 	spdk_for_each_thread(susres_do_resume, pt_node, susres_msg_cpl);
 }
+
+SPDK_LOG_REGISTER_COMPONENT(vbdev_susres)
