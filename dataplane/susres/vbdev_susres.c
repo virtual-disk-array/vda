@@ -108,6 +108,7 @@ vbdev_susres_get_thread_ctx(struct vbdev_susres *pt_node)
 {
 	struct spdk_thread *thread = spdk_get_thread();
 	int idx = spdk_thread_get_id(thread) - 1;
+	assert(idx >= 0);
 	return &pt_node->thread_ctx_array[idx];
 }
 
@@ -222,8 +223,7 @@ _pt_complete_io(struct spdk_bdev_io *bdev_io, bool success, void *cb_arg)
 {
 	struct spdk_bdev_io *orig_io = cb_arg;
 	int status = success ? SPDK_BDEV_IO_STATUS_SUCCESS : SPDK_BDEV_IO_STATUS_FAILED;
-	struct susres_bdev_io *io_ctx = (struct susres_bdev_io *)orig_io->driver_ctx;
-	struct vbdev_susres *pt_node = SPDK_CONTAINEROF(bdev_io->bdev,
+	struct vbdev_susres *pt_node = SPDK_CONTAINEROF(orig_io->bdev,
 		struct vbdev_susres, pt_bdev);
 	/* Complete the original IO and then free the one that we created here
 	 * as a result of issuing an IO via submit_request.
@@ -239,7 +239,7 @@ _pt_complete_zcopy_io(struct spdk_bdev_io *bdev_io, bool success, void *cb_arg)
 	struct spdk_bdev_io *orig_io = cb_arg;
 	int status = success ? SPDK_BDEV_IO_STATUS_SUCCESS : SPDK_BDEV_IO_STATUS_FAILED;
 	struct susres_bdev_io *io_ctx = (struct susres_bdev_io *)orig_io->driver_ctx;
-	struct vbdev_susres *pt_node = SPDK_CONTAINEROF(bdev_io->bdev,
+	struct vbdev_susres *pt_node = SPDK_CONTAINEROF(orig_io->bdev,
 		struct vbdev_susres, pt_bdev);
 
 	/* Complete the original IO and then free the one that we created here
