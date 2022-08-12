@@ -32,7 +32,7 @@ bdev_susres_suspend_disk(const char *vbdev_name,
 	susres_rpc_cb cb_fn, void *cb_arg);
 
 void
-bdev_susres_resume_disk(const char *vbdev_name,
+bdev_susres_resume_disk(const char *bdev_name, const char *vbdev_name,
 	susres_rpc_cb cb_fn, void *cb_arg);
 
 #endif

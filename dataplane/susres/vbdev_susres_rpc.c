@@ -154,16 +154,19 @@ cleanup:
 SPDK_RPC_REGISTER("bdev_susres_suspend", rpc_bdev_susres_suspend, SPDK_RPC_RUNTIME)
 
 struct rpc_bdev_susres_resume {
+	char *base_bdev_name;
 	char *name;
 };
 
 static void
 free_rpc_bdev_susres_resume(struct rpc_bdev_susres_resume *req)
 {
+	free(req->base_bdev_name);
 	free(req->name);
 }
 
 static const struct spdk_json_object_decoder rpc_bdev_susres_resume_decoders[] = {
+	{"base_bdev_name", offsetof(struct rpc_bdev_susres_resume, base_bdev_name), spdk_json_decode_string},
 	{"name", offsetof(struct rpc_bdev_susres_resume, name), spdk_json_decode_string},
 };
 
@@ -190,7 +193,7 @@ rpc_bdev_susres_resume(struct spdk_jsonrpc_request *request,
 		goto cleanup;
 	}
 
-	bdev_susres_resume_disk(req.name, rpc_bdev_susres_resume_cb, request);
+	bdev_susres_resume_disk(req.base_bdev_name, req.name, rpc_bdev_susres_resume_cb, request);
 
 cleanup:
 	free_rpc_bdev_susres_resume(&req);

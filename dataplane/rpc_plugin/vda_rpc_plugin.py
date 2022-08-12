@@ -37,13 +37,17 @@ def bdev_susres_suspend_func(client, name):
     return client.call('bdev_susres_suspend', params)
 
 
-def bdev_susres_resume_func(client, name):
+def bdev_susres_resume_func(client, base_bdev_name, name):
     """Resume a susres bdev
 
     Args:
+        base_bdev_name: name of the existing bdev
         name: name of the susres bdev
     """
-    params = {'name': name}
+    params = {
+        'base_bdev_name': base_bdev_name,
+        'name': name,
+    }
     return client.call('bdev_susres_resume', params)
 
 
@@ -65,7 +69,7 @@ def spdk_rpc_plugin_initialize(subparsers):
                                            name=args.name))
 
     p = subparsers.add_parser('bdev_susres_delete', help='Delete a susres bdev')
-    p.add_argument('--name', help='susres bdev name')
+    p.add_argument('-p', '--name', help='susres bdev name')
     p.set_defaults(func=bdev_susres_delete)
 
     def bdev_susres_suspend(args):
@@ -73,13 +77,15 @@ def spdk_rpc_plugin_initialize(subparsers):
                                             name=args.name))
 
     p = subparsers.add_parser('bdev_susres_suspend', help='Suspend a susres bdev')
-    p.add_argument('--name', help='susres bdev name')
+    p.add_argument('-p', '--name', help='susres bdev name')
     p.set_defaults(func=bdev_susres_suspend)
 
     def bdev_susres_resume(args):
         print_json(bdev_susres_resume_func(args.client,
+                                           base_bdev_name=args.base_bdev_name,
                                            name=args.name))
 
     p = subparsers.add_parser('bdev_susres_resume', help='Resume a susres bdev')
-    p.add_argument('--name', help='susres bdev name')
+    p.add_argument('-b', '--base-bdev-name', help="Name of the existing bdev", required=True)
+    p.add_argument('-p', '--name', help='susres bdev name')
     p.set_defaults(func=bdev_susres_resume)

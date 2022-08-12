@@ -69,7 +69,6 @@ struct vbdev_susres {
 	struct spdk_bdev		pt_bdev;    /* the PT virtual bdev */
 	TAILQ_ENTRY(vbdev_susres)	link;
 	struct spdk_thread		*thread;    /* thread where base device is opened */
-	bool				offline;
 	enum susres_status		status;
 	int 				ack_cnt;
 	struct susres_thread_ctx	*thread_ctx_array;
@@ -114,6 +113,44 @@ vbdev_susres_get_thread_ctx(struct vbdev_susres *pt_node)
 
 static void vbdev_susres_submit_request(struct spdk_io_channel *ch, struct spdk_bdev_io *bdev_io);
 
+static void
+vbdev_susres_base_bdev_event_cb(enum spdk_bdev_event_type type,
+	struct spdk_bdev *bdev, void *event_ctx);
+
+static int
+susres_open_base_bdev(struct vbdev_susres *pt_node, const char *bdev_name)
+{
+	int rc = 0;
+
+	assert(pt_node->thread == spdk_get_thread());
+	rc = spdk_bdev_open_ext(bdev_name, true, vbdev_susres_base_bdev_event_cb,
+		NULL, &pt_node->base_desc);
+	if (rc) {
+		SPDK_ERRLOG("Reopen base bdev failed: %s %s %d\n",
+			pt_node->pt_bdev.name, pt_node->base_bdev->name, rc);
+		return rc;
+	}
+	pt_node->base_bdev = spdk_bdev_desc_get_bdev(pt_node->base_desc);
+	rc = spdk_bdev_module_claim_bdev(pt_node->base_bdev, pt_node->base_desc,
+		pt_node->pt_bdev.module);
+	if (rc) {
+		SPDK_ERRLOG("Reclaim base bdev failed: %s %s %d\n",
+			pt_node->pt_bdev.name, pt_node->base_bdev->name, rc);
+		spdk_bdev_close(pt_node->base_desc);
+		return rc;
+	}
+	return 0;
+}
+
+static void
+susres_close_base_bdev(struct vbdev_susres *pt_node)
+{
+	SPDK_DEBUGLOG(vbdev_susres, "close_base_bdev pt_bdev: %s base_bdev: %s\n",
+		pt_node->pt_bdev.name, pt_node->base_bdev->name);
+	assert(pt_node->thread == spdk_get_thread());
+	spdk_bdev_module_release_bdev(pt_node->base_bdev);
+	spdk_bdev_close(pt_node->base_desc);
+}
 
 /* Callback for unregistering the IO device. */
 static void
@@ -125,15 +162,6 @@ _device_unregister_cb(void *io_device)
 	free(pt_node->thread_ctx_array);
 	free(pt_node->pt_bdev.name);
 	free(pt_node);
-}
-
-/* Wrapper for the bdev close operation. */
-static void
-_vbdev_susres_destruct(void *ctx)
-{
-	struct spdk_bdev_desc *desc = ctx;
-
-	spdk_bdev_close(desc);
 }
 
 /* Called after we've unregistered following a hot remove callback.
@@ -154,7 +182,7 @@ vbdev_susres_destruct(void *ctx)
 
 	TAILQ_REMOVE(&g_pt_nodes, pt_node, link);
 
-	if (!pt_node->offline) {
+	if (pt_node->status != SUSRES_STATUS_SUSPENDED) {
 		/* Unclaim the underlying bdev. */
 		spdk_bdev_module_release_bdev(pt_node->base_bdev);
 		assert(pt_node->thread == spdk_get_thread());
@@ -190,6 +218,7 @@ susres_thread_ack(void *arg)
 		assert(pt_node->rpc_cb_fn);
 		if (pt_node->status == SUSRES_STATUS_SUSPENDING) {
 			pt_node->status = SUSRES_STATUS_SUSPENDED;
+			susres_close_base_bdev(pt_node);
 		} else if (pt_node->status == SUSRES_STATUS_RESUMING) {
 			pt_node->status = SUSRES_STATUS_RESUMED;
 		} else {
@@ -622,65 +651,13 @@ static const struct spdk_bdev_fn_table vbdev_susres_fn_table = {
 };
 
 static void
-vbdev_susres_base_bdev_event_cb(enum spdk_bdev_event_type type,
-	struct spdk_bdev *bdev, void *event_ctx);
-
-static void
-susres_open_base_bdev(struct vbdev_susres *pt_node, const char *bdev_name)
-{
-	int rc;
-
-	assert(pt_node->thread == spdk_get_thread());
-	rc = spdk_bdev_open_ext(bdev_name, true, vbdev_susres_base_bdev_event_cb,
-		NULL, &pt_node->base_desc);
-	if (rc) {
-		SPDK_ERRLOG("Reopen base bdev failed: %s %s %d\n",
-			pt_node->pt_bdev.name, pt_node->base_bdev->name, rc);
-		TAILQ_REMOVE(&g_pt_nodes, pt_node, link);
-		spdk_io_device_unregister(pt_node, NULL);
-		free(pt_node->thread_ctx_array);
-		free(pt_node->pt_bdev.name);
-		free(pt_node);
-		return;
-	}
-	pt_node->base_bdev = spdk_bdev_desc_get_bdev(pt_node->base_desc);
-	rc = spdk_bdev_module_claim_bdev(pt_node->base_bdev, pt_node->base_desc,
-		pt_node->pt_bdev.module);
-	if (rc) {
-		SPDK_ERRLOG("Reclaim base bdev failed: %s %s %d\n",
-			pt_node->pt_bdev.name, pt_node->base_bdev->name, rc);
-		spdk_bdev_close(pt_node->base_desc);
-		TAILQ_REMOVE(&g_pt_nodes, pt_node, link);
-		spdk_io_device_unregister(pt_node, NULL);
-		free(pt_node->thread_ctx_array);
-		free(pt_node->pt_bdev.name);
-		free(pt_node);
-		return;
-	}
-	pt_node->offline = false;
-}
-
-static void
-susres_close_base_bdev(struct vbdev_susres *pt_node)
-{
-	assert(pt_node->thread == spdk_get_thread());
-	spdk_bdev_module_release_bdev(pt_node->base_bdev);
-	spdk_bdev_close(pt_node->base_desc);
-	pt_node->offline = true;
-}
-
-static void
 vbdev_susres_base_bdev_hotremove_cb(struct spdk_bdev *bdev_find)
 {
 	struct vbdev_susres *pt_node, *tmp;
 
 	TAILQ_FOREACH_SAFE(pt_node, &g_pt_nodes, link, tmp) {
 		if (bdev_find == pt_node->base_bdev) {
-			if (pt_node->status == SUSRES_STATUS_SUSPENDED) {
-				susres_close_base_bdev(pt_node);
-			} else {
-				spdk_bdev_unregister(&pt_node->pt_bdev, NULL, NULL);
-			}
+			spdk_bdev_unregister(&pt_node->pt_bdev, NULL, NULL);
 		}
 	}
 }
@@ -901,36 +878,7 @@ bdev_susres_delete_disk(struct spdk_bdev *bdev, spdk_bdev_unregister_cb cb_fn,
 static void
 vbdev_susres_examine(struct spdk_bdev *bdev)
 {
-	struct vbdev_susres *pt_node, *tmp, *target_pt_node;
-	struct bdev_names *name, *tmp_name;
-
-	name = NULL;
-	TAILQ_FOREACH(tmp_name, &g_bdev_names, link) {
-		if (strcmp(tmp_name->bdev_name, bdev->name) == 0) {
-			name = tmp_name;
-			break;
-		}
-	}
-
-	if (!name) {
-		goto out;
-	}
-
-	target_pt_node = NULL;
-	TAILQ_FOREACH_SAFE(pt_node, &g_pt_nodes, link, tmp) {
-		if (strcmp(pt_node->pt_bdev.name, name->vbdev_name) == 0) {
-			target_pt_node = pt_node;
-			break;
-		}
-	}
-
-	if (target_pt_node && target_pt_node->status == SUSRES_STATUS_SUSPENDED) {
-		susres_open_base_bdev(target_pt_node, name->bdev_name);
-	} else {
-		vbdev_susres_register(bdev->name);
-	}
-
-out:
+	vbdev_susres_register(bdev->name);
 	spdk_bdev_module_examine_done(&susres_if);
 }
 
@@ -1017,9 +965,10 @@ susres_do_resume(void *arg)
 }
 
 void
-bdev_susres_resume_disk(const char *vbdev_name,
+bdev_susres_resume_disk(const char *bdev_name, const char *vbdev_name,
 	susres_rpc_cb cb_fn, void *cb_arg)
 {
+	int rc;
 	struct vbdev_susres *pt_node, *tmp;
 	struct spdk_thread *thread = spdk_get_thread();
 
@@ -1042,11 +991,12 @@ bdev_susres_resume_disk(const char *vbdev_name,
 		return;
 	}
 
-	if (pt_node->offline) {
-		SPDK_ERRLOG("The base bdev of %s is offine\n", vbdev_name);
-		cb_fn(cb_arg, -EINVAL);
+	rc = susres_open_base_bdev(pt_node, bdev_name);
+	if (rc) {
+		cb_fn(cb_arg, rc);
 		return;
 	}
+
 	pt_node->status = SUSRES_STATUS_RESUMING;
 	assert(!pt_node->rpc_cb_fn);
 	assert(pt_node->ack_cnt == 0);
