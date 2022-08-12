@@ -31,9 +31,10 @@ SPDK_BDEV_MODULE_REGISTER(susres, &susres_if)
 /* List of pt_bdev names and their base bdevs via configuration file.
  * Used so we can parse the conf once at init and use this list in examine().
  */
+#define SUSRES_MAX_NAME_LEN (256)
 struct bdev_names {
-	char			*vbdev_name;
-	char			*bdev_name;
+	char			vbdev_name[SUSRES_MAX_NAME_LEN+1];
+	char			bdev_name[SUSRES_MAX_NAME_LEN+1];
 	TAILQ_ENTRY(bdev_names)	link;
 };
 static TAILQ_HEAD(, bdev_names) g_bdev_names = TAILQ_HEAD_INITIALIZER(g_bdev_names);
@@ -100,6 +101,7 @@ struct susres_thread_ctx {
 	uint64_t inflight;
 	TAILQ_HEAD(, susres_bdev_io) io_queue;
 	struct spdk_thread *rpc_thread;
+	struct pt_io_channel *pt_ch;
 };
 
 static inline struct susres_thread_ctx *
@@ -120,6 +122,7 @@ vbdev_susres_base_bdev_event_cb(enum spdk_bdev_event_type type,
 static int
 susres_open_base_bdev(struct vbdev_susres *pt_node, const char *bdev_name)
 {
+	struct bdev_names *name;
 	int rc = 0;
 
 	assert(pt_node->thread == spdk_get_thread());
@@ -139,17 +142,35 @@ susres_open_base_bdev(struct vbdev_susres *pt_node, const char *bdev_name)
 		spdk_bdev_close(pt_node->base_desc);
 		return rc;
 	}
+	TAILQ_FOREACH(name, &g_bdev_names, link) {
+		if (strcmp(pt_node->pt_bdev.name, name->vbdev_name) == 0) {
+			assert(strlen(bdev_name) <= SUSRES_MAX_NAME_LEN);
+			strncpy(name->bdev_name, bdev_name, SUSRES_MAX_NAME_LEN);
+			break;
+		}
+	}
+	SPDK_DEBUGLOG(vbdev_susres, "open_base_bdev pt_bdev: %s base_bdev: %s\n",
+		pt_node->pt_bdev.name, pt_node->base_bdev->name);
 	return 0;
 }
 
 static void
 susres_close_base_bdev(struct vbdev_susres *pt_node)
 {
+	struct bdev_names *name;
 	SPDK_DEBUGLOG(vbdev_susres, "close_base_bdev pt_bdev: %s base_bdev: %s\n",
 		pt_node->pt_bdev.name, pt_node->base_bdev->name);
 	assert(pt_node->thread == spdk_get_thread());
 	spdk_bdev_module_release_bdev(pt_node->base_bdev);
 	spdk_bdev_close(pt_node->base_desc);
+	pt_node->base_bdev = NULL;
+	pt_node->base_desc = NULL;
+	TAILQ_FOREACH(name, &g_bdev_names, link) {
+		if (strcmp(pt_node->pt_bdev.name, name->vbdev_name) == 0) {
+			memset(name->bdev_name, 0, SUSRES_MAX_NAME_LEN);
+			break;
+		}
+	}
 }
 
 /* Callback for unregistering the IO device. */
@@ -238,6 +259,9 @@ susres_io_complete_hook(struct vbdev_susres *pt_node)
 	thread_ctx->inflight--;
 	if (thread_ctx->inflight == 0 && thread_ctx->status == SUSRES_STATUS_SUSPENDING) {
 		thread_ctx->status = SUSRES_STATUS_SUSPENDED;
+		if (thread_ctx->pt_ch) {
+			spdk_put_io_channel(thread_ctx->pt_ch->base_ch);
+		}
 		spdk_thread_send_msg(thread_ctx->rpc_thread, susres_thread_ack, pt_node);
 		thread_ctx->rpc_thread = NULL;
 	}
@@ -532,8 +556,16 @@ pt_bdev_ch_create_cb(void *io_device, void *ctx_buf)
 {
 	struct pt_io_channel *pt_ch = ctx_buf;
 	struct vbdev_susres *pt_node = io_device;
+	struct susres_thread_ctx *thread_ctx = vbdev_susres_get_thread_ctx(pt_node);
 
-	pt_ch->base_ch = spdk_bdev_get_io_channel(pt_node->base_desc);
+	SPDK_DEBUGLOG(vbdev_susres, "ch_create_cb: %s %" PRIu64 "\n",
+		pt_node->pt_bdev.name, spdk_thread_get_id(spdk_get_thread()));
+
+	if (thread_ctx->status != SUSRES_STATUS_SUSPENDED) {
+		assert(!pt_ch->base_ch);
+		pt_ch->base_ch = spdk_bdev_get_io_channel(pt_node->base_desc);
+	}
+	thread_ctx->pt_ch = pt_ch;
 
 	return 0;
 }
@@ -549,6 +581,9 @@ pt_bdev_ch_destroy_cb(void *io_device, void *ctx_buf)
 	struct vbdev_susres *pt_node = io_device;
 	struct susres_bdev_io *io_ctx;
 	struct susres_thread_ctx *thread_ctx = vbdev_susres_get_thread_ctx(pt_node);
+
+	SPDK_DEBUGLOG(vbdev_susres, "ch_destroy_cb: %s %" PRIu64 "\n",
+		pt_node->pt_bdev.name, spdk_thread_get_id(spdk_get_thread()));
 	while (!TAILQ_EMPTY(&thread_ctx->io_queue)) {
 		TAILQ_REMOVE(&thread_ctx->io_queue, io_ctx, link);
 		struct spdk_bdev_io *orig_io = SPDK_CONTAINEROF(io_ctx,
@@ -557,7 +592,12 @@ pt_bdev_ch_destroy_cb(void *io_device, void *ctx_buf)
 		spdk_bdev_free_io(orig_io);
 	}
 
-	spdk_put_io_channel(pt_ch->base_ch);
+	if (thread_ctx->status != SUSRES_STATUS_SUSPENDED) {
+		assert(pt_ch->base_ch);
+		spdk_put_io_channel(pt_ch->base_ch);
+		pt_ch->base_ch = NULL;
+	}
+	thread_ctx->pt_ch = NULL;
 }
 
 /* Create the susres association from the bdev and vbdev name and insert
@@ -580,20 +620,10 @@ vbdev_susres_insert_name(const char *bdev_name, const char *vbdev_name)
 		return -ENOMEM;
 	}
 
-	name->bdev_name = strdup(bdev_name);
-	if (!name->bdev_name) {
-		SPDK_ERRLOG("could not allocate name->bdev_name\n");
-		free(name);
-		return -ENOMEM;
-	}
-
-	name->vbdev_name = strdup(vbdev_name);
-	if (!name->vbdev_name) {
-		SPDK_ERRLOG("could not allocate name->vbdev_name\n");
-		free(name->bdev_name);
-		free(name);
-		return -ENOMEM;
-	}
+	assert(strlen(bdev_name) <= SUSRES_MAX_NAME_LEN);
+	assert(strlen(vbdev_name) <= SUSRES_MAX_NAME_LEN);
+	strncpy(name->bdev_name, bdev_name, SUSRES_MAX_NAME_LEN);
+	strncpy(name->vbdev_name, vbdev_name, SUSRES_MAX_NAME_LEN);
 
 	TAILQ_INSERT_TAIL(&g_bdev_names, name, link);
 
@@ -614,8 +644,6 @@ vbdev_susres_finish(void)
 
 	while ((name = TAILQ_FIRST(&g_bdev_names))) {
 		TAILQ_REMOVE(&g_bdev_names, name, link);
-		free(name->bdev_name);
-		free(name->vbdev_name);
 		free(name);
 	}
 }
@@ -655,8 +683,10 @@ vbdev_susres_base_bdev_hotremove_cb(struct spdk_bdev *bdev_find)
 {
 	struct vbdev_susres *pt_node, *tmp;
 
+	SPDK_DEBUGLOG(vbdev_susres, "Removing: %s\n", bdev_find->name);
 	TAILQ_FOREACH_SAFE(pt_node, &g_pt_nodes, link, tmp) {
 		if (bdev_find == pt_node->base_bdev) {
+			SPDK_NOTICELOG("Hot remove: %s\n", pt_node->base_bdev->name);
 			spdk_bdev_unregister(&pt_node->pt_bdev, NULL, NULL);
 		}
 	}
@@ -732,6 +762,7 @@ vbdev_susres_register(const char *bdev_name)
 			thread_ctx->inflight = 0;
 			TAILQ_INIT(&thread_ctx->io_queue);
 			thread_ctx->rpc_thread = NULL;
+			thread_ctx->pt_ch = NULL;
 		}
 
 		/* The base bdev that we're attaching to. */
@@ -857,8 +888,6 @@ bdev_susres_delete_disk(struct spdk_bdev *bdev, spdk_bdev_unregister_cb cb_fn,
 	TAILQ_FOREACH(name, &g_bdev_names, link) {
 		if (strcmp(name->vbdev_name, bdev->name) == 0) {
 			TAILQ_REMOVE(&g_bdev_names, name, link);
-			free(name->bdev_name);
-			free(name->vbdev_name);
 			free(name);
 			break;
 		}
@@ -898,6 +927,11 @@ susres_do_suspend(void *arg)
 	assert(!thread_ctx->rpc_thread);
 	if (thread_ctx->inflight == 0) {
 		thread_ctx->status = SUSRES_STATUS_SUSPENDED;
+		if (thread_ctx->pt_ch) {
+			assert(thread_ctx->pt_ch->base_ch);
+			spdk_put_io_channel(thread_ctx->pt_ch->base_ch);
+			thread_ctx->pt_ch->base_ch = NULL;
+		}
 		spdk_thread_send_msg(pt_node->thread, susres_thread_ack, pt_node);
 	} else {
 		thread_ctx->status = SUSRES_STATUS_SUSPENDING;
@@ -955,6 +989,10 @@ susres_do_resume(void *arg)
 	assert(thread_ctx->status == SUSRES_STATUS_SUSPENDED);
 	assert(!thread_ctx->rpc_thread);
 	thread_ctx->status = SUSRES_STATUS_RESUMED;
+	if (thread_ctx->pt_ch) {
+		assert(!thread_ctx->pt_ch->base_ch);
+		thread_ctx->pt_ch->base_ch = spdk_bdev_get_io_channel(pt_node->base_desc);
+	}
 	while (!TAILQ_EMPTY(&thread_ctx->io_queue)) {
 		TAILQ_REMOVE(&thread_ctx->io_queue, io_ctx, link);
 		struct spdk_bdev_io *orig_io = SPDK_CONTAINEROF(io_ctx,
