@@ -6,7 +6,7 @@ COMMON_CFLAGS += -L$(DPDK_LIB_DIR)
 COMMON_CFLAGS += -L$(VFIO_LIB_DIR)
 
 ifeq ($(VDA_DATAPLANE_DEBUG),y)
-COMMON_CFLAGS += -DDEBUG -O0 -fno-omit-frame-pointer
+COMMON_CFLAGS += -DDEBUG -O0 -fno-omit-frame-pointer -g
 else
 COMMON_CFLAGS += -DNDEBUG -O2
 endif

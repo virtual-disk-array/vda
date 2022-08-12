@@ -585,6 +585,7 @@ pt_bdev_ch_destroy_cb(void *io_device, void *ctx_buf)
 	SPDK_DEBUGLOG(vbdev_susres, "ch_destroy_cb: %s %" PRIu64 "\n",
 		pt_node->pt_bdev.name, spdk_thread_get_id(spdk_get_thread()));
 	while (!TAILQ_EMPTY(&thread_ctx->io_queue)) {
+		io_ctx = TAILQ_FIRST(&thread_ctx->io_queue);
 		TAILQ_REMOVE(&thread_ctx->io_queue, io_ctx, link);
 		struct spdk_bdev_io *orig_io = SPDK_CONTAINEROF(io_ctx,
 			struct spdk_bdev_io, driver_ctx);
@@ -994,6 +995,7 @@ susres_do_resume(void *arg)
 		thread_ctx->pt_ch->base_ch = spdk_bdev_get_io_channel(pt_node->base_desc);
 	}
 	while (!TAILQ_EMPTY(&thread_ctx->io_queue)) {
+		io_ctx = TAILQ_FIRST(&thread_ctx->io_queue);
 		TAILQ_REMOVE(&thread_ctx->io_queue, io_ctx, link);
 		struct spdk_bdev_io *orig_io = SPDK_CONTAINEROF(io_ctx,
 			struct spdk_bdev_io, driver_ctx);
