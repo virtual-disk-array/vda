@@ -30,6 +30,7 @@ make -C $DATAPLANE_DIR/raid1 raid1
 make -C $DATAPLANE_DIR/susres susres
 make -C $DATAPLANE_DIR/app app
 
+mkdir -p $ROOT_DIR/_out/linux_amd64
 cp $DATAPLANE_DIR/app/vda_dataplane $ROOT_DIR/_out/linux_amd64/vda_dataplane
 cp $CURR_DIR/dataplane_config.json $ROOT_DIR/_out/linux_amd64/dataplane_config.json
 mkdir -p $ROOT_DIR/_out/linux_amd64/spdk

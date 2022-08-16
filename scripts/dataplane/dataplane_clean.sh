@@ -11,6 +11,7 @@ if [ "$1" == "all" ]; then
 else
     cd $DATAPLANE_DIR/spdk
     make clean
+    rm -rf $DATAPLANE_DIR/spdk/build
 fi
 rm -f $DATAPLANE_DIR/raid1/*.[oa]
 rm -f $DATAPLANE_DIR/susres/*.[oa]
