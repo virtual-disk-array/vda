@@ -10,9 +10,7 @@ ROOT_DIR=$CURR_DIR/../..
 BIN_DIR=$ROOT_DIR/_out/linux_amd64
 ETCD_BIN=$ROOT_DIR/bin/etcd
 
-echo "aaa"
 sudo rm -rf $WORK_DIR
-echo "bbb"
 mkdir -p $WORK_DIR
 
 echo "launch etcd"

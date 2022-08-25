@@ -67,7 +67,7 @@ rules:
   resources: ["csinodes"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["storage.k8s.io"]
-  resources: ["volumeattachments"]
+  resources: ["volumeattachments", "volumeattachments/status"]
   verbs: ["get", "list", "watch", "update", "patch"]
 - apiGroups: [""]
   resources: ["secrets"]

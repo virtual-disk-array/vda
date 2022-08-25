@@ -18,7 +18,7 @@ spec:
       - name: vdacsi-registrar
         securityContext:
           privileged: true
-        image: quay.io/k8scsi/csi-node-driver-registrar:v1.2.0
+        image: k8s.gcr.io/sig-storage/csi-node-driver-registrar:v2.5.0
         imagePullPolicy: "IfNotPresent"
         args:
         - "--v=5"
@@ -41,7 +41,7 @@ spec:
         - "--endpoint=unix:///csi/csi.sock"
         - "--enable-ns"
         - "--node-id=$(NODE_ID)"
-        - "--vda-endpoint=127.0.0.1:9520"
+        - "--vda-endpoint=host.minikube.internal:9520"
         env:
         - name: NODE_ID
           valueFrom:
