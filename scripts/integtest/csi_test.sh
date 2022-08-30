@@ -76,10 +76,12 @@ $BIN_DIR/vda_cli cn create --sock-addr localhost:9820 --tr-svc-id 4430
 
 echo "create kubernetes cluster"
 
-minikube start --driver=docker --kubernetes-version=v1.25.0
+minikube start -b kubeadm --vm-driver=none --kubernetes-version=v1.25.0
 
-eval $(minikube docker-env)
-docker build -t virtualdiskarray/vdacsi:dev -f $ROOT_DIR/scripts/csi/Dockerfile $ROOT_DIR
+minikube kubectl -- apply -f https://docs.projectcalico.org/manifests/calico.yaml
+
+# eval $(minikube docker-env)
+# docker build -t virtualdiskarray/vdacsi:dev -f $ROOT_DIR/scripts/csi/Dockerfile $ROOT_DIR
 
 echo "create kubernetes resoruces"
 
@@ -145,9 +147,6 @@ function wait_for_deleting_pvc() {
 }
 
 wait_for_pod 5 10
-
-echo "exit"
-exit 0
 
 echo "create testpvc"
 minikube kubectl -- apply -f $CURR_DIR/testpvc.yaml
