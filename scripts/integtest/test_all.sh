@@ -2,8 +2,7 @@
 
 set -e
 
-curr_dir="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
-source $curr_dir/conf.sh
+CURR_DIR=$(readlink -f $(dirname $0))
 
-$curr_dir/vda_test.sh
-$curr_dir/csi_test.sh
+$CURR_DIR/vda_test.sh
+$CURR_DIR/csi_test.sh
