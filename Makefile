@@ -1,7 +1,7 @@
 OUT_DIR := ./_out
 GOPATH := $(shell go env GOPATH)
 PATH := $(PATH):$(GOPATH)/bin
-VERSION := v0.1.1
+VERSION := v0.2.0
 
 .PHONY: cp_proto
 cp_proto:
