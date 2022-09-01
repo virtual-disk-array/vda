@@ -20,9 +20,9 @@ if [ ! -f $notes_file ]; then
     exit 1
 fi
 
-curr_dir="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
+CURR_DIR=$(readlink -f $(dirname $0))
 # go to the root dir
-cd $curr_dir/..
+cd $CURR_DIR/..
 
 echo "check version"
 grep -q "VERSION := $version" Makefile
