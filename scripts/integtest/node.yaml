@@ -41,7 +41,7 @@ spec:
         - "--endpoint=unix:///csi/csi.sock"
         - "--enable-ns"
         - "--node-id=$(NODE_ID)"
-        - "--vda-endpoint=host.minikube.internal:9520"
+        - "--vda-endpoint=localhost:9520"
         env:
         - name: NODE_ID
           valueFrom:

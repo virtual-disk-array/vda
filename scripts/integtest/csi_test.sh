@@ -76,7 +76,7 @@ $BIN_DIR/vda_cli cn create --sock-addr localhost:9820 --tr-svc-id 4430
 
 echo "create kubernetes cluster"
 
-minikube start -b kubeadm --vm-driver=none --kubernetes-version=v1.25.0
+minikube start --driver=none --kubernetes-version=v1.25.0
 
 minikube kubectl -- apply -f https://docs.projectcalico.org/manifests/calico.yaml
 

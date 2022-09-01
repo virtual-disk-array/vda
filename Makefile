@@ -66,8 +66,12 @@ dpc:
 dpc_all:
 	bash scripts/dataplane/dataplane_clean.sh all
 
+.PHONY: out_clean
+out_clean:
+	rm -rf _out
+
 .PHONY: clean
-clean: dpc cpc
+clean: dpc cpc out_clean
 
 .PHONY: build
 build: dp cp
