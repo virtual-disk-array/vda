@@ -29,10 +29,10 @@ sudo bash -c "$BIN_DIR/vda_dataplane --config $BIN_DIR/dataplane_config.json --r
 
 sleep 5
 
-sudo chmod 777 $WORK_DIR/dn0.sock
-sudo chmod 777 $WORK_DIR/dn1.sock
-sudo chmod 777 $WORK_DIR/cn0.sock
-sudo chmod 777 $WORK_DIR/cn1.sock
+sudo chown $(id -u):$(id -g) $WORK_DIR/dn0.sock
+sudo chown $(id -u):$(id -g) $WORK_DIR/dn1.sock
+sudo chown $(id -u):$(id -g) $WORK_DIR/cn0.sock
+sudo chown $(id -u):$(id -g) $WORK_DIR/cn1.sock
 
 echo "launch vda services"
 

@@ -29,10 +29,10 @@ sudo bash -c "$BIN_DIR/vda_dataplane --config $BIN_DIR/dataplane_config.json --r
 
 sleep 5
 
-sudo chmod 777 $WORK_DIR/dn0.sock
-sudo chmod 777 $WORK_DIR/dn1.sock
-sudo chmod 777 $WORK_DIR/cn0.sock
-sudo chmod 777 $WORK_DIR/cn1.sock
+sudo chown $(id -u):$(id -g) $WORK_DIR/dn0.sock
+sudo chown $(id -u):$(id -g) $WORK_DIR/dn1.sock
+sudo chown $(id -u):$(id -g) $WORK_DIR/cn0.sock
+sudo chown $(id -u):$(id -g) $WORK_DIR/cn1.sock
 
 echo "launch vda services"
 
@@ -323,7 +323,7 @@ fi
 if [ "$new_primary" == "localhost:9820" ]; then
     sudo bash -c "$BIN_DIR/vda_dataplane --config $BIN_DIR/dataplane_config.json --rpc-socket $WORK_DIR/cn1.sock > $WORK_DIR/cn1.log 2>&1 &"
     sleep 5
-    sudo chmod 777 $WORK_DIR/cn1.sock
+    sudo chown $(id -u):$(id -g) $WORK_DIR/cn1.sock
     $BIN_DIR/vda_cn_agent --network tcp --address '127.0.0.1:9821' \
                           --sock-path $WORK_DIR/cn1.sock --sock-timeout 10 \
                           --lis-conf '{"trtype":"tcp","traddr":"127.0.0.1","adrfam":"ipv4","trsvcid":"4431"}' \
@@ -332,7 +332,7 @@ if [ "$new_primary" == "localhost:9820" ]; then
 else
     sudo bash -c "$BIN_DIR/vda_dataplane --config $BIN_DIR/dataplane_config.json --rpc-socket $WORK_DIR/cn0.sock > $WORK_DIR/cn0.log 2>&1 &"
     sleep 5
-    sudo chmod 777 $WORK_DIR/cn0.sock
+    sudo chown $(id -u):$(id -g) $WORK_DIR/cn0.sock
     $BIN_DIR/vda_cn_agent --network tcp --address '127.0.0.1:9820' \
                           --sock-path $WORK_DIR/cn0.sock --sock-timeout 10 \
                           --lis-conf '{"trtype":"tcp","traddr":"127.0.0.1","adrfam":"ipv4","trsvcid":"4430"}' \
