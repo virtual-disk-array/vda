@@ -73,8 +73,21 @@ out_clean:
 .PHONY: clean
 clean: dpc cpc out_clean
 
+.PHONY: csi_sample
+csi_sample:
+	mkdir -p $(OUT_DIR)/linux_amd64/csi_sample
+	cp scripts/integtest/controller-rbac.yaml $(OUT_DIR)/linux_amd64/csi_sample/
+	cp scripts/integtest/controller.yaml $(OUT_DIR)/linux_amd64/csi_sample/
+	cp scripts/integtest/node-rbac.yaml $(OUT_DIR)/linux_amd64/csi_sample/
+	cp scripts/integtest/node.yaml $(OUT_DIR)/linux_amd64/csi_sample/
+	cp scripts/integtest/storageclass.yaml $(OUT_DIR)/linux_amd64/csi_sample/
+	cp scripts/integtest/testpvc.yaml $(OUT_DIR)/linux_amd64/csi_sample/
+	cp scripts/integtest/testpod.yaml $(OUT_DIR)/linux_amd64/csi_sample/
+	sed -i "s/Never/IfNotPresent/" $(OUT_DIR)/linux_amd64/csi_sample/controller.yaml
+	sed -i "s/Never/IfNotPresent/" $(OUT_DIR)/linux_amd64/csi_sample/node.yaml
+
 .PHONY: build
-build: dp cp
+build: dp cp csi_sample
 
 .DEFAULT_GOAL := build
 

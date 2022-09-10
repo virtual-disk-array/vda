@@ -2,7 +2,6 @@ _out
 *.pb.go
 mockclient.go
 mockutils.go
-conf.sh
 spdk
 vda_dataplane
 *.o
