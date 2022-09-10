@@ -51,6 +51,36 @@ def bdev_susres_resume_func(client, base_bdev_name, name):
     return client.call('bdev_susres_resume', params)
 
 
+def bdev_raid1_create_func(client, raid1_name, bdev0_name, bdev1_name,
+                           strip_size_kb, write_delay, clean_ratio,
+                           max_pending, max_resync, synced):
+    params = {
+        'raid1_name': raid1_name,
+        'bdev0_name': bdev0_name,
+        'bdev1_name': bdev1_name,
+    }
+    if strip_size_kb is not None:
+        params['strip_size_kb'] = strip_size_kb
+    if write_delay is not None:
+        params['write_delay'] = write_delay
+    if clean_ratio is not None:
+        params['clean_ratio'] = clean_ratio
+    if max_pending is not None:
+        params['max_pending'] = max_pending
+    if max_resync is not None:
+        params['max_resync'] = max_resync
+    if synced is not None:
+        params['synced'] = synced
+    return client.call('bdev_raid1_create', params)
+
+
+def bdev_raid1_delete_func(client, raid1_name):
+    params = {
+        'raid1_name': raid1_name,
+    }
+    return client.call('bdev_raid1_delete', params)
+
+
 def spdk_rpc_plugin_initialize(subparsers):
 
     def bdev_susres_create(args):
@@ -89,3 +119,47 @@ def spdk_rpc_plugin_initialize(subparsers):
     p.add_argument('-b', '--base-bdev-name', help="Name of the existing bdev", required=True)
     p.add_argument('-p', '--name', help='susres bdev name')
     p.set_defaults(func=bdev_susres_resume)
+
+    def bdev_raid1_create(args):
+        print_json(bdev_raid1_create_func(args.client,
+                                          raid1_name=args.raid1_name,
+                                          bdev0_name=args.bdev0_name,
+                                          bdev1_name=args.bdev1_name,
+                                          strip_size_kb=args.strip_size_kb,
+                                          write_delay=args.write_delay,
+                                          clean_ratio=args.clean_ratio,
+                                          max_pending=args.max_pending,
+                                          max_resync=args.max_resync,
+                                          synced=args.synced))
+
+    p = subparsers.add_parser('bdev_raid1_create',
+                              help='Create raid1 bdev')
+    p.add_argument('-n', '--raid1-name', required=True,
+                   help="Name of the raid1 bdev")
+    p.add_argument('-b0', '--bdev0-name', required=True,
+                   help="The first underling bdev name")
+    p.add_argument('-b1', '--bdev1-name', required=True,
+                   help="The second underling bdev name")
+    p.add_argument('-s', '--strip-size-kb', type=int,
+                   help="The strip size in kb")
+    p.add_argument('-w', '--write-delay', type=int,
+                   help="Write delay")
+    p.add_argument('-c', '--clean-ratio', type=int,
+                   help="Clean ratio")
+    p.add_argument('-p', '--max-pending', type=int,
+                   help="Max pending")
+    p.add_argument('-r', '--max-resync', type=int,
+                   help="Max resync")
+    p.add_argument('-y', '--synced', action='store_true',
+                   help="Whether the underling bdevs are synched")
+    p.set_defaults(func=bdev_raid1_create)
+
+    def bdev_raid1_delete(args):
+        print_json(bdev_raid1_delete_func(args.client,
+                                          raid1_name=args.raid1_name))
+
+    p = subparsers.add_parser('bdev_raid1_delete',
+                              help='Delte raid1 bdev')
+    p.add_argument('-n', '--raid1-name', required=True,
+                   help="Name of the raid1 bdev")
+    p.set_defaults(func=bdev_raid1_delete)
