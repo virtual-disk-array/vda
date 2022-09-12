@@ -853,6 +853,8 @@ raid1_resync_write_complete(void *arg, int rc)
     struct raid1_resync_ctx *resync_ctx = arg;
     struct raid1_bdev *r1_bdev = resync_ctx->r1_bdev;
     struct raid1_resync *resync = r1_bdev->resync;
+    SPDK_DEBUGLOG(bdev_raid1, "raid1_resync_write_complete %s %" PRIu64 " %d\n",
+	    r1_bdev->raid1_name, resync_ctx->bit_idx, rc);
     resync->num_inflight--;
     if (rc) {
         if (r1_bdev->online[1] == true) {
@@ -885,6 +887,8 @@ raid1_resync_read_complete(void *arg, int rc)
     struct raid1_resync_ctx *resync_ctx = arg;
     struct raid1_bdev *r1_bdev = resync_ctx->r1_bdev;
     struct raid1_resync *resync = r1_bdev->resync;
+    SPDK_DEBUGLOG(bdev_raid1, "raid1_resync_read_complete %s %" PRIu64 " %d\n",
+	    r1_bdev->raid1_name, resync_ctx->bit_idx, rc);
     if (rc) {
         resync->num_inflight--;
         if (r1_bdev->online[0] == true) {
@@ -901,7 +905,6 @@ raid1_resync_read_complete(void *arg, int rc)
                 raid1_resync_write_complete, resync_ctx);
         raid1_per_io_submit(per_io);
     }
-    TAILQ_INSERT_TAIL(&resync->available_ctx, resync_ctx, link);
 }
 
 static void
@@ -1696,6 +1699,8 @@ raid1_io_poller(void *arg)
 			if (r1_bdev->resync) {
 				struct raid1_resync *resync = r1_bdev->resync;
 				uint32_t i;
+				SPDK_DEBUGLOG(bdev_raid1, "In poller max_resync: %" PRIu64 "\n",
+					from_le64(&r1_bdev->sb->max_resync));
 				for (i = 0; i < from_le64(&r1_bdev->sb->max_resync); i++) {
 					if (resync->curr_bit == r1_bdev->strip_cnt) {
 						r1_bdev->resync_released = true;
@@ -1703,6 +1708,7 @@ raid1_io_poller(void *arg)
 					}
 					assert(resync->curr_bit < r1_bdev->strip_cnt);
 					if (TAILQ_EMPTY(&resync->available_ctx)) {
+						SPDK_DEBUGLOG(bdev_raid1, "In poller available_ctx empty\n");
 						break;
 					}
 					if (raid1_bm_test(resync->needed_bm, resync->curr_bit)) {
