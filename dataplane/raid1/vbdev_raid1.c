@@ -19,6 +19,49 @@ static struct spdk_bdev_module g_raid1_if = {
 
 SPDK_BDEV_MODULE_REGISTER(raid1, &g_raid1_if)
 
+static inline const char *
+raid1_bdev_io_type_to_string(enum spdk_bdev_io_type io_type)
+{
+	switch(io_type) {
+	case SPDK_BDEV_IO_TYPE_INVALID:
+		return "IO_TYPE_INVALID";
+	case SPDK_BDEV_IO_TYPE_READ:
+		return "IO_TYPE_READ";
+	case SPDK_BDEV_IO_TYPE_WRITE:
+		return "IO_TYPE_WRITE";
+	case SPDK_BDEV_IO_TYPE_UNMAP:
+		return "IO_TYPE_UNMAP";
+	case SPDK_BDEV_IO_TYPE_FLUSH:
+		return "IO_TYPE_FLUSH";
+	case SPDK_BDEV_IO_TYPE_RESET:
+		return "IO_TYPE_RESET";
+	case SPDK_BDEV_IO_TYPE_NVME_ADMIN:
+		return "TYPE_NVME_ADMIN";
+	case SPDK_BDEV_IO_TYPE_NVME_IO:
+		return "TYPE_NVME_IO";
+	case SPDK_BDEV_IO_TYPE_NVME_IO_MD:
+		return "NVME_IO_MD";
+	case SPDK_BDEV_IO_TYPE_WRITE_ZEROES:
+		return "TYPE_WRITE_ZEROES";
+	case SPDK_BDEV_IO_TYPE_ZCOPY:
+		return "IO_TYPE_ZCOPY";
+	case SPDK_BDEV_IO_TYPE_GET_ZONE_INFO:
+		return "IO_TYPE_GET_ZONE_INFO";
+	case SPDK_BDEV_IO_TYPE_ZONE_MANAGEMENT:
+		return "IO_TYPE_ZONE_MANAGEMENT";
+	case SPDK_BDEV_IO_TYPE_ZONE_APPEND:
+		return "IO_TYPE_ZONE_APPEND";
+	case SPDK_BDEV_IO_TYPE_COMPARE:
+		return "IO_TYPE_COMPARE";
+	case SPDK_BDEV_IO_TYPE_COMPARE_AND_WRITE:
+		return "IO_TYPE_COMPARE_AND_WRITE";
+	case SPDK_BDEV_IO_TYPE_ABORT:
+		return "IO_TYPE_ABORT";
+	default:
+		assert(false);
+	}
+}
+
 #define RAID1_BYTESZ (8)
 static inline void raid1_bm_set(char *bm, int idx)
 {
@@ -200,10 +243,12 @@ raid1_per_io_complete(struct spdk_bdev_io *bdev_io, bool success, void *cb_arg)
 
 	spdk_bdev_free_io(bdev_io);
 	if (success) {
+		SPDK_DEBUGLOG(bdev_raid1, "per_io_complete success %s %p\n",
+			per_io->per_thread->per_bdev->bdev->name, per_io);
 		rc = 0;
 	} else {
-		SPDK_ERRLOG("io error on %s\n",
-			per_io->per_thread->per_bdev->bdev->name);
+		SPDK_ERRLOG("per_io_complete error %s %p\n",
+			per_io->per_thread->per_bdev->bdev->name, per_io);
 		rc = -EIO;
 	}
 	per_io->cb_fn(per_io->cb_arg, rc);
@@ -219,7 +264,10 @@ raid1_per_io_submit(void *arg)
 	struct spdk_bdev_io_wait_entry *bdev_io_wait = &per_io->bdev_io_wait;
 	int rc;
 
-	switch (per_io->io_info.io_type) {
+	SPDK_DEBUGLOG(bdev_raid1, "per_io_submit %s %p %p %d %" PRIu64 " %" PRIu64 "\n",
+		per_bdev->bdev->name, per_io, per_io->cb_arg,
+		io_info->io_type, io_info->offset, io_info->nbytes);
+	switch (io_info->io_type) {
 	case RAID1_IO_READ:
 		rc = spdk_bdev_read(per_bdev->desc, per_thread->io_channel, 
 			io_info->buf, io_info->offset, io_info->nbytes,
@@ -236,7 +284,8 @@ raid1_per_io_submit(void *arg)
 	}
 
 	if (rc == -ENOMEM) {
-		SPDK_NOTICELOG("Queueing io %s\n", per_bdev->bdev->name);
+		SPDK_NOTICELOG("per_io_submit queueing %s %p\n",
+			per_bdev->bdev->name, per_io);
 		bdev_io_wait->bdev = per_bdev->bdev;
 		bdev_io_wait->cb_fn = raid1_per_io_submit;
 		bdev_io_wait->cb_arg = per_io;
@@ -244,7 +293,8 @@ raid1_per_io_submit(void *arg)
 			per_thread->io_channel, bdev_io_wait);
 	}
 	if (rc) {
-		SPDK_ERRLOG("Could not perform io operate: %s\n", per_bdev->bdev->name);
+		SPDK_ERRLOG("per_io_submit io err: %s %p %d\n",
+			per_bdev->bdev->name, per_io, rc);
 		per_io->cb_fn(per_io->cb_arg, rc);
 	}
 }
@@ -272,10 +322,12 @@ raid1_per_iov_complete(struct spdk_bdev_io *bdev_io, bool success, void *cb_arg)
 
 	spdk_bdev_free_io(bdev_io);
 	if (success) {
+		SPDK_DEBUGLOG(bdev_raid1, "per_iov_complete success %s %p\n",
+			per_iov->per_thread->per_bdev->bdev->name, per_iov);
 		rc = 0;
 	} else {
-		SPDK_ERRLOG("iov error on %s\n",
-			per_iov->per_thread->per_bdev->bdev->name);
+		SPDK_ERRLOG("per_iov_complete error %s %p\n",
+			per_iov->per_thread->per_bdev->bdev->name, per_iov);
 		rc = -EIO;
 	}
 	per_iov->cb_fn(per_iov->cb_arg, rc);
@@ -291,7 +343,11 @@ raid1_per_iov_submit(void *arg)
 	struct spdk_bdev_io_wait_entry *bdev_io_wait = &per_iov->bdev_io_wait;
 	int rc;
 
-	switch (per_iov->iov_info.io_type) {
+	SPDK_DEBUGLOG(bdev_raid1, "per_iov_submit %s %p %p %d %" PRIu64 " %" PRIu64 " \n",
+		per_bdev->bdev->name, per_iov, per_iov->cb_arg,
+		iov_info->io_type, iov_info->offset_blocks, iov_info->num_blocks);
+
+	switch (iov_info->io_type) {
 	case RAID1_IO_READ:
 		rc = spdk_bdev_readv_blocks(per_bdev->desc, per_thread->io_channel,
 			iov_info->iovs, iov_info->iovcnt,
@@ -310,7 +366,8 @@ raid1_per_iov_submit(void *arg)
 	}
 
 	if (rc == -ENOMEM) {
-		SPDK_NOTICELOG("Queueing iov %s\n", per_bdev->bdev->name);
+		SPDK_NOTICELOG("per_iov_submit queueing %s %p\n",
+			per_bdev->bdev->name, per_iov);
 		bdev_io_wait->bdev = per_bdev->bdev;
 		bdev_io_wait->cb_fn = raid1_per_iov_submit;
 		bdev_io_wait->cb_arg = per_iov;
@@ -318,7 +375,8 @@ raid1_per_iov_submit(void *arg)
 			per_thread->io_channel, bdev_io_wait);
 	}
 	if (rc) {
-		SPDK_ERRLOG("Could not perform iov operate: %s\n", per_bdev->bdev->name);
+		SPDK_ERRLOG("per_iov_submit io err: %s %p %d\n",
+			per_bdev->bdev->name, per_iov, rc);
 		per_iov->cb_fn(per_iov->cb_arg, rc);
 	}
 }
@@ -427,8 +485,9 @@ raid1_multi_iov_complete(void *arg, int rc)
 {
     struct raid1_iov_leg *iov_leg = arg;
     struct raid1_multi_iov *multi_iov = iov_leg->multi_iov;
-    if (rc)
+    if (rc) {
         multi_iov->err_mask |= (0x1 << iov_leg->idx);
+    }
     assert(multi_iov->complete_cnt < 2);
     multi_iov->complete_cnt++;
     if (multi_iov->complete_cnt == 2)
@@ -753,6 +812,7 @@ struct raid1_bdev {
 	bool degraded;
 	size_t buf_align;
 	char *sb_buf;
+	uint64_t start_blocks;
 	struct raid1_sb *sb;
 	struct raid1_multi_io sb_io;
 	uint64_t strip_size;
@@ -1040,6 +1100,9 @@ raid1_init_pos(struct raid1_bdev *r1_bdev, struct spdk_bdev_io *bdev_io,
 	raid1_io->strip_idx = offset / r1_bdev->strip_size;
 	raid1_io->region_idx = offset / r1_bdev->region_size;
 	raid1_io->strip_in_region = raid1_io->strip_idx % r1_bdev->region_size;
+	SPDK_DEBUGLOG(bdev_raid1, "raid1_init_pos %s %p %" PRIu64 " %" PRIu64 " %" PRIu64 "\n",
+		r1_bdev->raid1_name, raid1_io,
+		raid1_io->strip_idx, raid1_io->region_idx, raid1_io->strip_in_region);
 }
 
 static void
@@ -1048,6 +1111,8 @@ raid1_bdev_io_complete(void *ctx)
 	struct raid1_bdev_io *raid1_io = ctx;
 	struct spdk_bdev_io *bdev_io = SPDK_CONTAINEROF(raid1_io,
 		struct spdk_bdev_io, driver_ctx);
+	SPDK_DEBUGLOG(bdev_raid1, "io_complete: %p %p %d\n",
+		bdev_io, raid1_io, raid1_io->status);
 	spdk_bdev_io_complete(bdev_io, raid1_io->status);
 }
 
@@ -1095,7 +1160,7 @@ raid1_read_deliver(struct raid1_bdev *r1_bdev, struct raid1_bdev_io *raid1_io)
 	r1_bdev->data_io_cnt++;
 	raid1_per_iov_init(per_iov, per_thread,
 		bdev_io->u.bdev.iovs, bdev_io->u.bdev.iovcnt,
-		bdev_io->u.bdev.offset_blocks, bdev_io->u.bdev.num_blocks,
+		bdev_io->u.bdev.offset_blocks+r1_bdev->start_blocks, bdev_io->u.bdev.num_blocks,
 		RAID1_IO_READ, raid1_read_complete, raid1_io);
 	raid1_per_iov_submit(per_iov);
 }
@@ -1317,7 +1382,7 @@ raid1_deliver_region_degraded(struct raid1_bdev *r1_bdev, struct raid1_region *r
 		struct raid1_per_iov *per_iov = &raid1_io->u.write_ctx.multi_iov.iov_leg[r1_bdev->health_idx].per_iov;
 		raid1_per_iov_init(per_iov, per_thread,
 			bdev_io->u.bdev.iovs, bdev_io->u.bdev.iovcnt,
-			bdev_io->u.bdev.offset_blocks, bdev_io->u.bdev.num_blocks,
+			bdev_io->u.bdev.offset_blocks+r1_bdev->start_blocks, bdev_io->u.bdev.num_blocks,
 			RAID1_IO_WRITE, raid1_deliver_region_degraded_complete, raid1_io);
 		raid1_per_iov_submit(per_iov);
 	}
@@ -1374,7 +1439,7 @@ raid1_deliver_region_multi(struct raid1_bdev *r1_bdev, struct raid1_region *regi
 		struct raid1_multi_iov *multi_iov = &raid1_io->u.write_ctx.multi_iov;
 		raid1_multi_iov_write(multi_iov, r1_bdev->per_thread_ptr,
 			bdev_io->u.bdev.iovs, bdev_io->u.bdev.iovcnt,
-			bdev_io->u.bdev.offset_blocks, bdev_io->u.bdev.num_blocks,
+			bdev_io->u.bdev.offset_blocks+r1_bdev->start_blocks, bdev_io->u.bdev.num_blocks,
 			raid1_deliver_region_multi_complete, raid1_io);
 	}
 }
@@ -1554,6 +1619,8 @@ raid1_bdev_get_buf_cb(struct spdk_io_channel *ch,
 	struct raid1_bdev *r1_bdev = SPDK_CONTAINEROF(bdev_io->bdev,
 		struct raid1_bdev, bdev);
 	if (!success) {
+		SPDK_ERRLOG("get_buf_cb failed: %s %p\n",
+			r1_bdev->raid1_name, bdev_io);
 		spdk_bdev_io_complete(bdev_io, SPDK_BDEV_IO_STATUS_FAILED);
 	} else {
 		spdk_thread_send_msg(r1_bdev->r1_thread, raid1_bdev_read, bdev_io);
@@ -1568,6 +1635,10 @@ raid1_bdev_submit_request(struct spdk_io_channel *ch, struct spdk_bdev_io *bdev_
 		struct raid1_bdev, bdev);
 	struct raid1_bdev_io *raid1_io = (struct raid1_bdev_io *)bdev_io->driver_ctx;
 	raid1_io->orig_thread = spdk_get_thread();
+	SPDK_DEBUGLOG(bdev_raid1, "submit_request %s %p %p %" PRIu64 " %d %s\n",
+		r1_bdev->raid1_name, bdev_io, raid1_io,
+		bdev_io->u.bdev.num_blocks, bdev_io->bdev->blocklen,
+		raid1_bdev_io_type_to_string(bdev_io->type));
 	switch (bdev_io->type) {
 	case SPDK_BDEV_IO_TYPE_READ:
 		if (bdev_io->u.bdev.iovs == NULL ||
@@ -1582,7 +1653,8 @@ raid1_bdev_submit_request(struct spdk_io_channel *ch, struct spdk_bdev_io *bdev_
 		spdk_thread_send_msg(r1_bdev->r1_thread, raid1_bdev_write, raid1_io);
 		break;
 	default:
-		SPDK_ERRLOG("Unsupported I/O type %d\n", bdev_io->type);
+		SPDK_ERRLOG("submit_request unspport io type: %s %p %d\n",
+			r1_bdev->raid1_name, bdev_io, bdev_io->type);
 		spdk_bdev_io_complete(bdev_io, SPDK_BDEV_IO_STATUS_FAILED);
 		break;
 	}
@@ -1873,6 +1945,7 @@ raid1_bdev_init(struct raid1_bdev **_r1_bdev, struct raid1_init_params *params)
 	struct raid1_bdev *r1_bdev;
 	struct raid1_region *region;
 	struct raid1_io_head *io_head;
+	uint64_t meta_size;
 	uint32_t i;
 	int rc;
 
@@ -1902,6 +1975,9 @@ raid1_bdev_init(struct raid1_bdev **_r1_bdev, struct raid1_init_params *params)
 	r1_bdev->sb = (struct raid1_sb *)(r1_bdev->sb_buf);
 	raid1_calc_strip_and_region(from_le64(&r1_bdev->sb->data_size), from_le64(&r1_bdev->sb->strip_size),
 		&r1_bdev->strip_cnt, &r1_bdev->region_cnt);
+	meta_size = from_le64(&r1_bdev->sb->meta_size);
+	assert((meta_size % r1_bdev->per_bdev[0].block_size) == 0);
+	r1_bdev->start_blocks = meta_size / r1_bdev->per_bdev[0].block_size;
 	r1_bdev->strip_size = from_le64(&r1_bdev->sb->strip_size);
 	r1_bdev->region_size = RAID1_BYTESZ * PAGE_SIZE * r1_bdev->strip_size;
 	r1_bdev->bm_size = r1_bdev->region_cnt * PAGE_SIZE;
