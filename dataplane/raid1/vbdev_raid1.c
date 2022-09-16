@@ -809,7 +809,6 @@ struct raid1_bdev {
 	struct raid1_per_bdev per_bdev[2];
 	struct raid1_per_thread per_thread[2];
 	struct raid1_per_thread *per_thread_ptr[2];
-	bool degraded;
 	size_t buf_align;
 	char *sb_buf;
 	uint64_t start_blocks;
@@ -1690,8 +1689,10 @@ raid1_bdev_dump_info_json(void *ctx, struct spdk_json_write_ctx *w)
 
 	spdk_json_write_name(w, "raid1");
 	spdk_json_write_object_begin(w);
-	spdk_json_write_named_string(w, "bdev0", r1_bdev->bdev0_name);
-	spdk_json_write_named_string(w, "bdev1", r1_bdev->bdev1_name);
+	spdk_json_write_named_string(w, "bdev0_name", r1_bdev->bdev0_name);
+	spdk_json_write_named_string(w, "bdev1_name", r1_bdev->bdev1_name);
+	spdk_json_write_named_bool(w, "bdev0_online", r1_bdev->online[0]);
+	spdk_json_write_named_bool(w, "bdev1_online", r1_bdev->online[1]);
 	spdk_json_write_named_uint64(w, "meta_szie", from_le64(&r1_bdev->sb->meta_size));
 	spdk_json_write_named_uint64(w, "data_szie", from_le64(&r1_bdev->sb->data_size));
 	spdk_json_write_named_uint64(w, "counter", from_le64(&r1_bdev->sb->counter));
@@ -1961,7 +1962,6 @@ raid1_bdev_init(struct raid1_bdev **_r1_bdev, struct raid1_init_params *params)
 	strncpy(r1_bdev->bdev1_name, params->bdev1_name, RAID1_MAX_NAME_LEN);
 	memcpy(&r1_bdev->per_bdev[0], params->per_bdev0, sizeof(struct raid1_per_bdev));
 	memcpy(&r1_bdev->per_bdev[1], params->per_bdev1, sizeof(struct raid1_per_bdev));
-	r1_bdev->degraded = false;
 	r1_bdev->buf_align = spdk_max(r1_bdev->per_bdev[0].buf_align,
 		r1_bdev->per_bdev[1].buf_align);
 	r1_bdev->sb_buf = spdk_dma_zmalloc(RAID1_SB_SIZE, r1_bdev->buf_align, NULL);
