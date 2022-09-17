@@ -2032,7 +2032,7 @@ raid1_bdev_init(struct raid1_bdev **_r1_bdev, struct raid1_init_params *params)
 	assert(r1_bdev->r1_thread);
 	r1_bdev->status = RAID1_BDEV_NORMAL;
 	r1_bdev->online[0] = true;
-	r1_bdev->online[0] = true;
+	r1_bdev->online[1] = true;
 
 	r1_bdev->read_idx = 0;
 
