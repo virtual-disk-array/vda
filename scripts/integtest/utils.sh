@@ -1,6 +1,7 @@
 #!/bin/bash
 
 function cleanup() {
+    set +e
     echo "nvme disconnect-all"
     sudo nvme disconnect-all
     echo "stop minikube"
@@ -19,6 +20,13 @@ function cleanup() {
     ps -f -C etcd > /dev/null && killall etcd
     echo "stop spdk"
     ps -f -C reactor_0 > /dev/null && sudo killall reactor_0
+    echo "stop delay devices"
+    sudo dmsetup status delay0 > /dev/null 2>&1 && sudo dmsetup remove delay0
+    sudo dmsetup status delay1 > /dev/null 2>&1 && sudo dmsetup remove delay1
+    echo "stop loop devices"
+    losetup /dev/loop240 > /dev/null 2>&1 && sudo losetup --detach /dev/loop240
+    losetup /dev/loop241 > /dev/null 2>&1 && sudo losetup --detach /dev/loop241
+    set -e
 }
 
 function force_cleanup() {
@@ -29,6 +37,10 @@ function force_cleanup() {
     ps -f -C vda_cn_agent > /dev/null && killall -9 vda_cn_agent
     ps -f -C etcd > /dev/null && killall -9 etcd
     ps -f -C reactor_0 > /dev/null && sudo killall -9 reactor_0
+    sudo dmsetup status delay0 > /dev/null 2>&1 && sudo dmsetup remove delay0
+    sudo dmsetup status delay1 > /dev/null 2>&1 && sudo dmsetup remove delay1
+    losetup /dev/loop240 > /dev/null 2>&1 && sudo losetup --detach /dev/loop240
+    losetup /dev/loop241 > /dev/null 2>&1 && sudo losetup --detach /dev/loop241
 }
 
 function cleanup_check() {
@@ -39,6 +51,10 @@ function cleanup_check() {
     ps -f -C vda_cn_agent > /dev/null && echo "vda_cn_agent is still running"
     ps -f -C etcd > /dev/null && echo "etcd is still running"
     ps -f -C reactor_0 > /dev/null && echo "reactor_0 is still running"
+    sudo dmsetup status delay0 > /dev/null 2>&1 && echo "delay0 still exists"
+    sudo dmsetup status delay1 > /dev/null 2>&1 && echo "delay1 still exists"
+    losetup /dev/loop240 > /dev/null 2>&1 && echo "loop240 still exist"
+    losetup /dev/loop241 > /dev/null 2>&1 && echo "loop241 still exist"
 }
 
 function umount_dir() {
