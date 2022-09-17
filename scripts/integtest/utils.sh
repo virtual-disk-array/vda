@@ -24,12 +24,13 @@ function cleanup() {
     sudo dmsetup status delay0 > /dev/null 2>&1 && sudo dmsetup remove delay0
     sudo dmsetup status delay1 > /dev/null 2>&1 && sudo dmsetup remove delay1
     echo "stop loop devices"
-    losetup /dev/loop240 > /dev/null 2>&1 && sudo losetup --detach /dev/loop240
-    losetup /dev/loop241 > /dev/null 2>&1 && sudo losetup --detach /dev/loop241
+    losetup $LOOP_NAME0 > /dev/null 2>&1 && sudo losetup --detach $LOOP_NAME0
+    losetup $LOOP_NAME1 > /dev/null 2>&1 && sudo losetup --detach $LOOP_NAME1
     set -e
 }
 
 function force_cleanup() {
+    set +e
     sudo nvme disconnect-all
     ps -f -C vda_portal > /dev/null && killall -9 vda_portal
     ps -f -C vda_monitor > /dev/null && killall -9 vda_monitor
@@ -39,8 +40,9 @@ function force_cleanup() {
     ps -f -C reactor_0 > /dev/null && sudo killall -9 reactor_0
     sudo dmsetup status delay0 > /dev/null 2>&1 && sudo dmsetup remove delay0
     sudo dmsetup status delay1 > /dev/null 2>&1 && sudo dmsetup remove delay1
-    losetup /dev/loop240 > /dev/null 2>&1 && sudo losetup --detach /dev/loop240
-    losetup /dev/loop241 > /dev/null 2>&1 && sudo losetup --detach /dev/loop241
+    losetup $LOOP_NAME0 > /dev/null 2>&1 && sudo losetup --detach $LOOP_NAME0
+    losetup $LOOP_NAME1 > /dev/null 2>&1 && sudo losetup --detach $LOOP_NAME1
+    set -e
 }
 
 function cleanup_check() {
