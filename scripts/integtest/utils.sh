@@ -21,8 +21,8 @@ function cleanup() {
     echo "stop spdk"
     ps -f -C reactor_0 > /dev/null && sudo killall reactor_0
     echo "stop delay devices"
-    sudo dmsetup status delay0 > /dev/null 2>&1 && sudo dmsetup remove delay0
-    sudo dmsetup status delay1 > /dev/null 2>&1 && sudo dmsetup remove delay1
+    sudo dmsetup status $DELAY_NAME0 > /dev/null 2>&1 && sudo dmsetup remove $DELAY_NAME0
+    sudo dmsetup status $DELAY_NAME1 > /dev/null 2>&1 && sudo dmsetup remove $DELAY_NAME1
     echo "stop loop devices"
     losetup $LOOP_NAME0 > /dev/null 2>&1 && sudo losetup --detach $LOOP_NAME0
     losetup $LOOP_NAME1 > /dev/null 2>&1 && sudo losetup --detach $LOOP_NAME1
@@ -38,8 +38,8 @@ function force_cleanup() {
     ps -f -C vda_cn_agent > /dev/null && killall -9 vda_cn_agent
     ps -f -C etcd > /dev/null && killall -9 etcd
     ps -f -C reactor_0 > /dev/null && sudo killall -9 reactor_0
-    sudo dmsetup status delay0 > /dev/null 2>&1 && sudo dmsetup remove delay0
-    sudo dmsetup status delay1 > /dev/null 2>&1 && sudo dmsetup remove delay1
+    sudo dmsetup status $DELAY_NAME0 > /dev/null 2>&1 && sudo dmsetup remove $DELAY_NAME0
+    sudo dmsetup status $DELAY_NAME1 > /dev/null 2>&1 && sudo dmsetup remove $DELAY_NAME1
     losetup $LOOP_NAME0 > /dev/null 2>&1 && sudo losetup --detach $LOOP_NAME0
     losetup $LOOP_NAME1 > /dev/null 2>&1 && sudo losetup --detach $LOOP_NAME1
     set -e
