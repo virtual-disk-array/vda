@@ -65,25 +65,19 @@ function verify_disk_file() {
     fi
 }
 
-function create_loop_with_retry() {
-    set +e
-    loopdev=$1
-    file=$2
-    max_retry=10
+function retry() {
+    cmd=$@
+    max_retry=600
     retry_cnt=0
-    while true; do
-        sudo losetup $loopdev $file --sector-size 4096
-        if [ $? -eq 0 ]; then
-            break
-        fi
+    while ! ${cmd}
+    do
         if [ $retry_cnt -ge $max_retry ]; then
-            echo "create loop dev timeout: "
+            echo "failed"
             exit 1
         fi
         sleep 1
         ((retry_cnt=retry_cnt+1))
     done
-    set -e
 }
 
 sudo rm -rf $WORK_DIR
@@ -105,10 +99,8 @@ dd if=/dev/zero of=$WORK_DIR/disk1.img bs=1M count=1024
 
 sleep 1
 
-create_loop_with_retry "$LOOP_NAME0" "$WORK_DIR/disk0.img"
-create_loop_with_retry "$LOOP_NAME1" "$WORK_DIR/disk1.img"
-# sudo losetup $LOOP_NAME0 $WORK_DIR/disk0.img --sector-size 4096
-# sudo losetup $LOOP_NAME1 $WORK_DIR/disk1.img --sector-size 4096
+retry sudo losetup $LOOP_NAME0 $WORK_DIR/disk0.img --sector-size 4096
+retry sudo losetup $LOOP_NAME1 $WORK_DIR/disk1.img --sector-size 4096
 
 $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_aio_create $LOOP_NAME0 aio0 4096
 $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_aio_create $LOOP_NAME1 aio1 4096
@@ -137,10 +129,8 @@ sleep 1
 
 sudo dmesg -c > /dev/null
 
-create_loop_with_retry "$LOOP_NAME0" "$WORK_DIR/disk0.img"
-create_loop_with_retry "$LOOP_NAME1" "$WORK_DIR/disk1.img"
-# sudo losetup $LOOP_NAME0 $WORK_DIR/disk0.img --sector-size 4096
-# sudo losetup $LOOP_NAME1 $WORK_DIR/disk1.img --sector-size 4096
+retry sudo losetup $LOOP_NAME0 $WORK_DIR/disk0.img --sector-size 4096
+retry sudo losetup $LOOP_NAME1 $WORK_DIR/disk1.img --sector-size 4096
 
 $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_aio_create $LOOP_NAME0 aio0 4096
 $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_aio_create $LOOP_NAME1 aio1 4096
@@ -176,18 +166,17 @@ sudo losetup --detach $LOOP_NAME1
 
 verify_disk_file
 
-echo "done"
-exit 0
-
 echo "test rw during sync"
 
-cp $WORK_DIR/random.img $WORK_DIR/disk0.img
-dd if=/dev/zero of=$WORK_DIR/disk1.img bs=1M count=1024
+# cp $WORK_DIR/random.img $WORK_DIR/disk0.img
+rm -f $WORK_DIR/disk0.img
+for i in $(seq 4); do cat $WORK_DIR/random.img >> $WORK_DIR/disk0.img; done
+dd if=/dev/zero of=$WORK_DIR/disk1.img bs=1M count=4096
 
-sleep 10
+sleep 1
 
-sudo losetup $LOOP_NAME0 $WORK_DIR/disk0.img --sector-size 4096
-sudo losetup $LOOP_NAME1 $WORK_DIR/disk1.img --sector-size 4096
+retry sudo losetup $LOOP_NAME0 $WORK_DIR/disk0.img --sector-size 4096
+retry sudo losetup $LOOP_NAME1 $WORK_DIR/disk1.img --sector-size 4096
 
 sudo dmsetup create ${DELAY_NAME0} --table "0 $(sudo blockdev --getsz ${LOOP_NAME0}) delay ${LOOP_NAME0} 0 200"
 sudo dmsetup create ${DELAY_NAME1} --table "0 $(sudo blockdev --getsz ${LOOP_NAME1}) delay ${LOOP_NAME1} 0 200"
@@ -205,8 +194,6 @@ sudo nvme connect -t tcp -n $NVMF_NQN -a 127.0.0.1 -s $NVMF_PORT --hostnqn $HOST
 
 wait_for_nvme 100
 
-wait_for_raid1 10
-
 total_strip=$($BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_get_bdevs --name $RAID1_NAME | jq '.[0].driver_specific.raid1.total_strip')
 synced_strip=$($BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_get_bdevs --name $RAID1_NAME | jq '.[0].driver_specific.raid1.synced_strip')
 echo "raid1 sync ${synced_strip}/${total_strip}"
@@ -217,6 +204,8 @@ cd $WORK_DIR
 sudo fio --filename=$NVMF_DEV_PATH --runtime=60 $FIO_JOBFILE
 cd $CURR_DIR
 
+wait_for_raid1 600
+
 sudo nvme disconnect -n $NVMF_NQN
 
 $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock nvmf_delete_subsystem $NVMF_NQN
@@ -225,10 +214,10 @@ $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock --plugin vda_rpc_plugin bd
 $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_aio_delete aio0
 $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_aio_delete aio1
 
-sleep 5
+sleep 1
 
-sudo dmsetup remove $DELAY_NAME0
-sudo dmsetup remove $DELAY_NAME1
+retry sudo dmsetup remove $DELAY_NAME0
+retry sudo dmsetup remove $DELAY_NAME1
 
 sudo losetup --detach $LOOP_NAME0
 sudo losetup --detach $LOOP_NAME1
