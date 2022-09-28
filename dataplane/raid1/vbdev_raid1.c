@@ -915,14 +915,17 @@ raid1_resync_bm_writing_hook(struct raid1_bdev *r1_bdev, struct raid1_region *re
 			uint64_t region_idx = resync_ctx->bit_idx / (PAGE_SIZE * RAID1_BYTESZ);
 			if (region_idx == region->idx) {
 				uint64_t idx_in_region = resync_ctx->bit_idx % (PAGE_SIZE * RAID1_BYTESZ);
+				uint8_t inflight_cnt = r1_bdev->inflight_cnt[resync_ctx->bit_idx];
 				TAILQ_REMOVE(&resync->bm_writing_queue, resync_ctx, link);
 				assert(raid1_bm_test(resync->needed_bm, resync_ctx->bit_idx));
 				assert(raid1_bm_test(region->bm_buf, idx_in_region));
 				raid1_bm_clear(resync->needed_bm, resync_ctx->bit_idx);
-				raid1_bm_clear(region->bm_buf, idx_in_region);
-				if (region->queue_type == RAID1_QUEUE_NONE) {
-					region->queue_type = RAID1_QUEUE_CLEAR;
-					TAILQ_INSERT_TAIL(&r1_bdev->clear_queue, region, link);
+				if (inflight_cnt == 0) {
+					raid1_bm_clear(region->bm_buf, idx_in_region);
+					if (region->queue_type == RAID1_QUEUE_NONE) {
+						region->queue_type = RAID1_QUEUE_CLEAR;
+						TAILQ_INSERT_TAIL(&r1_bdev->clear_queue, region, link);
+					}
 				}
 				TAILQ_INSERT_TAIL(&resync->available_queue, resync_ctx, link);
 				break;
@@ -956,6 +959,7 @@ raid1_resync_write_complete(void *arg, int rc)
 	} else {
 		uint64_t region_idx = resync_ctx->bit_idx / (PAGE_SIZE * RAID1_BYTESZ);
 		uint64_t idx_in_region = resync_ctx->bit_idx % (PAGE_SIZE * RAID1_BYTESZ);
+		uint8_t inflight_cnt = r1_bdev->inflight_cnt[resync_ctx->bit_idx];
 		struct raid1_region *region = &r1_bdev->regions[region_idx];
 		if (region->bm_writing) {
 			TAILQ_INSERT_TAIL(&resync->bm_writing_queue, resync_ctx, link);
@@ -963,10 +967,12 @@ raid1_resync_write_complete(void *arg, int rc)
 			assert(raid1_bm_test(resync->needed_bm, resync_ctx->bit_idx));
 			assert(raid1_bm_test(region->bm_buf, idx_in_region));
 			raid1_bm_clear(resync->needed_bm, resync_ctx->bit_idx);
-			raid1_bm_clear(region->bm_buf, idx_in_region);
-			if (region->queue_type == RAID1_QUEUE_NONE) {
-				region->queue_type = RAID1_QUEUE_CLEAR;
-				TAILQ_INSERT_TAIL(&r1_bdev->clear_queue, region, link);
+			if (inflight_cnt == 0) {
+				raid1_bm_clear(region->bm_buf, idx_in_region);
+				if (region->queue_type == RAID1_QUEUE_NONE) {
+					region->queue_type = RAID1_QUEUE_CLEAR;
+					TAILQ_INSERT_TAIL(&r1_bdev->clear_queue, region, link);
+				}
 			}
 			TAILQ_INSERT_TAIL(&resync->available_queue, resync_ctx, link);
 		}
@@ -1307,13 +1313,11 @@ raid1_write_delay(struct raid1_bdev *r1_bdev,
 	switch (region->queue_type) {
 	case RAID1_QUEUE_NONE:
 		TAILQ_INSERT_TAIL(&r1_bdev->set_queue, region, link);
-		SPDK_ERRLOG("mytest_region: %s %d %p\n", __FILE__, __LINE__, region);
 		region->queue_type = RAID1_QUEUE_SET;
 		break;
 	case RAID1_QUEUE_CLEAR:
 		TAILQ_REMOVE(&r1_bdev->clear_queue, region, link);
 		TAILQ_INSERT_TAIL(&r1_bdev->set_queue, region, link);
-		SPDK_ERRLOG("mytest_region: %s %d %p\n", __FILE__, __LINE__, region);
 		region->queue_type = RAID1_QUEUE_SET;
 		break;
 	case RAID1_QUEUE_SET:
@@ -1397,7 +1401,6 @@ raid1_write_complete_hook(struct raid1_bdev *r1_bdev, struct raid1_bdev_io *raid
 		}
 		if (region->queue_type == RAID1_QUEUE_NONE) {
 			TAILQ_INSERT_TAIL(&r1_bdev->clear_queue, region, link);
-			SPDK_ERRLOG("mytest_region: %s %d %p\n", __FILE__, __LINE__, region);
 			region->queue_type = RAID1_QUEUE_CLEAR;
 		}
 	}
@@ -1513,7 +1516,6 @@ raid1_write_bm_degraded_complete(void *ctx, int rc)
 		if (r1_bdev->online[r1_bdev->health_idx] == true) {
 			r1_bdev->online[r1_bdev->health_idx] = false;
 			TAILQ_INSERT_TAIL(&r1_bdev->sb_region_queue, region, link);
-			SPDK_ERRLOG("mytest_region: %s %d %p\n", __FILE__, __LINE__, region);
 			region->queue_type = RAID1_QUEUE_SB_WRITING;
 			raid1_update_status(r1_bdev);
 			return;
@@ -1521,7 +1523,6 @@ raid1_write_bm_degraded_complete(void *ctx, int rc)
 			assert(r1_bdev->status == RAID1_BDEV_FAILED);
 			if (r1_bdev->sb_writing) {
 				TAILQ_INSERT_TAIL(&r1_bdev->sb_region_queue, region, link);
-				SPDK_ERRLOG("mytest_region: %s %d %p\n", __FILE__, __LINE__, region);
 				region->queue_type = RAID1_QUEUE_SB_WRITING;
 				return;
 			} else {
@@ -1558,7 +1559,6 @@ raid1_write_bm_multi_complete(void *ctx, uint8_t err_mask)
 		}
 		if (status_changed) {
 			TAILQ_INSERT_TAIL(&r1_bdev->sb_region_queue, region, link);
-			SPDK_ERRLOG("mytest_region: %s %d %p\n", __FILE__, __LINE__, region);
 			region->queue_type = RAID1_QUEUE_SB_WRITING;
 			raid1_update_status(r1_bdev);
 			return;
@@ -1570,7 +1570,6 @@ raid1_write_bm_multi_complete(void *ctx, uint8_t err_mask)
 				assert(r1_bdev->status == RAID1_BDEV_DEGRADED);
 				if (r1_bdev->sb_writing) {
 					TAILQ_INSERT_TAIL(&r1_bdev->sb_region_queue, region, link);
-					SPDK_ERRLOG("mytest_region: %s %d %p\n", __FILE__, __LINE__, region);
 					region->queue_type = RAID1_QUEUE_SB_WRITING;
 					return;
 				} else {
@@ -1620,7 +1619,6 @@ raid1_write_trigger(struct raid1_bdev *r1_bdev, struct raid1_region *region)
 {
 	assert(region->queue_type == RAID1_QUEUE_SET);
 	TAILQ_REMOVE(&r1_bdev->set_queue, region, link);
-	SPDK_ERRLOG("mytest_region: %s %d %p\n", __FILE__, __LINE__, region);
 	region->queue_type = RAID1_QUEUE_NONE;
 	raid1_write_bm(r1_bdev, region);
 }
