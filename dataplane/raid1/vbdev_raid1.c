@@ -1007,6 +1007,9 @@ raid1_resync_read_complete(void *arg, int rc)
 	} else {
 		struct raid1_per_io *per_io = &resync_ctx->per_io;
 		struct raid1_per_thread *per_thread = r1_bdev->per_thread_ptr[1];
+		assert(raid1_bm_test(resync->needed_bm, resync_ctx->bit_idx));
+		assert(raid1_bm_test(resync->active_bm, resync_ctx->bit_idx));
+		assert(r1_bdev->inflight_cnt[resync_ctx->bit_idx] == 0);
 		raid1_per_io_init(per_io, per_thread, resync_ctx->buf, resync_ctx->offset,
 			r1_bdev->strip_size, RAID1_IO_WRITE,
 			raid1_resync_write_complete, resync_ctx);
@@ -1394,8 +1397,7 @@ raid1_write_complete_hook(struct raid1_bdev *r1_bdev, struct raid1_bdev_io *raid
 
 		}
 	} else if (inflight_cnt == 0) {
-		if (!r1_bdev->resync_release) {
-			assert(resync);
+		if (resync) {
 			struct raid1_resync_ctx *resync_ctx;
 			resync_ctx = raid1_resync_hash_get(resync->pending_hash, resync->hash_size, raid1_io->strip_idx);
 			if (resync_ctx) {
@@ -1408,8 +1410,7 @@ raid1_write_complete_hook(struct raid1_bdev *r1_bdev, struct raid1_bdev_io *raid
 		}
 		bool need_clear = false;
 		struct raid1_region *region = &r1_bdev->regions[raid1_io->region_idx];
-		if (!r1_bdev->resync_release) {
-			assert(resync);
+		if (resync) {
 			if (!raid1_bm_test(resync->needed_bm, raid1_io->strip_idx)) {
 				assert(!raid1_bm_test(resync->active_bm, raid1_io->strip_idx));
 				need_clear = true;
@@ -1520,6 +1521,9 @@ raid1_deliver_region_multi(struct raid1_bdev *r1_bdev, struct raid1_region *regi
 		struct spdk_bdev_io *bdev_io = SPDK_CONTAINEROF(raid1_io,
 			struct spdk_bdev_io, driver_ctx);
 		struct raid1_multi_iov *multi_iov = &raid1_io->u.write_ctx.multi_iov;
+		if (r1_bdev->resync) {
+			assert(!raid1_bm_test(r1_bdev->resync->active_bm, raid1_io->strip_idx));
+		}
 		raid1_multi_iov_write(multi_iov, r1_bdev->per_thread_ptr,
 			bdev_io->u.bdev.iovs, bdev_io->u.bdev.iovcnt,
 			bdev_io->u.bdev.offset_blocks+r1_bdev->start_blocks, bdev_io->u.bdev.num_blocks,
