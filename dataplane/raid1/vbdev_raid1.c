@@ -2444,7 +2444,8 @@ raid1_meta_multi_write_complete(void *arg, uint8_t err_mask)
 }
 
 void
-raid1_bdev_create(const char *raid1_name, struct raid1_create_param *param, raid1_create_cb cb_fn, void *cb_arg)
+raid1_bdev_create(const char *raid1_name, struct raid1_create_param *param,
+	raid1_create_cb cb_fn, void *cb_arg)
 {
 	struct raid1_create_ctx *create_ctx;
 	struct raid1_sb *sb;
@@ -2592,6 +2593,138 @@ raid1_bdev_delete(const char *raid1_name, raid1_delete_cb cb_fn, void *cb_arg)
 
 err_out:
 	cb_fn(cb_arg, rc);
+}
+
+struct raid1_rebuild_ctx {
+	char raid1_name[RAID1_MAX_NAME_LEN+1];
+	char bdev0_name[RAID1_MAX_NAME_LEN+1];
+	char bdev1_name[RAID1_MAX_NAME_LEN+1];
+	struct raid1_per_bdev per_bdev[2];
+	struct raid1_per_thread per_thread[2];
+	struct raid1_per_thread *per_thread_ptr[2];
+	struct raid1_multi_io multi_io;
+	struct raid1_io_leg io_leg[2];
+	uint8_t *sb_buf[2];
+	uint8_t *bm_buf;
+	raid1_rebuild_cb cb_fn;
+	void *cb_arg;
+	struct raid1_bdev *r1_bdev;
+	struct raid1_msg_ctx msg_ctx;
+	int rc;
+};
+
+static void
+raid1_meta_read_complete(struct raid1_rebuild_ctx *rebuild_ctx, int rc)
+{
+}
+
+static void
+raid1_meta_multi_read_complete(void *arg, uint8_t err_mask)
+{
+	struct raid1_rebuild_ctx *rebuild_ctx = arg;
+	int rc;
+	if (err_mask) {
+		rc = -EIO;
+	} else {
+		rc = 0;
+	}
+	raid1_meta_read_complete(rebuild_ctx, rc);
+}
+
+void
+raid1_bdev_rebuild(const char *raid1_name,
+	const char *bdev0_name, const char *bdev1_name,
+	raid1_rebuild_cb cb_fn, void *cb_arg)
+{
+	struct raid1_rebuild_ctx *rebuild_ctx;
+	size_t buf_align;
+	int rc;
+
+	SPDK_DEBUGLOG(bdev_raid1, "raid1_bdev_rebuild: %s %s %s\n",
+		raid1_name, bdev0_name, bdev1_name);
+
+	rebuild_ctx = calloc(1, sizeof(*rebuild_ctx));
+	if (rebuild_ctx == NULL) {
+		SPDK_ERRLOG("Could not allocate raid1_rebuild_ctx\n");
+		rc = -ENOMEM;
+		goto call_cb;
+	}
+
+	strncpy(rebuild_ctx->raid1_name, raid1_name, RAID1_MAX_NAME_LEN);
+	strncpy(rebuild_ctx->bdev0_name, bdev0_name, RAID1_MAX_NAME_LEN);
+	strncpy(rebuild_ctx->bdev1_name, bdev1_name, RAID1_MAX_NAME_LEN);
+
+	rc = raid1_per_bdev_open(rebuild_ctx->bdev0_name, &rebuild_ctx->per_bdev[0]);
+	if (rc) {
+		SPDK_ERRLOG("Could not open bdev0 per_bdev\n");
+		goto free_ctx;
+	}
+
+	rc = raid1_per_thread_open(&rebuild_ctx->per_bdev[0], &rebuild_ctx->per_thread[0]);
+	if (rc) {
+		SPDK_ERRLOG("Could not open bdev0 per_thread\n");
+		goto close_bdev0_per_bdev;
+	}
+
+	rc = raid1_per_bdev_open(rebuild_ctx->bdev1_name, &rebuild_ctx->per_bdev[1]);
+	if (rc) {
+		SPDK_ERRLOG("Could not open bdev1 per_bdev\n");
+		goto close_bdev0_per_thread;
+	}
+
+	rc = raid1_per_thread_open(&rebuild_ctx->per_bdev[1], &rebuild_ctx->per_thread[1]);
+	if (rc) {
+		SPDK_ERRLOG("Could not open bdev1 per_thread\n");
+		goto close_bdev1_per_bdev;
+	}
+
+	rebuild_ctx->per_thread_ptr[0] = &rebuild_ctx->per_thread[0];
+	rebuild_ctx->per_thread_ptr[1] = &rebuild_ctx->per_thread[1];
+
+	if (rebuild_ctx->per_bdev[0].block_size != rebuild_ctx->per_bdev[1].block_size) {
+		SPDK_ERRLOG("raid1 block_size mismatch, bdev0 block_size: %" PRIu32 " bdev0 block_size: %" PRIu32 "\n",
+			rebuild_ctx->per_bdev[0].block_size, rebuild_ctx->per_bdev[1].block_size);
+		rc = -EINVAL;
+		goto close_bdev1_per_thread;
+	}
+
+	buf_align = spdk_max(rebuild_ctx->per_bdev[0].buf_align,
+		rebuild_ctx->per_bdev[1].buf_align);
+	rebuild_ctx->sb_buf[0] = spdk_dma_zmalloc(RAID1_SB_SIZE, buf_align, NULL);
+	if (!rebuild_ctx->sb_buf[0]) {
+		rc = -ENOMEM;
+		SPDK_ERRLOG("Could not allocate meta_buf[0]\n");
+		goto close_bdev1_per_thread;
+	}
+	rebuild_ctx->sb_buf[1] = spdk_dma_zmalloc(RAID1_SB_SIZE, buf_align, NULL);
+	if (!rebuild_ctx->sb_buf[1]) {
+		rc = -ENOMEM;
+		SPDK_ERRLOG("Could not allocate meta_buf[1]\n");
+		goto free_meta_buf_0;
+	}
+
+	raid1_multi_io_read(&rebuild_ctx->multi_io, rebuild_ctx->per_thread_ptr,
+		rebuild_ctx->sb_buf, RAID1_SB_START_BYTE, RAID1_SB_SIZE,
+		raid1_meta_multi_read_complete, rebuild_ctx);
+
+	return;
+
+free_meta_buf_0:
+	spdk_dma_free(rebuild_ctx->sb_buf[0]);
+close_bdev1_per_thread:
+	raid1_per_thread_close(&rebuild_ctx->per_thread[1]);
+close_bdev1_per_bdev:
+	raid1_per_bdev_close(&rebuild_ctx->per_bdev[1]);
+close_bdev0_per_thread:
+	raid1_per_thread_close(&rebuild_ctx->per_thread[0]);
+close_bdev0_per_bdev:
+	raid1_per_bdev_close(&rebuild_ctx->per_bdev[0]);
+free_ctx:
+	free(rebuild_ctx);
+call_cb:
+	cb_fn(cb_arg, rc);
+
+	return;
 }
 
 SPDK_LOG_REGISTER_COMPONENT(bdev_raid1)

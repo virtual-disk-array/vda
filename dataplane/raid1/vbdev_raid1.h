@@ -25,8 +25,10 @@ struct raid1_create_param {
 
 typedef void (*raid1_create_cb)(void *arg, int rc);
 typedef void (*raid1_delete_cb)(void *arg, int rc);
+typedef void (*raid1_rebuild_cb)(void *arg, int rc);
 
 void raid1_bdev_create(const char *raid1_name, struct raid1_create_param *param, raid1_create_cb cb_fn, void *cb_arg);
 void raid1_bdev_delete(const char *raid1_name, raid1_delete_cb cb_fn, void *cb_arg);
+void raid1_bdev_rebuild(const char *raid1_name, const char *bdev0_name, const char *bdev1_name, raid1_rebuild_cb cb_fn, void *cb_arg);
 
 #endif
