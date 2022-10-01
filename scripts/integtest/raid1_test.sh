@@ -27,7 +27,12 @@ function wait_for_raid1() {
         synced_strip=$($BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_get_bdevs --name $RAID1_NAME | jq '.[0].driver_specific.raid1.synced_strip')
         echo "raid1 sync ${synced_strip}/${total_strip}"
         if [ $synced_strip -eq $total_strip ]; then
-            break
+            resync_io_cnt=$($BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_get_bdevs --name $RAID1_NAME | jq '.[0].driver_specific.raid1.resync_io_cnt')
+            if [ $resync_io_cnt -eq 0 ]; then
+                break
+            else
+                echo "resync_io_cnt: $resync_io_cnt"
+            fi
         fi
         if [ $retry_cnt -ge $max_retry ]; then
             echo "raid1 sync timeout"
@@ -54,6 +59,7 @@ function wait_for_nvme() {
     done
 }
 
+MD5_4K_ZERO="620f0b67a91f7f74151bc5be745b7110"
 function verify_disk_file() {
     md5_0=$(md5sum $WORK_DIR/disk0.img | awk '{print $1}')
     md5_1=$(md5sum $WORK_DIR/disk1.img | awk '{print $1}')
@@ -61,6 +67,15 @@ function verify_disk_file() {
         echo "raid1 disk same"
     else
         echo "raid1 disk different"
+        exit 1
+    fi
+    dd if=$WORK_DIR/disk0.img of=$WORK_DIR/bitmap0.img bs=4k count=1 skip=1
+    # dd if=$WORK_DIR/disk1.img of=$WORK_DIR/bitmap1.img bs=4k count=1 skip=1
+    md5_bitmap=$(md5sum $WORK_DIR/bitmap0.img | awk '{print $1}')
+    if [ "${md5_bitmap}" == "${MD5_4K_ZERO}" ]; then
+        echo "bitmap is all zero"
+    else
+        echo "bitmap is not all zero"
         exit 1
     fi
 }
@@ -131,15 +146,14 @@ function test_normal_rw() {
 
 function test_rw_during_sync() {
     echo "test rw during sync"
-    # cp $WORK_DIR/random.img $WORK_DIR/disk0.img
     rm -f $WORK_DIR/disk0.img
     for i in $(seq 4); do cat $WORK_DIR/random.img >> $WORK_DIR/disk0.img; done
     dd if=/dev/zero of=$WORK_DIR/disk1.img bs=1M count=4096
     sleep 1
     retry sudo losetup $LOOP_NAME0 $WORK_DIR/disk0.img --sector-size 4096
     retry sudo losetup $LOOP_NAME1 $WORK_DIR/disk1.img --sector-size 4096
-    sudo dmsetup create ${DELAY_NAME0} --table "0 $(sudo blockdev --getsz ${LOOP_NAME0}) delay ${LOOP_NAME0} 0 200"
-    sudo dmsetup create ${DELAY_NAME1} --table "0 $(sudo blockdev --getsz ${LOOP_NAME1}) delay ${LOOP_NAME1} 0 200"
+    sudo dmsetup create ${DELAY_NAME0} --table "0 $(sudo blockdev --getsz ${LOOP_NAME0}) delay ${LOOP_NAME0} 0 100"
+    sudo dmsetup create ${DELAY_NAME1} --table "0 $(sudo blockdev --getsz ${LOOP_NAME1}) delay ${LOOP_NAME1} 0 100"
     $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_aio_create "/dev/mapper/$DELAY_NAME0" aio0 4096
     $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_aio_create "/dev/mapper/$DELAY_NAME1" aio1 4096
     $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock --plugin vda_rpc_plugin bdev_raid1_create --raid1-name $RAID1_NAME --bdev0-name aio0 --bdev1-name aio1

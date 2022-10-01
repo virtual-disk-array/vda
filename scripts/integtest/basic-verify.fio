@@ -5,5 +5,5 @@ rw=randwrite
 bs=4k
 direct=1
 ioengine=libaio
-iodepth=1
+iodepth=16
 verify=crc32c
