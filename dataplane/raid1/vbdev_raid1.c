@@ -1118,6 +1118,54 @@ raid1_update_sb_complete(void *arg, int rc)
 }
 
 static void
+raid1_syncup_sb_complete(void *arg, uint8_t err_mask)
+{
+	struct raid1_bdev *r1_bdev = arg;
+	assert(r1_bdev->sb_writing);
+	r1_bdev->sb_writing = false;
+	if (err_mask) {
+		bool status_changed = false;
+		if ((err_mask & 0x1) && (r1_bdev->online[0] == true)) {
+			r1_bdev->online[0] = false;
+			status_changed = true;
+		}
+		if ((err_mask & 0x2) && (r1_bdev->online[1] == true)) {
+			r1_bdev->online[1] = false;
+			status_changed = true;
+		}
+		if (status_changed) {
+			raid1_update_status(r1_bdev);
+		}
+	} else {
+		assert(!r1_bdev->resync);
+		struct raid1_bdev_io *raid1_io;
+		while (!TAILQ_EMPTY(&r1_bdev->sb_io_queue)) {
+			raid1_io = TAILQ_FIRST(&r1_bdev->sb_io_queue);
+			TAILQ_REMOVE(&r1_bdev->sb_io_queue, raid1_io, link);
+			raid1_bdev_write_handler(r1_bdev, raid1_io);
+		}
+		while (!TAILQ_EMPTY(&r1_bdev->sb_region_queue)) {
+			struct raid1_region *region = TAILQ_FIRST(&r1_bdev->sb_region_queue);
+			TAILQ_REMOVE(&r1_bdev->sb_region_queue, region, link);
+			assert(region->queue_type == RAID1_QUEUE_SB_WRITING);
+			raid1_deliver_region_degraded(r1_bdev, region);
+		}
+		raid1_io_poller(r1_bdev);
+	}
+}
+
+static void
+raid1_syncup_sb(struct raid1_bdev *r1_bdev)
+{
+	raid1_sb_counter_add(r1_bdev->sb, 1);
+	assert(!r1_bdev->sb_writing);
+	r1_bdev->sb_writing = true;
+	raid1_multi_io_write(&r1_bdev->sb_io, r1_bdev->per_thread_ptr,
+		r1_bdev->sb_buf, RAID1_SB_START_BYTE, RAID1_SB_SIZE,
+		raid1_syncup_sb_complete, r1_bdev);
+}
+
+static void
 raid1_update_sb(struct raid1_bdev *r1_bdev)
 {
 	struct raid1_per_thread *per_thread = r1_bdev->per_thread_ptr[r1_bdev->health_idx];
@@ -1884,6 +1932,7 @@ raid1_io_poller(void *arg)
 			&& r1_bdev->resync->num_inflight == 0) {
 			SPDK_DEBUGLOG(bdev_raid1, "Free resync for done: %s\n", r1_bdev->raid1_name);
 			raid1_resync_free(r1_bdev);
+			raid1_syncup_sb(r1_bdev);
 			event_cnt++;
 		}
 		if (!r1_bdev->sb_writing) {
@@ -2594,7 +2643,7 @@ raid1_bdev_delete(const char *raid1_name, raid1_delete_cb cb_fn, void *cb_arg)
 err_out:
 	cb_fn(cb_arg, rc);
 }
-
+# if 0
 struct raid1_rebuild_ctx {
 	char raid1_name[RAID1_MAX_NAME_LEN+1];
 	char bdev0_name[RAID1_MAX_NAME_LEN+1];
@@ -2605,7 +2654,7 @@ struct raid1_rebuild_ctx {
 	struct raid1_multi_io multi_io;
 	struct raid1_io_leg io_leg[2];
 	uint8_t *sb_buf[2];
-	uint8_t *bm_buf;
+	uint8_t *meta_buf;
 	raid1_rebuild_cb cb_fn;
 	void *cb_arg;
 	struct raid1_bdev *r1_bdev;
@@ -2614,12 +2663,52 @@ struct raid1_rebuild_ctx {
 };
 
 static void
-raid1_meta_read_complete(struct raid1_rebuild_ctx *rebuild_ctx, int rc)
+raid1_rebuild_finish(struct raid1_rebuild_ctx *rebuild_ctx, int rc)
 {
+	rebuild_ctx->cb_fn(rebuild_ctx->cb_arg, rc);
+	spdk_dma_free(rebuild_ctx->sb_buf[0]);
+	spdk_dma_free(rebuild_ctx->sb_buf[1]);
+	if (rebuild_ctx->bm_buf) {
+		spdk_dma_free(rebuild_ctx->bm_buf);
+	}
 }
 
 static void
-raid1_meta_multi_read_complete(void *arg, uint8_t err_mask)
+raid1_rebuild_meta_read_complete(struct raid1_rebuild_ctx *rebuild_ctx, int rc)
+{
+	struct raid1_sb *sb0, *sb1, *sb;
+	if (rc) {
+		goto err_out;
+	}
+	sb0 = rebuild_ctx->sb_buf[0];
+	sb1 = rebuild_ctx->sb_buf[1];
+	if (from_le64(&sb0->counter) >= from_le64(&sb1->counter)) {
+		sb = sb0;
+	} else {
+		sb = sb1;
+	}
+	meta_size = from_le64(&sb->meta_size);
+	if (meta_size % rebuild_ctx->per_bdev[0].block_size != 0) {
+		SPDK_ERRLOG("Invalid meta_size: %" PRIu32 "\n", meta_size);
+		rc = -EINVAL;
+		goto err_out;
+	}
+	if (meta_size <= RAID1_SB_SIZE) {
+		SPDK_ERRLOG("The meta_size is too small: %" PRIu32 "\n", meta_size);
+		rc = -EINVAL;
+		goto err_out;
+	}
+
+err_out:
+	raid1_per_thread_close(&rebuild_ctx->per_thread[0]);
+	raid1_per_thread_close(&rebuild_ctx->per_thread[1]);
+	raid1_per_bdev_close(&rebuild_ctx->per_bdev[0]);
+	raid1_per_bdev_close(&rebuild_ctx->per_bdev[1]);
+	raid1_rebuild_finish(rebuild_ctx, rc);
+}
+
+static void
+raid1_rebuild_meta_multi_read_complete(void *arg, uint8_t err_mask)
 {
 	struct raid1_rebuild_ctx *rebuild_ctx = arg;
 	int rc;
@@ -2628,11 +2717,11 @@ raid1_meta_multi_read_complete(void *arg, uint8_t err_mask)
 	} else {
 		rc = 0;
 	}
-	raid1_meta_read_complete(rebuild_ctx, rc);
+	raid1_rebuild_meta_read_complete(rebuild_ctx, rc);
 }
 
-void
-raid1_bdev_rebuild(const char *raid1_name,
+static void
+raid1_bdev_rebuild_multi(const char *raid1_name,
 	const char *bdev0_name, const char *bdev1_name,
 	raid1_rebuild_cb cb_fn, void *cb_arg)
 {
@@ -2705,7 +2794,7 @@ raid1_bdev_rebuild(const char *raid1_name,
 
 	raid1_multi_io_read(&rebuild_ctx->multi_io, rebuild_ctx->per_thread_ptr,
 		rebuild_ctx->sb_buf, RAID1_SB_START_BYTE, RAID1_SB_SIZE,
-		raid1_meta_multi_read_complete, rebuild_ctx);
+		raid1_rebuild_meta_multi_read_complete, rebuild_ctx);
 
 	return;
 
@@ -2727,4 +2816,26 @@ call_cb:
 	return;
 }
 
+static void
+raid1_bdev_rebuild_single(const char*raid1_name,
+	const char*bdev0_name, const char *bdev1_name,
+	raid1_rebuild_cb cb_fn, void *cb_arg)
+{
+	return;
+}
+
+void
+raid1_bdev_rebuild(const char *raid1_name,
+	const char *bdev0_name, const char *bdev1_name,
+	raid1_rebuild_cb cb_fn, void *cb_arg)
+{
+	if (bdev1_name) {
+		raid1_bdev_rebuild_multi(raid1_name, bdev0_name, bdev1_name,
+			cb_fn, cb_arg);
+	} else {
+		raid1_bdev_rebuild_single(raid1_name, bdev0_name,
+			cb_fn, cb_arg);
+	}
+}
+#endif
 SPDK_LOG_REGISTER_COMPONENT(bdev_raid1)
