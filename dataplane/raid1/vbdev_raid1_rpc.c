@@ -9,7 +9,7 @@ struct rpc_bdev_raid1_create {
 	uint64_t strip_size_kb;
 	uint64_t write_delay;
 	uint64_t clean_ratio;
-	uint64_t max_pending;
+	uint64_t max_delay;
 	uint64_t max_resync;
 	bool synced;
 };
@@ -44,7 +44,7 @@ static const struct spdk_json_object_decoder rpc_bdev_raid1_create_decoders[] = 
 	{"strip_size_kb",  offsetof(struct rpc_bdev_raid1_create, strip_size_kb), spdk_json_decode_uint64, true},
 	{"write_delay",  offsetof(struct rpc_bdev_raid1_create, write_delay), spdk_json_decode_uint64, true},
 	{"clean_ratio",  offsetof(struct rpc_bdev_raid1_create, clean_ratio), spdk_json_decode_uint64, true},
-	{"max_pending",  offsetof(struct rpc_bdev_raid1_create, max_pending), spdk_json_decode_uint64, true},
+	{"max_delay",  offsetof(struct rpc_bdev_raid1_create, max_delay), spdk_json_decode_uint64, true},
 	{"max_resync",  offsetof(struct rpc_bdev_raid1_create, max_resync), spdk_json_decode_uint64, true},
 	{"synced", offsetof(struct rpc_bdev_raid1_create, synced), spdk_json_decode_bool, true},
 };
@@ -70,7 +70,7 @@ rpc_bdev_raid1_create(struct spdk_jsonrpc_request *request,
 	param.strip_size = req.strip_size_kb == 0 ? RAID1_DEFAULT_STRIP_SIZE : req.strip_size_kb * 1024;
 	param.write_delay = req.write_delay == 0 ? RAID1_DEFAULT_WRITE_DELAY : req.write_delay;
 	param.clean_ratio = req.clean_ratio == 0 ? RAID1_DEFAULT_CLEAN_RATIO : req.clean_ratio;
-	param.max_pending = req.max_pending == 0 ? RAID1_DEFAULT_MAX_PENDING : req.max_pending;
+	param.max_delay = req.max_delay == 0 ? RAID1_DEFAULT_MAX_DELAY : req.max_delay;
 	param.max_resync = req.max_resync == 0 ? RAID1_DEFAULT_MAX_RESYNC : req.max_resync;
 	param.synced = req.synced;
 

@@ -627,13 +627,12 @@ raid1_bdev_finish(void)
 #define RAID1_MAX_DELAY_CNT (255)
 
 #define RAID1_MAGIC_STRING "SPDK_RAID1"
-#define RAID1_MAGIC_STRING_LEN (16)
-SPDK_STATIC_ASSERT(sizeof(RAID1_MAGIC_STRING)<RAID1_MAGIC_STRING_LEN,
-    "RAID1_MAGIC_STRING is too long");
+#define RAID1_MAGIC_STRING_LEN (11)
+SPDK_STATIC_ASSERT(sizeof(RAID1_MAGIC_STRING) == RAID1_MAGIC_STRING_LEN,
+    "RAID1_MAGIC_STRING_LEN incorrect");
 
 struct raid1_sb {
 	char magic[RAID1_MAGIC_STRING_LEN+1];
-	char raid1_name[RAID1_MAX_NAME_LEN+1];
 	struct spdk_uuid uuid;
 	uint64_t meta_size;
 	uint64_t data_size;
@@ -641,10 +640,6 @@ struct raid1_sb {
 	uint32_t major_version;
 	uint32_t minor_version;
 	uint64_t strip_size;
-	uint64_t write_delay;
-	uint64_t clean_ratio;
-	uint64_t max_pending;
-	uint64_t max_resync;
 }__attribute__((packed));
 
 SPDK_STATIC_ASSERT(sizeof(struct raid1_sb)<RAID1_SB_SIZE, "sb size is too large");
@@ -766,7 +761,10 @@ struct raid1_bdev {
 	struct raid1_sb *sb;
 	struct raid1_multi_io sb_io;
 	uint64_t strip_size;
+	uint64_t write_delay;
 	uint64_t clean_ratio;
+	uint64_t max_delay;
+	uint64_t max_resync;
 	uint64_t region_size;
 	uint64_t region_cnt;
 	uint64_t strip_cnt;
@@ -777,10 +775,12 @@ struct raid1_bdev {
 	struct raid1_resync *resync;
 	bool resync_release;
 	bool sb_writing;
+	bool sb_sync;
 	uint64_t bm_io_cnt;
 	uint64_t data_io_cnt;
 	uint64_t read_delivered;
 	uint64_t write_delivered;
+	uint64_t clean_counter;
 	struct spdk_thread *r1_thread;
 	enum raid1_bdev_status status;
 	uint8_t health_idx;
@@ -1123,6 +1123,8 @@ raid1_syncup_sb_complete(void *arg, uint8_t err_mask)
 	struct raid1_bdev *r1_bdev = arg;
 	assert(r1_bdev->sb_writing);
 	r1_bdev->sb_writing = false;
+	assert(!r1_bdev->sb_sync);
+	r1_bdev->sb_sync = true;
 	if (err_mask) {
 		bool status_changed = false;
 		if ((err_mask & 0x1) && (r1_bdev->online[0] == true)) {
@@ -1138,18 +1140,8 @@ raid1_syncup_sb_complete(void *arg, uint8_t err_mask)
 		}
 	} else {
 		assert(!r1_bdev->resync);
-		struct raid1_bdev_io *raid1_io;
-		while (!TAILQ_EMPTY(&r1_bdev->sb_io_queue)) {
-			raid1_io = TAILQ_FIRST(&r1_bdev->sb_io_queue);
-			TAILQ_REMOVE(&r1_bdev->sb_io_queue, raid1_io, link);
-			raid1_bdev_write_handler(r1_bdev, raid1_io);
-		}
-		while (!TAILQ_EMPTY(&r1_bdev->sb_region_queue)) {
-			struct raid1_region *region = TAILQ_FIRST(&r1_bdev->sb_region_queue);
-			TAILQ_REMOVE(&r1_bdev->sb_region_queue, region, link);
-			assert(region->queue_type == RAID1_QUEUE_SB_WRITING);
-			raid1_deliver_region_degraded(r1_bdev, region);
-		}
+		assert(TAILQ_EMPTY(&r1_bdev->sb_io_queue));
+		TAILQ_EMPTY(&r1_bdev->sb_region_queue);
 		raid1_io_poller(r1_bdev);
 	}
 }
@@ -1740,11 +1732,12 @@ raid1_bdev_write_handler(struct raid1_bdev *r1_bdev, struct raid1_bdev_io *raid1
 	if (inflight_cnt == RAID1_MAX_INFLIGHT_PER_STRIP) {
 		assert(raid1_bm_test(region->bm_buf, raid1_io->strip_in_region));
 		raid1_write_inflight_pending(r1_bdev, raid1_io);
+		raid1_write_trigger(r1_bdev, region);
 	} else {
 		raid1_write_delay(r1_bdev, region, raid1_io);
-	}
-	if (region->delay_cnt >= RAID1_MAX_DELAY_CNT) {
-		raid1_write_trigger(r1_bdev, region);
+		if (region->delay_cnt >= r1_bdev->max_delay) {
+			raid1_write_trigger(r1_bdev, region);
+		}
 	}
 }
 
@@ -1847,11 +1840,11 @@ raid1_bdev_dump_info_json(void *ctx, struct spdk_json_write_ctx *w)
 	spdk_json_write_named_uint64(w, "counter", from_le64(&r1_bdev->sb->counter));
 	spdk_json_write_named_uint32(w, "major_version", from_le32(&r1_bdev->sb->major_version));
 	spdk_json_write_named_uint32(w, "minor_version", from_le32(&r1_bdev->sb->minor_version));
-	spdk_json_write_named_uint64(w, "strip_size", from_le64(&r1_bdev->sb->strip_size));
-	spdk_json_write_named_uint64(w, "write_delay", from_le64(&r1_bdev->sb->write_delay));
-	spdk_json_write_named_uint64(w, "clean_ratio", from_le64(&r1_bdev->sb->clean_ratio));
-	spdk_json_write_named_uint64(w, "max_pending", from_le64(&r1_bdev->sb->max_pending));
-	spdk_json_write_named_uint64(w, "max_resync", from_le64(&r1_bdev->sb->max_resync));
+	spdk_json_write_named_uint64(w, "strip_size", r1_bdev->strip_size);
+	spdk_json_write_named_uint64(w, "write_delay", r1_bdev->write_delay);
+	spdk_json_write_named_uint64(w, "clean_ratio", r1_bdev->clean_ratio);
+	spdk_json_write_named_uint64(w, "max_delay", r1_bdev->max_delay);
+	spdk_json_write_named_uint64(w, "max_resync", r1_bdev->max_resync);
 	spdk_json_write_named_uint64(w, "total_strip", r1_bdev->strip_cnt);
 	if (r1_bdev->resync) {
 		synced_strip = r1_bdev->resync->curr_bit;
@@ -1920,8 +1913,16 @@ raid1_io_poller(void *arg)
 		}
 		if (!r1_bdev->resync && !r1_bdev->sb_writing
 			&& TAILQ_EMPTY(&r1_bdev->clear_queue)
-			&& r1_bdev->bm_io_cnt == 0 && r1_bdev->data_io_cnt == 0) {
+			&& r1_bdev->bm_io_cnt == 0 && r1_bdev->data_io_cnt == 0
+			&& !r1_bdev->sb_sync) {
+			raid1_syncup_sb(r1_bdev);
+			event_cnt++;
+		}
+		if (r1_bdev->sb_sync && !r1_bdev->sb_writing) {
 			SPDK_DEBUGLOG(bdev_raid1, "Release in thread for deleting: %s\n", r1_bdev->raid1_name);
+			assert(!r1_bdev->resync);
+			assert(r1_bdev->bm_io_cnt == 0);
+			assert(r1_bdev->data_io_cnt == 0);
 			raid1_bdev_release_in_thread(r1_bdev);
 			raid1_release_ack_send(r1_bdev);
 			event_cnt++;
@@ -1932,7 +1933,6 @@ raid1_io_poller(void *arg)
 			&& r1_bdev->resync->num_inflight == 0) {
 			SPDK_DEBUGLOG(bdev_raid1, "Free resync for done: %s\n", r1_bdev->raid1_name);
 			raid1_resync_free(r1_bdev);
-			raid1_syncup_sb(r1_bdev);
 			event_cnt++;
 		}
 		if (!r1_bdev->sb_writing) {
@@ -1940,8 +1940,8 @@ raid1_io_poller(void *arg)
 				struct raid1_resync *resync = r1_bdev->resync;
 				uint32_t i;
 				SPDK_DEBUGLOG(bdev_raid1, "In poller max_resync: %" PRIu64 "\n",
-					from_le64(&r1_bdev->sb->max_resync));
-				for (i = 0; i < from_le64(&r1_bdev->sb->max_resync); i++) {
+					r1_bdev->max_resync);
+				for (i = 0; i < r1_bdev->max_resync; i++) {
 					if (resync->curr_bit == r1_bdev->strip_cnt) {
 						r1_bdev->resync_release = true;
 						break;
@@ -1977,9 +1977,9 @@ raid1_io_poller(void *arg)
 				raid1_write_trigger(r1_bdev, region);
 				event_cnt++;
 			}
-			r1_bdev->clean_ratio++;
-			r1_bdev->clean_ratio %= from_le64(&r1_bdev->sb->clean_ratio);
-			if (r1_bdev->clean_ratio == 0) {
+			r1_bdev->clean_counter++;
+			r1_bdev->clean_counter %= r1_bdev->clean_ratio;
+			if (r1_bdev->clean_counter == 0) {
 				while (!TAILQ_EMPTY(&r1_bdev->clear_queue)) {
 					struct raid1_region *region = TAILQ_FIRST(&r1_bdev->clear_queue);
 					if (!region->bm_writing) {
@@ -2011,7 +2011,6 @@ raid1_resync_allocate(struct raid1_bdev *r1_bdev)
 	struct raid1_resync *resync;
 	struct raid1_resync_ctx *resync_ctx;
 	uint32_t i, j;
-	uint64_t max_resync;
 
 	resync = malloc(sizeof(*resync));
 	if (resync == NULL) {
@@ -2035,8 +2034,7 @@ raid1_resync_allocate(struct raid1_bdev *r1_bdev)
 		goto free_needed_bm;
 	}
 
-	max_resync = from_le64(&r1_bdev->sb->max_resync);
-	resync->hash_size = SPDK_CEIL_DIV(max_resync, RAID1_RESYNC_HASH_RATIO);
+	resync->hash_size = SPDK_CEIL_DIV(r1_bdev->max_resync, RAID1_RESYNC_HASH_RATIO);
 
 	resync->running_hash = calloc(resync->hash_size,
 		sizeof(struct raid1_resync_head));
@@ -2058,14 +2056,14 @@ raid1_resync_allocate(struct raid1_bdev *r1_bdev)
 		TAILQ_INIT(&resync->pending_hash[i]);
 	}
 
-	resync->resync_ctx_array = malloc(max_resync * sizeof(struct raid1_resync_ctx));
+	resync->resync_ctx_array = malloc(r1_bdev->max_resync * sizeof(struct raid1_resync_ctx));
 	if (resync->resync_ctx_array == NULL) {
 		SPDK_ERRLOG("Could not allocate resync_ctx_array\n");
 		goto free_pending_hash;
 	}
 
 	TAILQ_INIT(&resync->available_queue);
-	for (i = 0; i < max_resync; i++) {
+	for (i = 0; i < r1_bdev->max_resync; i++) {
 		resync_ctx = &resync->resync_ctx_array[i];
 		resync_ctx->buf = spdk_dma_malloc(r1_bdev->strip_size,
 			r1_bdev->buf_align, NULL);
@@ -2109,13 +2107,11 @@ raid1_resync_free(struct raid1_bdev *r1_bdev)
 {
 	struct raid1_resync *resync = r1_bdev->resync;
 	struct raid1_resync_ctx *resync_ctx;
-	uint64_t max_resync;
 	uint32_t i;
 
 	SPDK_DEBUGLOG(bdev_raid1, "raid1_resync_free: %s\n", r1_bdev->raid1_name);
 
-	max_resync = from_le64(&r1_bdev->sb->max_resync);
-	for (i = 0; i < max_resync; i++) {
+	for (i = 0; i < r1_bdev->max_resync; i++) {
 		resync_ctx = &resync->resync_ctx_array[i];
 		spdk_dma_free(resync_ctx->buf);
 	}
@@ -2126,160 +2122,6 @@ raid1_resync_free(struct raid1_bdev *r1_bdev)
 	free(resync->needed_bm);
 	free(resync);
 	r1_bdev->resync = NULL;
-}
-
-static int
-raid1_bdev_init(struct raid1_bdev **_r1_bdev, struct raid1_init_params *params)
-{
-	struct raid1_bdev *r1_bdev;
-	struct raid1_region *region;
-	struct raid1_io_head *io_head;
-	uint64_t meta_size;
-	uint32_t i;
-	int rc;
-
-	r1_bdev = calloc(1, sizeof(*r1_bdev));
-	if (r1_bdev == NULL) {
-		SPDK_ERRLOG("Could not allocate raid1_bdev\n");
-		rc = -ENOMEM;
-		goto err_out;
-	}
-
-	strncpy(r1_bdev->raid1_name, params->raid1_name, RAID1_MAX_NAME_LEN);
-	strncpy(r1_bdev->bdev0_name, params->bdev0_name, RAID1_MAX_NAME_LEN);
-	strncpy(r1_bdev->bdev1_name, params->bdev1_name, RAID1_MAX_NAME_LEN);
-	memcpy(&r1_bdev->per_bdev[0], params->per_bdev0, sizeof(struct raid1_per_bdev));
-	memcpy(&r1_bdev->per_bdev[1], params->per_bdev1, sizeof(struct raid1_per_bdev));
-	r1_bdev->buf_align = spdk_max(r1_bdev->per_bdev[0].buf_align,
-		r1_bdev->per_bdev[1].buf_align);
-	r1_bdev->sb_buf = spdk_dma_zmalloc(RAID1_SB_SIZE, r1_bdev->buf_align, NULL);
-	if (r1_bdev->sb_buf == NULL) {
-		SPDK_ERRLOG("Could not allocate sb_buf, size=%ld align=%ld\n",
-			RAID1_SB_SIZE, r1_bdev->buf_align);
-		rc = -ENOMEM;
-		goto free_r1_bdev;
-	}
-	memcpy(r1_bdev->sb_buf, params->sb, sizeof(struct raid1_sb));
-	r1_bdev->sb = (struct raid1_sb *)(r1_bdev->sb_buf);
-	raid1_calc_strip_and_region(from_le64(&r1_bdev->sb->data_size), from_le64(&r1_bdev->sb->strip_size),
-		&r1_bdev->strip_cnt, &r1_bdev->region_cnt);
-	meta_size = from_le64(&r1_bdev->sb->meta_size);
-	assert((meta_size % r1_bdev->per_bdev[0].block_size) == 0);
-	r1_bdev->start_blocks = meta_size / r1_bdev->per_bdev[0].block_size;
-	r1_bdev->strip_size = from_le64(&r1_bdev->sb->strip_size);
-	r1_bdev->region_size = RAID1_BYTESZ * PAGE_SIZE * r1_bdev->strip_size;
-	r1_bdev->bm_size = r1_bdev->region_cnt * PAGE_SIZE;
-
-	r1_bdev->bm_buf = spdk_dma_zmalloc(r1_bdev->bm_size, r1_bdev->buf_align, NULL);
-	if (r1_bdev->bm_buf == NULL) {
-		SPDK_ERRLOG("Could not allocate bm_buf\n");
-		rc = -ENOMEM;
-		goto free_sb_buf;
-	}
-	memcpy(r1_bdev->bm_buf, params->bm_buf, r1_bdev->bm_size);
-
-	r1_bdev->inflight_cnt = calloc(r1_bdev->strip_cnt, sizeof(uint8_t));
-	if (r1_bdev->inflight_cnt == NULL) {
-		SPDK_ERRLOG("Could not allocate inflight_cnt, size: %" PRIu64 "\n", r1_bdev->strip_cnt);
-		rc = -ENOMEM;
-		goto free_bm_buf;
-	}
-
-	r1_bdev->regions = calloc(r1_bdev->region_cnt, sizeof(struct raid1_region));
-	if (r1_bdev->regions == NULL) {
-		SPDK_ERRLOG("Could not allocate regions\n");
-		rc = -ENOMEM;
-		goto free_inflight_cnt;
-	}
-
-	for (i = 0; i < r1_bdev->region_cnt; i++) {
-		region = &r1_bdev->regions[i];
-		region->r1_bdev = r1_bdev;
-		region->idx = i;
-		region->bm_buf = r1_bdev->bm_buf + PAGE_SIZE * i;
-		region->bdev_offset = RAID1_BM_START_BYTE + PAGE_SIZE * i;
-		region->queue_type = RAID1_QUEUE_NONE;
-		TAILQ_INIT(&region->delay_queue);
-		TAILQ_INIT(&region->bm_writing_queue);
-		region->bm_writing = false;
-	}
-
-	raid1_resync_allocate(r1_bdev);
-	if (r1_bdev->resync == NULL) {
-		SPDK_ERRLOG("Could not allocate r1_bdev->resync\n");
-		rc = -ENOMEM;
-		goto free_regions;
-	}
-
-	r1_bdev->resync_release = false;
-	r1_bdev->sb_writing = false;
-	r1_bdev->bm_io_cnt = 0;
-	r1_bdev->data_io_cnt = 0;
-
-	r1_bdev->r1_thread = spdk_get_thread();
-	assert(r1_bdev->r1_thread);
-	r1_bdev->status = RAID1_BDEV_NORMAL;
-	r1_bdev->online[0] = true;
-	r1_bdev->online[1] = true;
-
-	r1_bdev->read_idx = 0;
-
-	TAILQ_INIT(&r1_bdev->set_queue);
-	TAILQ_INIT(&r1_bdev->clear_queue);
-	TAILQ_INIT(&r1_bdev->sb_region_queue);
-	TAILQ_INIT(&r1_bdev->sb_io_queue);
-
-	r1_bdev->pending_hash_size = SPDK_CEIL_DIV(
-		r1_bdev->bm_size, RAID1_PENDING_HASH_RATIO);
-	r1_bdev->pending_io_hash = malloc(
-		r1_bdev->pending_hash_size * sizeof(struct raid1_io_head));
-	if (r1_bdev->pending_io_hash == NULL) {
-		SPDK_ERRLOG("Could not allocate pending_io_hash\n");
-		rc = -ENOMEM;
-		goto free_resync;
-	}
-	for (i = 0; i < r1_bdev->pending_hash_size; i++) {
-		io_head = &r1_bdev->pending_io_hash[i];
-		TAILQ_INIT(io_head);
-	}
-
-	r1_bdev->bdev.name = r1_bdev->raid1_name;
-	r1_bdev->bdev.product_name = RAID1_PRODUCT_NAME;
-	r1_bdev->bdev.write_cache = false;
-	r1_bdev->bdev.required_alignment = spdk_max(
-		r1_bdev->per_bdev[0].required_alignment,
-		r1_bdev->per_bdev[1].required_alignment);
-	r1_bdev->bdev.optimal_io_boundary = r1_bdev->strip_size;
-	r1_bdev->bdev.split_on_optimal_io_boundary = true;
-	r1_bdev->bdev.blocklen = spdk_min(r1_bdev->per_bdev[0].block_size,
-		r1_bdev->per_bdev[1].block_size);
-	r1_bdev->bdev.blockcnt = from_le64(&r1_bdev->sb->data_size) / r1_bdev->bdev.blocklen;
-	r1_bdev->bdev.ctxt = r1_bdev;
-	r1_bdev->bdev.fn_table = &g_raid1_bdev_fn_table;
-	r1_bdev->bdev.module = &g_raid1_if;
-
-	r1_bdev->delete_ctx.deleted = false;
-
-	spdk_io_device_register(r1_bdev, raid1_bdev_ch_create_cb,
-		raid1_bdev_ch_destroy_cb, 0, r1_bdev->raid1_name);
-
-	*_r1_bdev = r1_bdev;
-	return 0;
-
-free_resync:
-	raid1_resync_free(r1_bdev);
-free_regions:
-	free(r1_bdev->regions);
-free_inflight_cnt:
-	free(r1_bdev->inflight_cnt);
-free_bm_buf:
-	spdk_dma_free(r1_bdev->bm_buf);
-free_sb_buf:
-	spdk_dma_free(r1_bdev->sb_buf);
-free_r1_bdev:
-	free(r1_bdev);
-err_out:
-	return rc;
 }
 
 static int
@@ -2305,7 +2147,7 @@ raid1_bdev_init_in_thread(void *arg)
 	r1_bdev->per_thread_ptr[1] = &r1_bdev->per_thread[1];
 
 	r1_bdev->poller = spdk_poller_register(raid1_io_poller,
-		r1_bdev, from_le64(&r1_bdev->sb->write_delay));
+		r1_bdev, r1_bdev->write_delay);
 	if (r1_bdev->poller == NULL) {
 		SPDK_ERRLOG("Could not register raid1_io_poller\n");
 		rc = -EIO;
@@ -2365,17 +2207,29 @@ raid1_release_ack_send(struct raid1_bdev *r1_bdev)
 		raid1_release_ack_recv, r1_bdev);
 }
 
-
 struct raid1_create_ctx {
 	char raid1_name[RAID1_MAX_NAME_LEN+1];
 	char bdev0_name[RAID1_MAX_NAME_LEN+1];
 	char bdev1_name[RAID1_MAX_NAME_LEN+1];
+	uint64_t strip_size;
+	uint64_t write_delay;
+	uint64_t clean_ratio;
+	uint64_t max_delay;
+	uint64_t max_resync;
+	bool synced;
+	bool multi;
+	int master_idx;
+	uint64_t meta_size;
+	uint64_t data_size;
+	size_t buf_align;
+	uint64_t region_cnt;
+	uint64_t strip_cnt;
+	uint64_t bm_size;
 	struct raid1_per_bdev per_bdev[2];
 	struct raid1_per_thread per_thread[2];
 	struct raid1_per_thread *per_thread_ptr[2];
 	struct raid1_multi_io multi_io;
-	struct raid1_io_leg io_leg[2];
-	uint8_t *wbuf;
+	uint8_t *meta_buf[2];
 	raid1_create_cb cb_fn;
 	void *cb_arg;
 	struct raid1_bdev *r1_bdev;
@@ -2387,7 +2241,10 @@ static void
 raid1_create_finish(struct raid1_create_ctx *create_ctx, int rc)
 {
 	create_ctx->cb_fn(create_ctx->cb_arg, rc);
-	spdk_dma_free(create_ctx->wbuf);
+	spdk_dma_free(create_ctx->meta_buf[0]);
+	if (create_ctx->multi) {
+		spdk_dma_free(create_ctx->meta_buf[1]);
+	}
 	free(create_ctx);
 }
 
@@ -2433,16 +2290,20 @@ raid1_bdev_init_complete(void *arg, int rc)
 }
 
 static void
-raid1_meta_write_complete(struct raid1_create_ctx *create_ctx, int rc)
+raid1_bdev_init(struct raid1_create_ctx *create_ctx)
 {
-	struct raid1_init_params params;
 	struct spdk_thread *target_thread;
 	struct raid1_bdev *r1_bdev;
+	struct raid1_region *region;
+	struct raid1_io_head *io_head;
+	uint8_t *meta_buf;
+	int i;
+	int rc;
 
+	/* We have finished all IOs in the RPC thread */
 	raid1_per_thread_close(&create_ctx->per_thread[0]);
-	raid1_per_thread_close(&create_ctx->per_thread[1]);
-	if (rc) {
-		goto err_out;
+	if (create_ctx->multi) {
+		raid1_per_thread_close(&create_ctx->per_thread[1]);
 	}
 
 	r1_bdev = raid1_find_by_name(create_ctx->raid1_name);
@@ -2452,44 +2313,274 @@ raid1_meta_write_complete(struct raid1_create_ctx *create_ctx, int rc)
 		goto err_out;
 	}
 
-	params.raid1_name = create_ctx->raid1_name;
-	params.bdev0_name = create_ctx->bdev0_name;
-	params.bdev1_name = create_ctx->bdev1_name;
-	params.per_bdev0 = &create_ctx->per_bdev[0];
-	params.per_bdev1 = &create_ctx->per_bdev[1];
-	params.sb = (struct raid1_sb *)(create_ctx->wbuf);
-	params.bm_buf = create_ctx->wbuf + RAID1_BM_START_BYTE;
-	rc = raid1_bdev_init(&r1_bdev, &params);
-	if (rc) {
+	r1_bdev = calloc(1, sizeof(*r1_bdev));
+	if (r1_bdev == NULL) {
+		SPDK_ERRLOG("Could not allocate raid1_bdev\n");
+		rc = -ENOMEM;
 		goto err_out;
 	}
+
+	strncpy(r1_bdev->raid1_name, create_ctx->raid1_name, RAID1_MAX_NAME_LEN);
+	if (create_ctx->master_idx == 0) {
+		strncpy(r1_bdev->bdev0_name, create_ctx->bdev0_name, RAID1_MAX_NAME_LEN);
+		memcpy(&r1_bdev->per_bdev[0], &create_ctx->per_bdev[0], sizeof(struct raid1_per_bdev));
+		if (create_ctx->multi) {
+			strncpy(r1_bdev->bdev1_name, create_ctx->bdev1_name, RAID1_MAX_NAME_LEN);
+			memcpy(&r1_bdev->per_bdev[1], &create_ctx->per_bdev[1], sizeof(struct raid1_per_bdev));
+		}
+		meta_buf = create_ctx->meta_buf[0];
+	} else {
+		assert(create_ctx->multi);
+		strncpy(r1_bdev->bdev0_name, create_ctx->bdev1_name, RAID1_MAX_NAME_LEN);
+		strncpy(r1_bdev->bdev1_name, create_ctx->bdev0_name, RAID1_MAX_NAME_LEN);
+		memcpy(&r1_bdev->per_bdev[0], &create_ctx->per_bdev[1], sizeof(struct raid1_per_bdev));
+		memcpy(&r1_bdev->per_bdev[1], &create_ctx->per_bdev[0], sizeof(struct raid1_per_bdev));
+		meta_buf = create_ctx->meta_buf[1];
+	}
+	r1_bdev->strip_size = create_ctx->strip_size;
+	r1_bdev->write_delay = create_ctx->write_delay;
+	r1_bdev->clean_ratio = create_ctx->clean_ratio;
+	r1_bdev->clean_counter = 0;
+	r1_bdev->max_delay = create_ctx->max_delay;
+	r1_bdev->max_resync = create_ctx->max_resync;
+	r1_bdev->buf_align = create_ctx->buf_align;
+	r1_bdev->region_cnt = create_ctx->region_cnt;
+	r1_bdev->strip_cnt = create_ctx->strip_cnt;
+	r1_bdev->bm_size = create_ctx->bm_size;
+	r1_bdev->region_size = RAID1_BYTESZ * PAGE_SIZE * r1_bdev->strip_size;
+	r1_bdev->start_blocks = create_ctx->meta_size / r1_bdev->per_bdev[0].block_size;
+
+	r1_bdev->sb_buf = spdk_dma_zmalloc(RAID1_SB_SIZE, r1_bdev->buf_align, NULL);
+	if (r1_bdev->sb_buf == NULL) {
+		SPDK_ERRLOG("Could not allocate sb_buf, size=%ld align=%ld\n",
+			RAID1_SB_SIZE, r1_bdev->buf_align);
+		rc = -ENOMEM;
+		goto free_r1_bdev;
+	}
+	memcpy(r1_bdev->sb_buf, meta_buf, sizeof(struct raid1_sb));
+
+	r1_bdev->bm_buf = spdk_dma_zmalloc(r1_bdev->bm_size, r1_bdev->buf_align, NULL);
+	if (r1_bdev->bm_buf == NULL) {
+		SPDK_ERRLOG("Could not allocate bm_buf\n");
+		rc = -ENOMEM;
+		goto free_sb_buf;
+	}
+	memcpy(r1_bdev->bm_buf, meta_buf+RAID1_SB_SIZE, r1_bdev->bm_size);
+
+	r1_bdev->inflight_cnt = calloc(r1_bdev->strip_cnt, sizeof(uint8_t));
+	if (r1_bdev->inflight_cnt == NULL) {
+		SPDK_ERRLOG("Could not allocate inflight_cnt, size: %" PRIu64 "\n", r1_bdev->strip_cnt);
+		rc = -ENOMEM;
+		goto free_bm_buf;
+	}
+
+	r1_bdev->regions = calloc(r1_bdev->region_cnt, sizeof(struct raid1_region));
+	if (r1_bdev->regions == NULL) {
+		SPDK_ERRLOG("Could not allocate regions\n");
+		rc = -ENOMEM;
+		goto free_inflight_cnt;
+	}
+
+	for(i = 0; i < r1_bdev->region_cnt; i++) {
+		region = &r1_bdev->regions[i];
+		region->r1_bdev = r1_bdev;
+		region->idx = i;
+		region->bm_buf = r1_bdev->bm_buf + PAGE_SIZE * i;
+		region->bdev_offset = RAID1_BM_START_BYTE + PAGE_SIZE * i;
+		region->queue_type = RAID1_QUEUE_NONE;
+		TAILQ_INIT(&region->delay_queue);
+		TAILQ_INIT(&region->bm_writing_queue);
+		region->bm_writing = false;
+	}
+
+	raid1_resync_allocate(r1_bdev);
+	if (r1_bdev->resync == NULL) {
+		SPDK_ERRLOG("Could not allocate r1_bdev->resync\n");
+		rc = -ENOMEM;
+		goto free_regions;
+	}
+
+	r1_bdev->resync_release = false;
+	r1_bdev->sb_writing = false;
+	r1_bdev->bm_io_cnt = 0;
+	r1_bdev->data_io_cnt = 0;
+
+	r1_bdev->r1_thread = raid1_choose_thread();
+	if (create_ctx->multi) {
+		r1_bdev->status = RAID1_BDEV_NORMAL;
+		r1_bdev->online[0] = true;
+		r1_bdev->online[1] = true;
+	} else {
+		r1_bdev->status = RAID1_BDEV_DEGRADED;
+		r1_bdev->online[0] = true;
+		r1_bdev->online[1] = false;
+	}
+
+	r1_bdev->read_idx = 0;
+
+	TAILQ_INIT(&r1_bdev->set_queue);
+	TAILQ_INIT(&r1_bdev->clear_queue);
+	TAILQ_INIT(&r1_bdev->sb_region_queue);
+	TAILQ_INIT(&r1_bdev->sb_io_queue);
+
+	r1_bdev->pending_hash_size = SPDK_CEIL_DIV(
+		r1_bdev->bm_size, RAID1_PENDING_HASH_RATIO);
+	r1_bdev->pending_io_hash = malloc(
+		r1_bdev->pending_hash_size * sizeof(struct raid1_io_head));
+	if (r1_bdev->pending_io_hash == NULL) {
+		SPDK_ERRLOG("Could not allocate pending_io_hash\n");
+		rc = -ENOMEM;
+		goto free_resync;
+	}
+	for (i = 0; i < r1_bdev->pending_hash_size; i++) {
+		io_head = &r1_bdev->pending_io_hash[i];
+		TAILQ_INIT(io_head);
+	}
+	r1_bdev->bdev.name = r1_bdev->raid1_name;
+	r1_bdev->bdev.product_name = RAID1_PRODUCT_NAME;
+	r1_bdev->bdev.write_cache = false;
+	if (create_ctx->multi) {
+		r1_bdev->bdev.required_alignment = spdk_max(
+			r1_bdev->per_bdev[0].required_alignment,
+			r1_bdev->per_bdev[1].required_alignment);
+		r1_bdev->bdev.blocklen = spdk_min(r1_bdev->per_bdev[0].block_size,
+			r1_bdev->per_bdev[1].block_size);
+	} else {
+		r1_bdev->bdev.required_alignment = r1_bdev->per_bdev[0].required_alignment;
+		r1_bdev->bdev.blocklen = r1_bdev->per_bdev[0].block_size;
+	}
+	r1_bdev->bdev.blockcnt = from_le64(&r1_bdev->sb->data_size) / r1_bdev->bdev.blocklen;
+	r1_bdev->bdev.optimal_io_boundary = r1_bdev->strip_size;
+	r1_bdev->bdev.split_on_optimal_io_boundary = true;
+	r1_bdev->bdev.ctxt = r1_bdev;
+	r1_bdev->bdev.fn_table = &g_raid1_bdev_fn_table;
+	r1_bdev->bdev.module = &g_raid1_if;
+
+	r1_bdev->sb_sync = false;
+	r1_bdev->delete_ctx.deleted = false;
+
+	spdk_io_device_register(r1_bdev, raid1_bdev_ch_create_cb,
+		raid1_bdev_ch_destroy_cb, 0, r1_bdev->raid1_name);
+
 	create_ctx->r1_bdev = r1_bdev;
-
 	TAILQ_INSERT_TAIL(&g_raid1_bdev_head, r1_bdev, link);
-
-	target_thread = raid1_choose_thread();
-	raid1_msg_submit(&create_ctx->msg_ctx, target_thread,
+	raid1_msg_submit(&create_ctx->msg_ctx, r1_bdev->r1_thread,
 		raid1_bdev_init_in_thread, r1_bdev,
 		raid1_bdev_init_complete, create_ctx);
 	return;
 
+free_resync:
+	raid1_resync_free(r1_bdev);
+free_regions:
+	free(r1_bdev->regions);
+free_inflight_cnt:
+	free(r1_bdev->inflight_cnt);
+free_bm_buf:
+	spdk_dma_free(r1_bdev->bm_buf);
+free_sb_buf:
+	spdk_dma_free(r1_bdev->sb_buf);
+free_r1_bdev:
+	free(r1_bdev);
 err_out:
 	raid1_per_bdev_close(&create_ctx->per_bdev[0]);
-	raid1_per_bdev_close(&create_ctx->per_bdev[1]);
+	if (create_ctx->multi) {
+		raid1_per_bdev_close(&create_ctx->per_bdev[1]);
+	}
 	raid1_create_finish(create_ctx, rc);
 }
 
-static void
-raid1_meta_multi_write_complete(void *arg, uint8_t err_mask)
+static bool
+raid1_good_sb(struct raid1_create_ctx *create_ctx, struct raid1_sb *sb)
 {
-    struct raid1_create_ctx *create_ctx = arg;
-    int rc;
-    if (err_mask) {
-	    rc = -EIO;
-    } else {
-	    rc = 0;    
-    }
-    raid1_meta_write_complete(create_ctx, rc);
+	if (from_le32(&sb->major_version) != RAID1_MAJOR_VERSION) {
+		SPDK_ERRLOG("raid1 major_verison mismatch\n");
+		return false;
+	}
+	if (from_le64(&sb->meta_size) != create_ctx->meta_size) {
+		SPDK_ERRLOG("raid1 meta_size mismatch\n");
+		return false;
+	}
+	if (from_le64(&sb->data_size) != create_ctx->data_size) {
+		SPDK_ERRLOG("raid1 data_size mismatch\n");
+		return false;
+	}
+	if (from_le64(&sb->strip_size) != create_ctx->strip_size) {
+		SPDK_ERRLOG("raid1 strip_size mismatch\n");
+		return false;
+	}
+	return true;
+}
+
+static void
+raid1_create_meta_multi_read_complete(void *arg, uint8_t err_mask)
+{
+	struct raid1_create_ctx *create_ctx = arg;
+	int rc;
+	struct raid1_sb *sb0, *sb1;
+	bool valid_sb0, valid_sb1;
+	struct raid1_init_params params;
+	int master_idx;
+	if (err_mask) {
+		rc = -EIO;
+		goto err_out;
+	}
+	sb0 = (struct raid1_sb *)create_ctx->meta_buf[0];
+	sb1 = (struct raid1_sb *)create_ctx->meta_buf[1];
+	if (strncmp(sb0->magic, RAID1_MAGIC_STRING, RAID1_MAGIC_STRING_LEN)) {
+		valid_sb0 = false;
+	} else {
+		if (!raid1_good_sb(create_ctx, sb0)) {
+			rc = -EINVAL;
+			goto err_out;
+		}
+		valid_sb0 = true;
+	}
+	if (strncmp(sb1->magic, RAID1_MAGIC_STRING, RAID1_MAGIC_STRING_LEN)) {
+		valid_sb1 = false;
+	} else {
+		if (!raid1_good_sb(create_ctx, sb1)) {
+			rc = -EINVAL;
+			goto err_out;
+		}
+		valid_sb1 = true;
+	}
+	params.raid1_name = create_ctx->raid1_name;
+	if (valid_sb0 && valid_sb1) {
+		if (spdk_uuid_compare(&sb0->uuid, &sb1->uuid)) {
+			SPDK_ERRLOG("raid1 uuid mismatch\n");
+			rc = -EINVAL;
+			goto err_out;
+		}
+		uint64_t counter0 = from_le64(&sb0->counter);
+		uint64_t counter1 = from_le64(&sb1->counter);
+		if (counter0 >= counter1) {
+			create_ctx->master_idx = 0;
+		} else {
+			create_ctx->master_idx = 1;
+		}
+		raid1_bdev_init(create_ctx);
+	} else if (valid_sb0) {
+		create_ctx->master_idx = 0;
+	} else if (valid_sb1) {
+		create_ctx->master_idx = 1;
+	} else {
+		create_ctx->master_idx = 0;
+	}
+	return;
+
+err_out:
+	raid1_per_thread_close(&create_ctx->per_thread[0]);
+	raid1_per_bdev_close(&create_ctx->per_bdev[0]);
+	raid1_per_thread_close(&create_ctx->per_thread[1]);
+	raid1_per_bdev_close(&create_ctx->per_bdev[1]);
+	raid1_create_finish(create_ctx, rc);
+	return;
+}
+
+static void
+raid1_create_meta_single_read_complete(void *arg, int rc)
+{
+	return;
 }
 
 void
@@ -2497,25 +2588,37 @@ raid1_bdev_create(const char *raid1_name, struct raid1_create_param *param,
 	raid1_create_cb cb_fn, void *cb_arg)
 {
 	struct raid1_create_ctx *create_ctx;
-	struct raid1_sb *sb;
 	uint64_t whole_size, meta_size, data_size, bm_size, strip_cnt, region_cnt;
 	size_t buf_align;
-	uint8_t *bm;
-	int rc, remains, i;
+	int rc;
 
-	SPDK_DEBUGLOG(bdev_raid1, "raid1_bdev_create: %s %s %s\n",
-		raid1_name, param->bdev0_name, param->bdev1_name);
+	SPDK_DEBUGLOG(bdev_raid1, "raid1_bdev_create: %s\n", raid1_name);
 
 	create_ctx = calloc(1, sizeof(*create_ctx));
 	if (create_ctx == NULL) {
-		SPDK_ERRLOG("Could not allocate raid1_create_ctx\n");
+		SPDK_ERRLOG("Could not allocate raid1 create_ctx\n");
 		rc = -ENOMEM;
 		goto call_cb;
 	}
 
+	if (create_ctx->bdev1_name) {
+		create_ctx->multi = true;
+	} else {
+		create_ctx->multi = false;
+	}
+
 	strncpy(create_ctx->raid1_name, raid1_name, RAID1_MAX_NAME_LEN);
 	strncpy(create_ctx->bdev0_name, param->bdev0_name, RAID1_MAX_NAME_LEN);
-	strncpy(create_ctx->bdev1_name, param->bdev1_name, RAID1_MAX_NAME_LEN);
+	if (create_ctx->multi) {
+		strncpy(create_ctx->bdev1_name, param->bdev1_name, RAID1_MAX_NAME_LEN);
+	}
+
+	create_ctx->strip_size = param->strip_size;
+	create_ctx->write_delay = param->write_delay;
+	create_ctx->clean_ratio = param->clean_ratio;
+	create_ctx->max_delay = param->max_delay;
+	create_ctx->max_resync = param->max_resync;
+	create_ctx->synced = param->synced;
 
 	rc = raid1_per_bdev_open(create_ctx->bdev0_name, &create_ctx->per_bdev[0]);
 	if (rc) {
@@ -2529,87 +2632,90 @@ raid1_bdev_create(const char *raid1_name, struct raid1_create_param *param,
 		goto close_bdev0_per_bdev;
 	}
 
-	rc = raid1_per_bdev_open(create_ctx->bdev1_name, &create_ctx->per_bdev[1]);
-	if (rc) {
-		SPDK_ERRLOG("Could not open bdev1 per_bdev\n");
-		goto close_bdev0_per_thread;
-	}
+	if (create_ctx->multi) {
+		rc = raid1_per_bdev_open(create_ctx->bdev1_name, &create_ctx->per_bdev[1]);
+		if (rc) {
+			SPDK_ERRLOG("Could not open bdev1 per_bdev\n");
+			goto close_bdev0_per_thread;
+		}
 
-	rc = raid1_per_thread_open(&create_ctx->per_bdev[1], &create_ctx->per_thread[1]);
-	if (rc) {
-		SPDK_ERRLOG("Could not open bdev1 per_thread\n");
-		goto close_bdev1_per_bdev;
+		rc = raid1_per_thread_open(&create_ctx->per_bdev[1], &create_ctx->per_thread[1]);
+		if (rc) {
+			SPDK_ERRLOG("Could not open bdev1 per_thread\n");
+			goto close_bdev1_per_bdev;
+		}
 	}
 
 	create_ctx->per_thread_ptr[0] = &create_ctx->per_thread[0];
 	create_ctx->per_thread_ptr[1] = &create_ctx->per_thread[1];
 
-	if (param->strip_size % PAGE_SIZE) {
+	if (create_ctx->strip_size % PAGE_SIZE) {
 		SPDK_ERRLOG("strip_size is not alignment to %lu\n", PAGE_SIZE);
 		rc = -EINVAL;
 		goto close_bdev1_per_thread;
 	}
 
-	if (create_ctx->per_bdev[0].block_size != create_ctx->per_bdev[1].block_size) {
-		SPDK_ERRLOG("raid1 block_size mismatch, bdev0 block_size: %" PRIu32 " bdev0 block_size: %" PRIu32 "\n",
-			create_ctx->per_bdev[0].block_size, create_ctx->per_bdev[1].block_size);
-		rc = -EINVAL;
-		goto close_bdev1_per_thread;
+	if (create_ctx->multi) {
+		buf_align = spdk_max(create_ctx->per_bdev[0].buf_align,
+			create_ctx->per_bdev[1].buf_align);
+		whole_size = spdk_min(create_ctx->per_bdev[0].block_size * create_ctx->per_bdev[0].num_blocks,
+			create_ctx->per_bdev[1].block_size * create_ctx->per_bdev[1].num_blocks);
+	} else {
+		buf_align = create_ctx->per_bdev[0].buf_align;
+		whole_size = create_ctx->per_bdev[0].block_size * create_ctx->per_bdev[0].num_blocks;
 	}
-	whole_size = spdk_min(create_ctx->per_bdev[0].block_size * create_ctx->per_bdev[0].num_blocks,
-		create_ctx->per_bdev[1].block_size * create_ctx->per_bdev[1].num_blocks);
 	raid1_calc_strip_and_region(whole_size, param->strip_size, &strip_cnt, &region_cnt);
 	bm_size = region_cnt * PAGE_SIZE;
 	meta_size = RAID1_SB_SIZE + bm_size;
 	data_size = whole_size - meta_size;
 	raid1_calc_strip_and_region(data_size, param->strip_size, &strip_cnt, &region_cnt);
-	buf_align = spdk_max(create_ctx->per_bdev[0].buf_align,
-		create_ctx->per_bdev[1].buf_align);
-	create_ctx->wbuf = spdk_dma_zmalloc(meta_size, buf_align, NULL);
-	if (!create_ctx->wbuf) {
+	create_ctx->meta_buf[0] = spdk_dma_zmalloc(meta_size, buf_align, NULL);
+	if (!create_ctx->meta_buf[0]) {
 		rc = -ENOMEM;
-		SPDK_ERRLOG("Could not allocate wbuf, meta_size: %" PRIu64 " buf_align: %ld",
-			meta_size, buf_align);
+		SPDK_ERRLOG("Could not allocate meta_buf[0]\n");
 		goto close_bdev1_per_thread;
 	}
-
-	sb = (struct raid1_sb *)create_ctx->wbuf;
-	strncpy(sb->magic, RAID1_MAGIC_STRING, RAID1_MAGIC_STRING_LEN);
-	strncpy(sb->raid1_name, raid1_name, RAID1_MAX_NAME_LEN);
-	spdk_uuid_generate(&sb->uuid);
-	to_le64(&sb->meta_size, meta_size);
-	to_le64(&sb->data_size, data_size);
-	to_le64(&sb->counter, 1);
-	to_le32(&sb->major_version, RAID1_MAJOR_VERSION);
-	to_le32(&sb->minor_version, RAID1_MINOR_VERSION);
-	to_le64(&sb->strip_size, param->strip_size);
-	to_le64(&sb->write_delay, param->write_delay);
-	to_le64(&sb->clean_ratio, param->clean_ratio);
-	to_le64(&sb->max_pending, param->max_pending);
-	to_le64(&sb->max_resync, param->max_resync);
-
-	if (!param->synced) {
-		int written_cnt;
-		bm = create_ctx->wbuf + RAID1_SB_SIZE;
-		memset(bm, 0xff, strip_cnt / RAID1_BYTESZ);
-		written_cnt = (strip_cnt / RAID1_BYTESZ) * RAID1_BYTESZ;
-		for (i = written_cnt; i < strip_cnt; i++) {
-			raid1_bm_set(bm, i);
+	if (create_ctx->multi) {
+		create_ctx->meta_buf[1] = spdk_dma_zmalloc(meta_size, buf_align, NULL);
+		if (!create_ctx->meta_buf[1]) {
+			rc = -ENOMEM;
+			SPDK_ERRLOG("Could not allocate meta_buf[1]\n");
+			goto free_meta_buf0;
 		}
 	}
 
+	create_ctx->meta_size = meta_size;
+	create_ctx->data_size = data_size;
+	create_ctx->region_cnt = region_cnt;
+	create_ctx->strip_cnt = strip_cnt;
+	create_ctx->bm_size = bm_size;
 	create_ctx->cb_fn = cb_fn;
 	create_ctx->cb_arg = cb_arg;
-	raid1_multi_io_write(&create_ctx->multi_io, create_ctx->per_thread_ptr,
-		create_ctx->wbuf, RAID1_SB_START_BYTE, meta_size,
-		raid1_meta_multi_write_complete, create_ctx);
+	if (create_ctx->multi) {
+		raid1_multi_io_read(&create_ctx->multi_io, create_ctx->per_thread_ptr,
+			create_ctx->meta_buf, RAID1_SB_START_BYTE, RAID1_SB_SIZE,
+			raid1_create_meta_multi_read_complete, create_ctx);
+	} else {
+		struct raid1_per_io *per_io = &create_ctx->multi_io.io_leg[0].per_io;
+		raid1_per_io_init(per_io, create_ctx->per_thread_ptr[0],
+			create_ctx->meta_buf, RAID1_SB_START_BYTE, RAID1_SB_SIZE,
+			RAID1_IO_READ,
+			raid1_create_meta_single_read_complete, create_ctx);
+		raid1_per_io_submit(per_io);
+	}
 
 	return;
 
+free_meta_buf0:
+	spdk_dma_free(create_ctx->meta_buf[0]);
 close_bdev1_per_thread:
-	raid1_per_thread_close(&create_ctx->per_thread[1]);
+	if (create_ctx->multi) {
+		raid1_per_thread_close(&create_ctx->per_thread[1]);
+	}
 close_bdev1_per_bdev:
-	raid1_per_bdev_close(&create_ctx->per_bdev[1]);
+	if (create_ctx->multi) {
+		raid1_per_bdev_close(&create_ctx->per_bdev[1]);
+	}
 close_bdev0_per_thread:
 	raid1_per_thread_close(&create_ctx->per_thread[0]);
 close_bdev0_per_bdev:
@@ -2643,199 +2749,5 @@ raid1_bdev_delete(const char *raid1_name, raid1_delete_cb cb_fn, void *cb_arg)
 err_out:
 	cb_fn(cb_arg, rc);
 }
-# if 0
-struct raid1_rebuild_ctx {
-	char raid1_name[RAID1_MAX_NAME_LEN+1];
-	char bdev0_name[RAID1_MAX_NAME_LEN+1];
-	char bdev1_name[RAID1_MAX_NAME_LEN+1];
-	struct raid1_per_bdev per_bdev[2];
-	struct raid1_per_thread per_thread[2];
-	struct raid1_per_thread *per_thread_ptr[2];
-	struct raid1_multi_io multi_io;
-	struct raid1_io_leg io_leg[2];
-	uint8_t *sb_buf[2];
-	uint8_t *meta_buf;
-	raid1_rebuild_cb cb_fn;
-	void *cb_arg;
-	struct raid1_bdev *r1_bdev;
-	struct raid1_msg_ctx msg_ctx;
-	int rc;
-};
 
-static void
-raid1_rebuild_finish(struct raid1_rebuild_ctx *rebuild_ctx, int rc)
-{
-	rebuild_ctx->cb_fn(rebuild_ctx->cb_arg, rc);
-	spdk_dma_free(rebuild_ctx->sb_buf[0]);
-	spdk_dma_free(rebuild_ctx->sb_buf[1]);
-	if (rebuild_ctx->bm_buf) {
-		spdk_dma_free(rebuild_ctx->bm_buf);
-	}
-}
-
-static void
-raid1_rebuild_meta_read_complete(struct raid1_rebuild_ctx *rebuild_ctx, int rc)
-{
-	struct raid1_sb *sb0, *sb1, *sb;
-	if (rc) {
-		goto err_out;
-	}
-	sb0 = rebuild_ctx->sb_buf[0];
-	sb1 = rebuild_ctx->sb_buf[1];
-	if (from_le64(&sb0->counter) >= from_le64(&sb1->counter)) {
-		sb = sb0;
-	} else {
-		sb = sb1;
-	}
-	meta_size = from_le64(&sb->meta_size);
-	if (meta_size % rebuild_ctx->per_bdev[0].block_size != 0) {
-		SPDK_ERRLOG("Invalid meta_size: %" PRIu32 "\n", meta_size);
-		rc = -EINVAL;
-		goto err_out;
-	}
-	if (meta_size <= RAID1_SB_SIZE) {
-		SPDK_ERRLOG("The meta_size is too small: %" PRIu32 "\n", meta_size);
-		rc = -EINVAL;
-		goto err_out;
-	}
-
-err_out:
-	raid1_per_thread_close(&rebuild_ctx->per_thread[0]);
-	raid1_per_thread_close(&rebuild_ctx->per_thread[1]);
-	raid1_per_bdev_close(&rebuild_ctx->per_bdev[0]);
-	raid1_per_bdev_close(&rebuild_ctx->per_bdev[1]);
-	raid1_rebuild_finish(rebuild_ctx, rc);
-}
-
-static void
-raid1_rebuild_meta_multi_read_complete(void *arg, uint8_t err_mask)
-{
-	struct raid1_rebuild_ctx *rebuild_ctx = arg;
-	int rc;
-	if (err_mask) {
-		rc = -EIO;
-	} else {
-		rc = 0;
-	}
-	raid1_rebuild_meta_read_complete(rebuild_ctx, rc);
-}
-
-static void
-raid1_bdev_rebuild_multi(const char *raid1_name,
-	const char *bdev0_name, const char *bdev1_name,
-	raid1_rebuild_cb cb_fn, void *cb_arg)
-{
-	struct raid1_rebuild_ctx *rebuild_ctx;
-	size_t buf_align;
-	int rc;
-
-	SPDK_DEBUGLOG(bdev_raid1, "raid1_bdev_rebuild: %s %s %s\n",
-		raid1_name, bdev0_name, bdev1_name);
-
-	rebuild_ctx = calloc(1, sizeof(*rebuild_ctx));
-	if (rebuild_ctx == NULL) {
-		SPDK_ERRLOG("Could not allocate raid1_rebuild_ctx\n");
-		rc = -ENOMEM;
-		goto call_cb;
-	}
-
-	strncpy(rebuild_ctx->raid1_name, raid1_name, RAID1_MAX_NAME_LEN);
-	strncpy(rebuild_ctx->bdev0_name, bdev0_name, RAID1_MAX_NAME_LEN);
-	strncpy(rebuild_ctx->bdev1_name, bdev1_name, RAID1_MAX_NAME_LEN);
-
-	rc = raid1_per_bdev_open(rebuild_ctx->bdev0_name, &rebuild_ctx->per_bdev[0]);
-	if (rc) {
-		SPDK_ERRLOG("Could not open bdev0 per_bdev\n");
-		goto free_ctx;
-	}
-
-	rc = raid1_per_thread_open(&rebuild_ctx->per_bdev[0], &rebuild_ctx->per_thread[0]);
-	if (rc) {
-		SPDK_ERRLOG("Could not open bdev0 per_thread\n");
-		goto close_bdev0_per_bdev;
-	}
-
-	rc = raid1_per_bdev_open(rebuild_ctx->bdev1_name, &rebuild_ctx->per_bdev[1]);
-	if (rc) {
-		SPDK_ERRLOG("Could not open bdev1 per_bdev\n");
-		goto close_bdev0_per_thread;
-	}
-
-	rc = raid1_per_thread_open(&rebuild_ctx->per_bdev[1], &rebuild_ctx->per_thread[1]);
-	if (rc) {
-		SPDK_ERRLOG("Could not open bdev1 per_thread\n");
-		goto close_bdev1_per_bdev;
-	}
-
-	rebuild_ctx->per_thread_ptr[0] = &rebuild_ctx->per_thread[0];
-	rebuild_ctx->per_thread_ptr[1] = &rebuild_ctx->per_thread[1];
-
-	if (rebuild_ctx->per_bdev[0].block_size != rebuild_ctx->per_bdev[1].block_size) {
-		SPDK_ERRLOG("raid1 block_size mismatch, bdev0 block_size: %" PRIu32 " bdev0 block_size: %" PRIu32 "\n",
-			rebuild_ctx->per_bdev[0].block_size, rebuild_ctx->per_bdev[1].block_size);
-		rc = -EINVAL;
-		goto close_bdev1_per_thread;
-	}
-
-	buf_align = spdk_max(rebuild_ctx->per_bdev[0].buf_align,
-		rebuild_ctx->per_bdev[1].buf_align);
-	rebuild_ctx->sb_buf[0] = spdk_dma_zmalloc(RAID1_SB_SIZE, buf_align, NULL);
-	if (!rebuild_ctx->sb_buf[0]) {
-		rc = -ENOMEM;
-		SPDK_ERRLOG("Could not allocate meta_buf[0]\n");
-		goto close_bdev1_per_thread;
-	}
-	rebuild_ctx->sb_buf[1] = spdk_dma_zmalloc(RAID1_SB_SIZE, buf_align, NULL);
-	if (!rebuild_ctx->sb_buf[1]) {
-		rc = -ENOMEM;
-		SPDK_ERRLOG("Could not allocate meta_buf[1]\n");
-		goto free_meta_buf_0;
-	}
-
-	raid1_multi_io_read(&rebuild_ctx->multi_io, rebuild_ctx->per_thread_ptr,
-		rebuild_ctx->sb_buf, RAID1_SB_START_BYTE, RAID1_SB_SIZE,
-		raid1_rebuild_meta_multi_read_complete, rebuild_ctx);
-
-	return;
-
-free_meta_buf_0:
-	spdk_dma_free(rebuild_ctx->sb_buf[0]);
-close_bdev1_per_thread:
-	raid1_per_thread_close(&rebuild_ctx->per_thread[1]);
-close_bdev1_per_bdev:
-	raid1_per_bdev_close(&rebuild_ctx->per_bdev[1]);
-close_bdev0_per_thread:
-	raid1_per_thread_close(&rebuild_ctx->per_thread[0]);
-close_bdev0_per_bdev:
-	raid1_per_bdev_close(&rebuild_ctx->per_bdev[0]);
-free_ctx:
-	free(rebuild_ctx);
-call_cb:
-	cb_fn(cb_arg, rc);
-
-	return;
-}
-
-static void
-raid1_bdev_rebuild_single(const char*raid1_name,
-	const char*bdev0_name, const char *bdev1_name,
-	raid1_rebuild_cb cb_fn, void *cb_arg)
-{
-	return;
-}
-
-void
-raid1_bdev_rebuild(const char *raid1_name,
-	const char *bdev0_name, const char *bdev1_name,
-	raid1_rebuild_cb cb_fn, void *cb_arg)
-{
-	if (bdev1_name) {
-		raid1_bdev_rebuild_multi(raid1_name, bdev0_name, bdev1_name,
-			cb_fn, cb_arg);
-	} else {
-		raid1_bdev_rebuild_single(raid1_name, bdev0_name,
-			cb_fn, cb_arg);
-	}
-}
-#endif
 SPDK_LOG_REGISTER_COMPONENT(bdev_raid1)

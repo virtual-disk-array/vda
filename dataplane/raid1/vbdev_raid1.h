@@ -9,7 +9,7 @@
 #define RAID1_DEFAULT_STRIP_SIZE (4*1024*1024)
 #define RAID1_DEFAULT_WRITE_DELAY (1000)
 #define RAID1_DEFAULT_CLEAN_RATIO (1000*1000)
-#define RAID1_DEFAULT_MAX_PENDING (1024)
+#define RAID1_DEFAULT_MAX_DELAY (1024)
 #define RAID1_DEFAULT_MAX_RESYNC (10)
 
 struct raid1_create_param {
@@ -18,7 +18,7 @@ struct raid1_create_param {
 	uint64_t strip_size;
 	uint64_t write_delay;
 	uint64_t clean_ratio;
-	uint64_t max_pending;
+	uint64_t max_delay;
 	uint64_t max_resync;
 	bool synced;
 };
