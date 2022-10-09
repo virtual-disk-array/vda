@@ -90,6 +90,21 @@ static inline bool raid1_bm_test(uint8_t *bm, int idx)
 		return false;
 }
 
+static uint8_t g_raid1_zero_buf[PAGE_SIZE] = {0};
+static inline bool
+raid1_is_buffer_all_zero(const uint8_t *buf, size_t n)
+{
+	int i;
+	assert((n % PAGE_SIZE) == 0);
+	for (i = 0; i < (n/PAGE_SIZE); i++) {
+		if (memcmp(buf, g_raid1_zero_buf, PAGE_SIZE)) {
+			return false;
+		}
+		buf += PAGE_SIZE;
+	}
+	return true;
+}
+
 struct raid1_per_bdev {
 	struct spdk_bdev *bdev;
 	struct spdk_bdev_desc *desc;
@@ -776,6 +791,7 @@ struct raid1_bdev {
 	bool resync_release;
 	bool sb_writing;
 	bool sb_sync;
+	bool multi;
 	uint64_t bm_io_cnt;
 	uint64_t data_io_cnt;
 	uint64_t read_delivered;
@@ -856,9 +872,9 @@ raid1_read_choose_bdev(struct raid1_bdev *r1_bdev, struct raid1_bdev_io *raid1_i
 static inline void
 raid1_sb_counter_add(struct raid1_sb *sb, uint64_t n)
 {
-    uint64_t counter = from_le64(&sb->counter);
-    counter += n;
-    to_le64(&sb->counter, counter);
+	uint64_t counter = from_le64(&sb->counter);
+	counter += n;
+	to_le64(&sb->counter, counter);
 }
 
 static inline void
@@ -2138,13 +2154,15 @@ raid1_bdev_init_in_thread(void *arg)
 	}
 	r1_bdev->per_thread_ptr[0] = &r1_bdev->per_thread[0];
 
-	rc = raid1_per_thread_open(
-		&r1_bdev->per_bdev[1], &r1_bdev->per_thread[1]);
-	if (rc) {
-		SPDK_ERRLOG("Could not open meta1 per thread\n");
-		goto close_bdev0_per_thread;
+	if (r1_bdev->multi) {
+		rc = raid1_per_thread_open(
+			&r1_bdev->per_bdev[1], &r1_bdev->per_thread[1]);
+		if (rc) {
+			SPDK_ERRLOG("Could not open meta1 per thread\n");
+			goto close_bdev0_per_thread;
+		}
+		r1_bdev->per_thread_ptr[1] = &r1_bdev->per_thread[1];
 	}
-	r1_bdev->per_thread_ptr[1] = &r1_bdev->per_thread[1];
 
 	r1_bdev->poller = spdk_poller_register(raid1_io_poller,
 		r1_bdev, r1_bdev->write_delay);
@@ -2157,7 +2175,9 @@ raid1_bdev_init_in_thread(void *arg)
 	return 0;
 
 close_bdev1_per_thread:
-	raid1_per_thread_close(&r1_bdev->per_thread[1]);
+	if (r1_bdev->multi) {
+		raid1_per_thread_close(&r1_bdev->per_thread[1]);
+	}
 close_bdev0_per_thread:
 	raid1_per_thread_close(&r1_bdev->per_thread[0]);
 err_out:
@@ -2170,14 +2190,18 @@ raid1_bdev_release_in_thread(struct raid1_bdev *r1_bdev)
 	SPDK_DEBUGLOG(bdev_raid1, "raid1_bdev_release_in_thread: %s\n",
 		r1_bdev->raid1_name);
 	raid1_per_thread_close(&r1_bdev->per_thread[0]);
-	raid1_per_thread_close(&r1_bdev->per_thread[1]);
+	if (r1_bdev->multi) {
+		raid1_per_thread_close(&r1_bdev->per_thread[1]);
+	}
 	spdk_poller_unregister(&r1_bdev->poller);
 }
 
 static void raid1_release(struct raid1_bdev *r1_bdev)
 {
 	raid1_per_bdev_close(&r1_bdev->per_bdev[0]);
-	raid1_per_bdev_close(&r1_bdev->per_bdev[1]);
+	if (r1_bdev->multi) {
+		raid1_per_bdev_close(&r1_bdev->per_bdev[1]);
+	}
 	spdk_io_device_unregister(r1_bdev, NULL);
 	free(r1_bdev->pending_io_hash);
 	if (r1_bdev->resync) {
@@ -2218,7 +2242,7 @@ struct raid1_create_ctx {
 	uint64_t max_resync;
 	bool synced;
 	bool multi;
-	int master_idx;
+	int primary_idx;
 	uint64_t meta_size;
 	uint64_t data_size;
 	size_t buf_align;
@@ -2321,7 +2345,7 @@ raid1_bdev_init(struct raid1_create_ctx *create_ctx)
 	}
 
 	strncpy(r1_bdev->raid1_name, create_ctx->raid1_name, RAID1_MAX_NAME_LEN);
-	if (create_ctx->master_idx == 0) {
+	if (create_ctx->primary_idx == 0) {
 		strncpy(r1_bdev->bdev0_name, create_ctx->bdev0_name, RAID1_MAX_NAME_LEN);
 		memcpy(&r1_bdev->per_bdev[0], &create_ctx->per_bdev[0], sizeof(struct raid1_per_bdev));
 		if (create_ctx->multi) {
@@ -2337,6 +2361,7 @@ raid1_bdev_init(struct raid1_create_ctx *create_ctx)
 		memcpy(&r1_bdev->per_bdev[1], &create_ctx->per_bdev[0], sizeof(struct raid1_per_bdev));
 		meta_buf = create_ctx->meta_buf[1];
 	}
+	r1_bdev->multi = create_ctx->multi;
 	r1_bdev->strip_size = create_ctx->strip_size;
 	r1_bdev->write_delay = create_ctx->write_delay;
 	r1_bdev->clean_ratio = create_ctx->clean_ratio;
@@ -2393,11 +2418,13 @@ raid1_bdev_init(struct raid1_create_ctx *create_ctx)
 		region->bm_writing = false;
 	}
 
-	raid1_resync_allocate(r1_bdev);
-	if (r1_bdev->resync == NULL) {
-		SPDK_ERRLOG("Could not allocate r1_bdev->resync\n");
-		rc = -ENOMEM;
-		goto free_regions;
+	if (create_ctx->multi) {
+		raid1_resync_allocate(r1_bdev);
+		if (r1_bdev->resync == NULL) {
+			SPDK_ERRLOG("Could not allocate r1_bdev->resync\n");
+			rc = -ENOMEM;
+			goto free_regions;
+		}
 	}
 
 	r1_bdev->resync_release = false;
@@ -2470,7 +2497,9 @@ raid1_bdev_init(struct raid1_create_ctx *create_ctx)
 	return;
 
 free_resync:
-	raid1_resync_free(r1_bdev);
+	if (create_ctx->multi) {
+		raid1_resync_free(r1_bdev);
+	}
 free_regions:
 	free(r1_bdev->regions);
 free_inflight_cnt:
@@ -2512,6 +2541,82 @@ raid1_good_sb(struct raid1_create_ctx *create_ctx, struct raid1_sb *sb)
 }
 
 static void
+raid1_update_secondary_complete(void *arg, int rc)
+{
+	struct raid1_create_ctx *create_ctx = arg;
+	if (rc) {
+		SPDK_ERRLOG("Update secondary err: %d\n", rc);
+		goto err_out;
+	}
+	raid1_bdev_init(create_ctx);
+	return;
+
+err_out:
+	raid1_per_thread_close(&create_ctx->per_thread[0]);
+	raid1_per_bdev_close(&create_ctx->per_bdev[0]);
+	raid1_per_thread_close(&create_ctx->per_thread[1]);
+	raid1_per_bdev_close(&create_ctx->per_bdev[1]);
+	raid1_create_finish(create_ctx, rc);
+	return;
+}
+
+static void
+raid1_update_secondary(struct raid1_create_ctx *create_ctx)
+{
+	struct raid1_per_io *per_io;
+	int idx = 1 - create_ctx->primary_idx;
+	per_io = &create_ctx->multi_io.io_leg[idx].per_io;
+	raid1_per_io_init(per_io, create_ctx->per_thread_ptr[idx],
+		create_ctx->meta_buf[idx], RAID1_SB_START_BYTE,
+		create_ctx->meta_size, RAID1_IO_WRITE,
+		raid1_update_secondary_complete, create_ctx);
+	raid1_per_io_submit(per_io);
+}
+
+static void
+raid1_update_primary_complete(void *arg, int rc)
+{
+	struct raid1_create_ctx *create_ctx = arg;
+	if (rc) {
+		SPDK_ERRLOG("Update primary err: %d\n", rc);
+		goto err_out;
+	}
+	raid1_update_secondary(create_ctx);
+	return;
+
+err_out:
+	raid1_per_thread_close(&create_ctx->per_thread[0]);
+	raid1_per_bdev_close(&create_ctx->per_bdev[0]);
+	raid1_per_thread_close(&create_ctx->per_thread[1]);
+	raid1_per_bdev_close(&create_ctx->per_bdev[1]);
+	raid1_create_finish(create_ctx, rc);
+	return;
+}
+
+static void
+raid1_update_primary(struct raid1_create_ctx *create_ctx)
+{
+	struct raid1_per_io *per_io;
+	int idx = create_ctx->primary_idx;
+	per_io = &create_ctx->multi_io.io_leg[idx].per_io;
+	raid1_per_io_init(per_io, create_ctx->per_thread_ptr[idx],
+		create_ctx->meta_buf[idx], RAID1_SB_START_BYTE,
+		create_ctx->meta_size, RAID1_IO_WRITE,
+		raid1_update_primary_complete, create_ctx);
+	raid1_per_io_submit(per_io);
+}
+
+static void
+raid1_set_all_bm(uint8_t *bm, uint64_t strip_cnt)
+{
+	int written_cnt = (strip_cnt / RAID1_BYTESZ) * RAID1_BYTESZ;
+	memset(bm, 0xff, strip_cnt / RAID1_BYTESZ);
+	for (int i = written_cnt; i < strip_cnt; i++) {
+		raid1_bm_set(bm, i);
+	}
+}
+
+static void
 raid1_create_meta_multi_read_complete(void *arg, uint8_t err_mask)
 {
 	struct raid1_create_ctx *create_ctx = arg;
@@ -2519,7 +2624,7 @@ raid1_create_meta_multi_read_complete(void *arg, uint8_t err_mask)
 	struct raid1_sb *sb0, *sb1;
 	bool valid_sb0, valid_sb1;
 	struct raid1_init_params params;
-	int master_idx;
+	int primary_idx;
 	if (err_mask) {
 		rc = -EIO;
 		goto err_out;
@@ -2527,6 +2632,12 @@ raid1_create_meta_multi_read_complete(void *arg, uint8_t err_mask)
 	sb0 = (struct raid1_sb *)create_ctx->meta_buf[0];
 	sb1 = (struct raid1_sb *)create_ctx->meta_buf[1];
 	if (strncmp(sb0->magic, RAID1_MAGIC_STRING, RAID1_MAGIC_STRING_LEN)) {
+		if (!raid1_is_buffer_all_zero(create_ctx->meta_buf[0],
+				create_ctx->meta_size)) {
+			SPDK_ERRLOG("meta_buf[0] is not all zero\n");
+			rc = -EINVAL;
+			goto err_out;
+		}
 		valid_sb0 = false;
 	} else {
 		if (!raid1_good_sb(create_ctx, sb0)) {
@@ -2536,6 +2647,12 @@ raid1_create_meta_multi_read_complete(void *arg, uint8_t err_mask)
 		valid_sb0 = true;
 	}
 	if (strncmp(sb1->magic, RAID1_MAGIC_STRING, RAID1_MAGIC_STRING_LEN)) {
+		if (!raid1_is_buffer_all_zero(create_ctx->meta_buf[1],
+				create_ctx->meta_size)) {
+			SPDK_ERRLOG("meta_buf[1] is not all zero\n");
+			rc = -EINVAL;
+			goto err_out;
+		}
 		valid_sb1 = false;
 	} else {
 		if (!raid1_good_sb(create_ctx, sb1)) {
@@ -2554,17 +2671,45 @@ raid1_create_meta_multi_read_complete(void *arg, uint8_t err_mask)
 		uint64_t counter0 = from_le64(&sb0->counter);
 		uint64_t counter1 = from_le64(&sb1->counter);
 		if (counter0 >= counter1) {
-			create_ctx->master_idx = 0;
+			create_ctx->primary_idx = 0;
 		} else {
-			create_ctx->master_idx = 1;
+			create_ctx->primary_idx = 1;
 		}
 		raid1_bdev_init(create_ctx);
 	} else if (valid_sb0) {
-		create_ctx->master_idx = 0;
+		create_ctx->primary_idx = 0;
+		raid1_set_all_bm(create_ctx->meta_buf[0] + RAID1_SB_SIZE,
+			create_ctx->strip_cnt);
+		memcpy(create_ctx->meta_buf[1], create_ctx->meta_buf[0],
+			create_ctx->meta_size);
+		raid1_sb_counter_add(sb0, 1);
+		raid1_update_primary(create_ctx);
 	} else if (valid_sb1) {
-		create_ctx->master_idx = 1;
+		create_ctx->primary_idx = 1;
+		raid1_set_all_bm(create_ctx->meta_buf[1] + RAID1_SB_SIZE,
+			create_ctx->strip_cnt);
+		memcpy(create_ctx->meta_buf[0], create_ctx->meta_buf[1],
+			create_ctx->meta_size);
+		raid1_sb_counter_add(sb1, 1);
+		raid1_update_primary(create_ctx);
 	} else {
-		create_ctx->master_idx = 0;
+		create_ctx->primary_idx = 0;
+		strncpy(sb0->magic, RAID1_MAGIC_STRING, RAID1_MAGIC_STRING_LEN);
+		spdk_uuid_generate(&sb0->uuid);
+		to_le64(&sb0->meta_size, create_ctx->meta_size);
+		to_le64(&sb0->data_size, create_ctx->data_size);
+		to_le64(&sb0->counter, 1);
+		to_le32(&sb0->major_version, RAID1_MAJOR_VERSION);
+		to_le32(&sb0->minor_version, RAID1_MINOR_VERSION);
+		to_le64(&sb0->strip_size, create_ctx->strip_size);
+		if (!create_ctx->synced) {
+			raid1_set_all_bm(create_ctx->meta_buf[0] + RAID1_SB_SIZE,
+				create_ctx->strip_cnt);
+		}
+		memcpy(create_ctx->meta_buf[1], create_ctx->meta_buf[0],
+			create_ctx->meta_size);
+		raid1_sb_counter_add(sb0, 1);
+		raid1_update_primary(create_ctx);
 	}
 	return;
 
@@ -2578,8 +2723,71 @@ err_out:
 }
 
 static void
+raid1_create_single_sb_update_complete(void *arg, int rc)
+{
+	struct raid1_create_ctx *create_ctx = arg;
+	if (rc) {
+		SPDK_ERRLOG("Update single sb err: %d\n", rc);
+		goto err_out;
+	}
+	raid1_bdev_init(create_ctx);
+	return;
+
+err_out:
+	raid1_per_thread_close(&create_ctx->per_thread[0]);
+	raid1_per_bdev_close(&create_ctx->per_bdev[0]);
+	raid1_create_finish(create_ctx, rc);
+	return;
+}
+
+static void
+raid1_create_single_sb_update(struct raid1_create_ctx *create_ctx)
+{
+	struct raid1_per_io *per_io;
+	per_io = &create_ctx->multi_io.io_leg[0].per_io;
+	raid1_per_io_init(per_io, create_ctx->per_thread_ptr[0],
+		create_ctx->meta_buf[0], RAID1_SB_START_BYTE,
+		create_ctx->meta_size, RAID1_IO_WRITE,
+		raid1_create_single_sb_update_complete, create_ctx);
+	raid1_per_io_submit(per_io);
+}
+
+static void
 raid1_create_meta_single_read_complete(void *arg, int rc)
 {
+	struct raid1_create_ctx *create_ctx = arg;
+	struct raid1_sb *sb;
+	if (rc) {
+		SPDK_ERRLOG("Read meta error: %d\n", rc);
+		goto err_out;
+	}
+
+	sb = (struct raid1_sb *)create_ctx->meta_buf[0];
+	if (strncmp(sb->magic, RAID1_MAGIC_STRING, RAID1_MAGIC_STRING_LEN)) {
+		if (!raid1_is_buffer_all_zero(create_ctx->meta_buf[0],
+				create_ctx->meta_size)) {
+			SPDK_ERRLOG("meta_buf is not all zero\n");
+			rc = -EINVAL;
+			goto err_out;
+		}
+		strncpy(sb->magic, RAID1_MAGIC_STRING, RAID1_MAGIC_STRING_LEN);
+		spdk_uuid_generate(&sb->uuid);
+		to_le64(&sb->meta_size, create_ctx->meta_size);
+		to_le64(&sb->data_size, create_ctx->data_size);
+		to_le64(&sb->counter, 1);
+		to_le32(&sb->major_version, RAID1_MAJOR_VERSION);
+		to_le32(&sb->minor_version, RAID1_MINOR_VERSION);
+		to_le64(&sb->strip_size, create_ctx->strip_size);
+	}
+	raid1_set_all_bm(create_ctx->meta_buf[0] + RAID1_SB_SIZE,
+		create_ctx->strip_cnt);
+	raid1_create_single_sb_update(create_ctx);
+	return;
+
+err_out:
+	raid1_per_thread_close(&create_ctx->per_thread[0]);
+	raid1_per_bdev_close(&create_ctx->per_bdev[0]);
+	raid1_create_finish(create_ctx, rc);
 	return;
 }
 
@@ -2698,8 +2906,8 @@ raid1_bdev_create(const char *raid1_name, struct raid1_create_param *param,
 	} else {
 		struct raid1_per_io *per_io = &create_ctx->multi_io.io_leg[0].per_io;
 		raid1_per_io_init(per_io, create_ctx->per_thread_ptr[0],
-			create_ctx->meta_buf, RAID1_SB_START_BYTE, RAID1_SB_SIZE,
-			RAID1_IO_READ,
+			create_ctx->meta_buf[0], RAID1_SB_START_BYTE,
+			create_ctx->meta_size, RAID1_IO_READ,
 			raid1_create_meta_single_read_complete, create_ctx);
 		raid1_per_io_submit(per_io);
 	}
