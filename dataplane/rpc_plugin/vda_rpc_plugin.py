@@ -53,7 +53,7 @@ def bdev_susres_resume_func(client, base_bdev_name, name):
 
 def bdev_raid1_create_func(client, raid1_name, bdev0_name, bdev1_name,
                            strip_size_kb, write_delay, clean_ratio,
-                           max_pending, max_resync, synced):
+                           max_delay, max_resync, synced):
     params = {
         'raid1_name': raid1_name,
         'bdev0_name': bdev0_name,
@@ -65,8 +65,8 @@ def bdev_raid1_create_func(client, raid1_name, bdev0_name, bdev1_name,
         params['write_delay'] = write_delay
     if clean_ratio is not None:
         params['clean_ratio'] = clean_ratio
-    if max_pending is not None:
-        params['max_pending'] = max_pending
+    if max_delay is not None:
+        params['max_delay'] = max_delay
     if max_resync is not None:
         params['max_resync'] = max_resync
     if synced is not None:
@@ -128,7 +128,7 @@ def spdk_rpc_plugin_initialize(subparsers):
                                           strip_size_kb=args.strip_size_kb,
                                           write_delay=args.write_delay,
                                           clean_ratio=args.clean_ratio,
-                                          max_pending=args.max_pending,
+                                          max_delay=args.max_delay,
                                           max_resync=args.max_resync,
                                           synced=args.synced))
 
@@ -146,7 +146,7 @@ def spdk_rpc_plugin_initialize(subparsers):
                    help="Write delay")
     p.add_argument('-c', '--clean-ratio', type=int,
                    help="Clean ratio")
-    p.add_argument('-p', '--max-pending', type=int,
+    p.add_argument('-d', '--max-delay', type=int,
                    help="Max pending")
     p.add_argument('-r', '--max-resync', type=int,
                    help="Max resync")
