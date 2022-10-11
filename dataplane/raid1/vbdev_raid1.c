@@ -1,8 +1,6 @@
 #include "spdk/stdinc.h"
 #include "spdk/env.h"
-#include "spdk/endian.h"
 #include "spdk/thread.h"
-#include "spdk/bdev_module.h"
 
 #include "vbdev_raid1.h"
 
@@ -629,36 +627,6 @@ raid1_bdev_finish(void)
 	return;
 }
 
-#define RAID1_SB_START_PAGE (0)
-#define RAID1_SB_START_BYTE (RAID1_SB_START_PAGE * PAGE_SIZE)
-#define RAID1_SB_PAGES (1)
-#define RAID1_SB_SIZE (RAID1_SB_PAGES * PAGE_SIZE)
-#define RAID1_BM_START_PAGE (RAID1_SB_START_PAGE + RAID1_SB_PAGES)
-#define RAID1_BM_START_BYTE (RAID1_BM_START_PAGE * PAGE_SIZE)
-#define RAID1_MAJOR_VERSION (1)
-#define RAID1_MINOR_VERSION (0)
-#define RAID1_STRIP_PER_REGION (PAGE_SIZE * RAID1_BYTESZ)
-
-#define RAID1_MAX_DELAY_CNT (255)
-
-#define RAID1_MAGIC_STRING "SPDK_RAID1"
-#define RAID1_MAGIC_STRING_LEN (11)
-SPDK_STATIC_ASSERT(sizeof(RAID1_MAGIC_STRING) == RAID1_MAGIC_STRING_LEN,
-    "RAID1_MAGIC_STRING_LEN incorrect");
-
-struct raid1_sb {
-	char magic[RAID1_MAGIC_STRING_LEN+1];
-	struct spdk_uuid uuid;
-	uint64_t meta_size;
-	uint64_t data_size;
-	uint64_t counter;
-	uint32_t major_version;
-	uint32_t minor_version;
-	uint64_t strip_size;
-}__attribute__((packed));
-
-SPDK_STATIC_ASSERT(sizeof(struct raid1_sb)<RAID1_SB_SIZE, "sb size is too large");
-
 enum raid1_bdev_status {
 	RAID1_BDEV_NORMAL = 0,
 	RAID1_BDEV_DEGRADED,
@@ -763,9 +731,9 @@ raid1_bdev_get_ctx_size(void)
 #define RAID1_MAX_INFLIGHT_PER_STRIP (255)
 
 struct raid1_bdev {
-	char raid1_name[RAID1_MAX_NAME_LEN+1];
-	char bdev0_name[RAID1_MAX_NAME_LEN+1];
-	char bdev1_name[RAID1_MAX_NAME_LEN+1];
+	char raid1_name[RAID1_MAX_NAME_LEN];
+	char bdev0_name[RAID1_MAX_NAME_LEN];
+	char bdev1_name[RAID1_MAX_NAME_LEN];
 	struct spdk_bdev bdev;
 	struct raid1_per_bdev per_bdev[2];
 	struct raid1_per_thread per_thread[2];
@@ -2214,9 +2182,9 @@ raid1_release_ack_send(struct raid1_bdev *r1_bdev)
 }
 
 struct raid1_create_ctx {
-	char raid1_name[RAID1_MAX_NAME_LEN+1];
-	char bdev0_name[RAID1_MAX_NAME_LEN+1];
-	char bdev1_name[RAID1_MAX_NAME_LEN+1];
+	char raid1_name[RAID1_MAX_NAME_LEN];
+	char bdev0_name[RAID1_MAX_NAME_LEN];
+	char bdev1_name[RAID1_MAX_NAME_LEN];
 	uint64_t strip_size;
 	uint64_t write_delay;
 	uint64_t clean_ratio;
@@ -2935,6 +2903,87 @@ raid1_bdev_delete(const char *raid1_name, raid1_delete_cb cb_fn, void *cb_arg)
 
 err_out:
 	cb_fn(cb_arg, rc);
+}
+
+struct raid1_dump_ctx {
+	char bdev_name[RAID1_MAX_NAME_LEN];
+	struct raid1_per_bdev per_bdev;
+	struct raid1_per_thread per_thread;
+	struct raid1_per_io per_io;
+	uint8_t *sb_buf;
+	raid1_dump_cb cb_fn;
+	void *cb_arg;
+};
+
+static void
+raid1_dump_sb_read_complete(void *arg, int rc)
+{
+	struct raid1_dump_ctx *dump_ctx = arg;
+	struct raid1_sb *sb = NULL;
+
+	if (rc) {
+		SPDK_ERRLOG("Read sb error: %d\n", rc);
+		goto out;
+	}
+	sb = (struct raid1_sb *)dump_ctx->sb_buf;
+out:
+	dump_ctx->cb_fn(dump_ctx->cb_arg, sb, rc);
+	raid1_per_thread_close(&dump_ctx->per_thread);
+	raid1_per_bdev_close(&dump_ctx->per_bdev);
+	free(dump_ctx);
+}
+void
+raid1_bdev_dump(const char *bdev_name, raid1_dump_cb cb_fn, void *cb_arg)
+{
+	struct raid1_dump_ctx *dump_ctx;
+	int rc;
+
+	dump_ctx = calloc(1, sizeof(*dump_ctx));
+	if (dump_ctx == NULL) {
+		SPDK_ERRLOG("Could not allocate raid1 dump_ctx\n");
+		rc = -ENOMEM;
+		goto call_cb;
+	}
+	strncpy(dump_ctx->bdev_name, bdev_name, RAID1_MAX_NAME_LEN);
+	dump_ctx->cb_fn = cb_fn;
+	dump_ctx->cb_arg = cb_arg;
+
+	rc = raid1_per_bdev_open(bdev_name, &dump_ctx->per_bdev);
+	if (rc) {
+		SPDK_ERRLOG("Could not open per_bdev\n");
+		goto free_ctx;
+	}
+
+	rc = raid1_per_thread_open(&dump_ctx->per_bdev, &dump_ctx->per_thread);
+	if (rc) {
+		SPDK_ERRLOG("Could not open per_thread\n");
+		goto close_per_bdev;
+	}
+
+	dump_ctx->sb_buf = spdk_dma_zmalloc(RAID1_SB_SIZE,
+		dump_ctx->per_bdev.buf_align, NULL);
+	if (!dump_ctx->sb_buf) {
+		rc = -ENOMEM;
+		SPDK_ERRLOG("Could not allocate sb_buf\n");
+		goto close_per_thread;
+	}
+
+	raid1_per_io_init(&dump_ctx->per_io, &dump_ctx->per_thread, dump_ctx->sb_buf,
+		RAID1_SB_START_BYTE, RAID1_SB_SIZE, RAID1_IO_READ,
+		raid1_dump_sb_read_complete, dump_ctx);
+	raid1_per_io_submit(&dump_ctx->per_io);
+	return;
+
+close_per_thread:
+	raid1_per_thread_close(&dump_ctx->per_thread);
+close_per_bdev:
+	raid1_per_bdev_close(&dump_ctx->per_bdev);
+free_ctx:
+	free(dump_ctx);
+call_cb:
+	cb_fn(cb_arg, NULL, rc);
+
+	return;
 }
 
 SPDK_LOG_REGISTER_COMPONENT(bdev_raid1)

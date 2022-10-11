@@ -80,6 +80,16 @@ function verify_disk_file() {
     fi
 }
 
+function check_raid1_counter() {
+    bdev_name=$1
+    target=$2
+    counter=$($BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock --plugin vda_rpc_plugin bdev_raid1_dump --bdev-name $bdev_name | jq '.counter')
+    if [ $counter -ne $target ]; then
+        echo"counter incorrect: $bdev_name $counter $target"
+        exit 1
+    fi
+}
+
 function retry() {
     cmd=$@
     max_retry=600
@@ -107,6 +117,8 @@ function test_sync() {
     $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock --plugin vda_rpc_plugin bdev_raid1_create --raid1-name $RAID1_NAME --bdev0-name aio0 --bdev1-name aio1
     wait_for_raid1 10
     $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock --plugin vda_rpc_plugin bdev_raid1_delete --raid1-name $RAID1_NAME
+    check_raid1_counter aio0 3
+    check_raid1_counter aio1 3
     $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_aio_delete aio0
     $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_aio_delete aio1
     sudo losetup --detach $LOOP_NAME0
@@ -137,6 +149,8 @@ function test_normal_rw() {
     sudo nvme disconnect -n $NVMF_NQN
     $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock nvmf_delete_subsystem $NVMF_NQN
     $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock --plugin vda_rpc_plugin bdev_raid1_delete --raid1-name $RAID1_NAME
+    check_raid1_counter aio0 3
+    check_raid1_counter aio1 3
     $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_aio_delete aio0
     $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_aio_delete aio1
     sudo losetup --detach $LOOP_NAME0
@@ -171,6 +185,8 @@ function test_rw_during_sync() {
     sudo nvme disconnect -n $NVMF_NQN
     $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock nvmf_delete_subsystem $NVMF_NQN
     $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock --plugin vda_rpc_plugin bdev_raid1_delete --raid1-name $RAID1_NAME
+    check_raid1_counter aio0 3
+    check_raid1_counter aio1 3
     $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_aio_delete aio0
     $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_aio_delete aio1
     sleep 1

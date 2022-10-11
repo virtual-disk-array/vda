@@ -81,6 +81,13 @@ def bdev_raid1_delete_func(client, raid1_name):
     return client.call('bdev_raid1_delete', params)
 
 
+def bdev_raid1_dump_func(client, bdev_name):
+    params = {
+        'bdev_name': bdev_name,
+    }
+    return client.call('bdev_raid1_dump', params)
+
+
 def spdk_rpc_plugin_initialize(subparsers):
 
     def bdev_susres_create(args):
@@ -163,3 +170,13 @@ def spdk_rpc_plugin_initialize(subparsers):
     p.add_argument('-n', '--raid1-name', required=True,
                    help="Name of the raid1 bdev")
     p.set_defaults(func=bdev_raid1_delete)
+
+    def bdev_raid1_dump(args):
+        print_json(bdev_raid1_dump_func(args.client,
+                                        bdev_name=args.bdev_name))
+
+    p = subparsers.add_parser('bdev_raid1_dump',
+                              help='Dump raid1 super block')
+    p.add_argument('-b', '--bdev-name', required=True,
+                   help="Name of the bdev")
+    p.set_defaults(func=bdev_raid1_dump)

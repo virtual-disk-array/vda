@@ -129,3 +129,67 @@ cleanup:
 	free_rpc_delete_raid1_bdev(&req);
 }
 SPDK_RPC_REGISTER("bdev_raid1_delete", spdk_rpc_delete_raid1_bdev, SPDK_RPC_RUNTIME)
+
+struct rpc_dump_raid1_bdev {
+	char *bdev_name;
+};
+
+static void
+free_rpc_dump_raid1_bdev(struct rpc_dump_raid1_bdev *r)
+{
+	free(r->bdev_name);
+}
+
+static void
+raid1_bdev_dump_cb(void *cb_arg, struct raid1_sb *sb, int rc)
+{
+	struct spdk_jsonrpc_request *request = cb_arg;
+	struct spdk_json_write_ctx *w;
+	char uuid[SPDK_UUID_STRING_LEN];
+
+	if (rc) {
+		spdk_jsonrpc_send_error_response(request, rc, spdk_strerror(-rc));
+	} else {
+		w = spdk_jsonrpc_begin_result(request);
+		spdk_json_write_object_begin(w);
+		if (!strncmp(sb->magic, RAID1_MAGIC_STRING, RAID1_MAGIC_STRING_LEN)) {
+			spdk_json_write_named_bool(w, "valid", true);
+			spdk_uuid_fmt_lower(uuid, sizeof(uuid), &sb->uuid);
+			spdk_json_write_named_string(w, "uuid", uuid);
+			spdk_json_write_named_uint64(w, "meta_size", from_le64(&sb->meta_size));
+			spdk_json_write_named_uint64(w, "data_size", from_le64(&sb->data_size));
+			spdk_json_write_named_uint64(w, "counter", from_le64(&sb->counter));
+			spdk_json_write_named_uint32(w, "major_version", from_le32(&sb->major_version));
+			spdk_json_write_named_uint32(w, "minor_version", from_le32(&sb->minor_version));
+			spdk_json_write_named_uint64(w, "strip_size", from_le64(&sb->strip_size));
+		} else {
+			spdk_json_write_named_bool(w, "valid", false);
+		}
+		spdk_json_write_object_end(w);
+		spdk_jsonrpc_end_result(request, w);
+	}
+}
+
+static const struct spdk_json_object_decoder rpc_dump_raid1_bdev_decoders[] = {
+	{"bdev_name", offsetof(struct rpc_dump_raid1_bdev, bdev_name), spdk_json_decode_string},
+};
+
+static void
+spdk_rpc_dump_raid1_bdev(struct spdk_jsonrpc_request *request,
+	const struct spdk_json_val *params)
+{
+	struct rpc_dump_raid1_bdev req = {};
+	if (spdk_json_decode_object(params, rpc_dump_raid1_bdev_decoders,
+			SPDK_COUNTOF(rpc_dump_raid1_bdev_decoders),
+			&req)) {
+		spdk_jsonrpc_send_error_response(request, SPDK_JSONRPC_ERROR_INTERNAL_ERROR,
+			"spdk_json_decode_object failed");
+		goto cleanup;
+	}
+
+	raid1_bdev_dump(req.bdev_name, raid1_bdev_dump_cb, request);
+
+cleanup:
+	free_rpc_dump_raid1_bdev(&req);
+}
+SPDK_RPC_REGISTER("bdev_raid1_dump", spdk_rpc_dump_raid1_bdev, SPDK_RPC_RUNTIME)
