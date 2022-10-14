@@ -1012,7 +1012,7 @@ raid1_resync_handler(struct raid1_bdev *r1_bdev,
 	assert(raid1_bm_test(resync->needed_bm, resync_ctx->bit_idx));
 	assert(!raid1_bm_test(resync->active_bm, resync_ctx->bit_idx));
 	raid1_bm_set(resync->active_bm, resync_ctx->bit_idx);
-	resync_ctx->offset = r1_bdev->strip_size * resync_ctx->bit_idx;
+	resync_ctx->offset = from_le64(&r1_bdev->sb->meta_size) + r1_bdev->strip_size * resync_ctx->bit_idx;
 	raid1_per_io_init(per_io, per_thread, resync_ctx->buf, resync_ctx->offset,
 		r1_bdev->strip_size, RAID1_IO_READ,
 		raid1_resync_read_complete, resync_ctx);
