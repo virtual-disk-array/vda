@@ -765,6 +765,7 @@ struct raid1_bdev {
 	uint64_t read_delivered;
 	uint64_t write_delivered;
 	uint64_t clean_counter;
+	uint64_t poller_counter;
 	struct spdk_thread *r1_thread;
 	enum raid1_bdev_status status;
 	uint8_t health_idx;
@@ -1092,6 +1093,7 @@ raid1_update_sb_complete(void *arg, int rc)
 			struct raid1_region *region = TAILQ_FIRST(&r1_bdev->sb_region_queue);
 			TAILQ_REMOVE(&r1_bdev->sb_region_queue, region, link);
 			assert(region->queue_type == RAID1_QUEUE_SB_WRITING);
+			region->queue_type = RAID1_QUEUE_NONE;
 			raid1_deliver_region_degraded(r1_bdev, region);
 		}
 		raid1_io_poller(r1_bdev);
@@ -1361,6 +1363,7 @@ raid1_write_delay(struct raid1_bdev *r1_bdev,
 		region->queue_type = RAID1_QUEUE_SET;
 		break;
 	case RAID1_QUEUE_SET:
+	case RAID1_QUEUE_SB_WRITING:
 		break;
 	default:
 		assert(false);
@@ -1550,6 +1553,7 @@ raid1_write_bm_degraded_complete(void *ctx, int rc)
 {
 	struct raid1_region *region = ctx;
 	struct raid1_bdev *r1_bdev = region->r1_bdev;
+	r1_bdev->bm_io_cnt--;
 	region->bm_writing = false;
 	raid1_resync_bm_writing_hook(r1_bdev, region);
 	raid1_region_bm_writing_hook(r1_bdev, region);
@@ -1599,6 +1603,11 @@ raid1_write_bm_multi_complete(void *ctx, uint8_t err_mask)
 			status_changed = true;
 		}
 		if (status_changed) {
+			if (region->queue_type == RAID1_QUEUE_CLEAR) {
+				TAILQ_REMOVE(&r1_bdev->clear_queue, region, link);
+			} else {
+				assert(region->queue_type == RAID1_QUEUE_NONE);
+			}
 			TAILQ_INSERT_TAIL(&r1_bdev->sb_region_queue, region, link);
 			region->queue_type = RAID1_QUEUE_SB_WRITING;
 			raid1_update_status(r1_bdev);
@@ -1814,6 +1823,9 @@ raid1_bdev_dump_info_json(void *ctx, struct spdk_json_write_ctx *w)
 	spdk_json_write_named_uint64(w, "resync_io_cnt", r1_bdev->resync->num_inflight);
 	spdk_json_write_named_uint64(w, "read_delivered", r1_bdev->read_delivered);
 	spdk_json_write_named_uint64(w, "write_delivered", r1_bdev->write_delivered);
+	spdk_json_write_named_uint64(w, "poller_counter", r1_bdev->poller_counter);
+	spdk_json_write_named_bool(w, "sb_writing", r1_bdev->sb_writing);
+	spdk_json_write_named_uint64(w, "status", r1_bdev->status);
 	spdk_json_write_object_end(w);
 	return 0;
 }
@@ -1845,6 +1857,7 @@ static int
 raid1_deleting_poller(struct raid1_bdev *r1_bdev)
 {
 	int event_cnt = 0;
+
 	if (!r1_bdev->sb_writing) {
 		while (!TAILQ_EMPTY(&r1_bdev->clear_queue)) {
 			struct raid1_region *region = TAILQ_FIRST(&r1_bdev->clear_queue);
@@ -1936,8 +1949,8 @@ raid1_normal_poller(struct raid1_bdev *r1_bdev)
 	r1_bdev->clean_counter++;
 	r1_bdev->clean_counter %= r1_bdev->clean_ratio;
 	if (r1_bdev->clean_counter == 0) {
-		while (!TAILQ_EMPTY(&r1_bdev->clear_queue)) {
-			struct raid1_region *region = TAILQ_FIRST(&r1_bdev->clear_queue);
+		struct raid1_region *region, *tmp;
+		TAILQ_FOREACH_SAFE(region, &r1_bdev->clear_queue, link, tmp) {
 			if (!region->bm_writing) {
 				raid1_clear_trigger(r1_bdev, region);
 				event_cnt++;
@@ -1951,6 +1964,7 @@ static int
 raid1_io_poller(void *arg)
 {
 	struct raid1_bdev *r1_bdev = arg;
+	r1_bdev->poller_counter++;
 	if (r1_bdev->delete_ctx.deleted) {
 		return raid1_deleting_poller(r1_bdev);
 	} else {

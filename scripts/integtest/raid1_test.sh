@@ -197,6 +197,52 @@ function test_rw_during_sync() {
     verify_disk_file
 }
 
+function test_fail_and_add_old_disk() {
+    echo "test fail and add old disk"
+    dd if=/dev/zero of=$WORK_DIR/disk0.img bs=1M count=1024
+    dd if=/dev/zero of=$WORK_DIR/disk1.img bs=1M count=1024
+    sleep 1
+    retry sudo losetup $LOOP_NAME0 $WORK_DIR/disk0.img --sector-size 4096
+    retry sudo losetup $LOOP_NAME1 $WORK_DIR/disk1.img --sector-size 4096
+    # sudo dmsetup create ${FLAKEY_NAME0} --table "0 $(sudo blockdev --getsz ${LOOP_NAME0}) flakey ${LOOP_NAME0} 0 10 3600"
+    sudo dmsetup create ${FLAKEY_NAME1} --table "0 $(sudo blockdev --getsz ${LOOP_NAME1}) flakey ${LOOP_NAME0} 0 10 3600"
+    $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_aio_create "$LOOP_NAME0" aio0 4096
+    $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_aio_create "/dev/mapper/$FLAKEY_NAME1" aio1 4096
+    $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock --plugin vda_rpc_plugin bdev_raid1_create --raid1-name $RAID1_NAME --bdev0-name aio0 --bdev1-name aio1
+    $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock nvmf_create_subsystem --serial-number $NVMF_SERIAL_NUMBER --model-number VDA_CONTROLLER $NVMF_NQN
+    $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock nvmf_subsystem_add_ns $NVMF_NQN $RAID1_NAME
+    $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock nvmf_subsystem_add_listener --trtype tcp --traddr 127.0.0.1 --adrfam ipv4 --trsvcid $NVMF_PORT $NVMF_NQN
+    $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock nvmf_subsystem_add_host $NVMF_NQN $HOST_NQN
+    sudo nvme connect -t tcp -n $NVMF_NQN -a 127.0.0.1 -s $NVMF_PORT --hostnqn $HOST_NQN
+    wait_for_nvme 5
+    wait_for_raid1 5
+    sudo fio --filename=$NVMF_DEV_PATH --runtime=60 --aux-path $WORK_DIR $FIO_JOBFILE
+    sudo nvme disconnect -n $NVMF_NQN
+    bdev0_online=$($BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_get_bdevs --name $RAID1_NAME | jq '.[0].driver_specific.raid1.bdev0_online')
+    bdev1_online=$($BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_get_bdevs --name $RAID1_NAME | jq '.[0].driver_specific.raid1.bdev1_online')
+    if [ $bdev0_online != "true" ]; then
+        echo "bdev0 status incorrect: $bdev0_online"
+        exit 1
+    fi
+    if [ $bdev1_online != "false" ]; then
+        echo "bdev1 status incorrect: $bdev1_online"
+        exit 1
+    fi
+    $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock nvmf_delete_subsystem $NVMF_NQN
+    $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock --plugin vda_rpc_plugin bdev_raid1_delete --raid1-name $RAID1_NAME
+    $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_aio_delete aio1
+    retry sudo dmsetup remove $FLAKEY_NAME1
+    $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_aio_create "$LOOP_NAME1" aio1 4096
+    $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock --plugin vda_rpc_plugin bdev_raid1_create --raid1-name $RAID1_NAME --bdev0-name aio0 --bdev1-name aio1
+    wait_for_raid1 600
+    $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock --plugin vda_rpc_plugin bdev_raid1_delete --raid1-name $RAID1_NAME
+    $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_aio_delete aio0
+    $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_aio_delete aio1
+    sudo losetup --detach $LOOP_NAME0
+    sudo losetup --detach $LOOP_NAME1
+    verify_disk_file
+}
+
 sudo rm -rf $WORK_DIR
 mkdir -p $WORK_DIR
 
@@ -212,6 +258,7 @@ dd if=/dev/random of=$WORK_DIR/random.img bs=1M count=1024
 test_sync
 test_normal_rw
 test_rw_during_sync
+test_fail_and_add_old_disk
 cleanup
 
 echo "succeed"

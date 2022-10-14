@@ -20,6 +20,9 @@ function cleanup() {
     ps -f -C etcd > /dev/null && killall etcd
     echo "stop spdk"
     ps -f -C reactor_0 > /dev/null && sudo killall reactor_0
+    echo "stop flakey devices"
+    sudo dmsetup status $FLAKEY_NAME0 > /dev/null 2>&1 && sudo dmsetup remove $FLAKEY_NAME0
+    sudo dmsetup status $FLAKEY_NAME1 > /dev/null 2>&1 && sudo dmsetup remove $FLAKEY_NAME1
     echo "stop delay devices"
     sudo dmsetup status $DELAY_NAME0 > /dev/null 2>&1 && sudo dmsetup remove $DELAY_NAME0
     sudo dmsetup status $DELAY_NAME1 > /dev/null 2>&1 && sudo dmsetup remove $DELAY_NAME1
@@ -38,6 +41,8 @@ function force_cleanup() {
     ps -f -C vda_cn_agent > /dev/null && killall -9 vda_cn_agent
     ps -f -C etcd > /dev/null && killall -9 etcd
     ps -f -C reactor_0 > /dev/null && sudo killall -9 reactor_0
+    sudo dmsetup status $FLAKEY_NAME0 > /dev/null 2>&1 && sudo dmsetup remove $FLAKEY_NAME0
+    sudo dmsetup status $FLAKEY_NAME1 > /dev/null 2>&1 && sudo dmsetup remove $FLAKEY_NAME1
     sudo dmsetup status $DELAY_NAME0 > /dev/null 2>&1 && sudo dmsetup remove $DELAY_NAME0
     sudo dmsetup status $DELAY_NAME1 > /dev/null 2>&1 && sudo dmsetup remove $DELAY_NAME1
     losetup $LOOP_NAME0 > /dev/null 2>&1 && sudo losetup --detach $LOOP_NAME0
