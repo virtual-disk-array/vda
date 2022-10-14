@@ -197,8 +197,8 @@ function test_rw_during_sync() {
     verify_disk_file
 }
 
-function test_fail_and_add_old_disk() {
-    echo "test fail and add old disk"
+function test_secondary_fail_and_add_old_secondary_after_sync() {
+    echo "test secondary fail and add old secondary after sync"
     dd if=/dev/zero of=$WORK_DIR/disk0.img bs=1M count=1024
     dd if=/dev/zero of=$WORK_DIR/disk1.img bs=1M count=1024
     sleep 1
@@ -258,7 +258,7 @@ dd if=/dev/random of=$WORK_DIR/random.img bs=1M count=1024
 test_sync
 test_normal_rw
 test_rw_during_sync
-test_fail_and_add_old_disk
+test_secondary_fail_and_add_old_secondary_after_sync
 cleanup
 
 echo "succeed"
