@@ -1603,13 +1603,17 @@ raid1_write_bm_multi_complete(void *ctx, uint8_t err_mask)
 			status_changed = true;
 		}
 		if (status_changed) {
-			if (region->queue_type == RAID1_QUEUE_CLEAR) {
-				TAILQ_REMOVE(&r1_bdev->clear_queue, region, link);
-			} else {
-				assert(region->queue_type == RAID1_QUEUE_NONE);
+			if (region->queue_type != RAID1_QUEUE_SB_WRITING) {
+				if (region->queue_type == RAID1_QUEUE_CLEAR) {
+					TAILQ_REMOVE(&r1_bdev->clear_queue, region, link);
+				} else if (region->queue_type == RAID1_QUEUE_SET) {
+					TAILQ_REMOVE(&r1_bdev->set_queue, region, link);
+				} else {
+					assert(region->queue_type == RAID1_QUEUE_NONE);
+				}
+				TAILQ_INSERT_TAIL(&r1_bdev->sb_region_queue, region, link);
+				region->queue_type = RAID1_QUEUE_SB_WRITING;
 			}
-			TAILQ_INSERT_TAIL(&r1_bdev->sb_region_queue, region, link);
-			region->queue_type = RAID1_QUEUE_SB_WRITING;
 			raid1_update_status(r1_bdev);
 			return;
 		} else {

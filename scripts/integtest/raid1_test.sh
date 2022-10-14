@@ -85,7 +85,7 @@ function check_raid1_counter() {
     target=$2
     counter=$($BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock --plugin vda_rpc_plugin bdev_raid1_dump --bdev-name $bdev_name | jq '.counter')
     if [ $counter -ne $target ]; then
-        echo"counter incorrect: $bdev_name $counter $target"
+        echo "counter incorrect: $bdev_name $counter $target"
         exit 1
     fi
 }
@@ -106,7 +106,8 @@ function retry() {
 }
 
 function test_sync() {
-    echo "test sync"
+    strip_size_kb=$1
+    echo "test sync, strip_size_kb=$strip_size_kb"
     cp $WORK_DIR/random.img $WORK_DIR/disk0.img
     dd if=/dev/zero of=$WORK_DIR/disk1.img bs=1M count=1024
     sleep 1
@@ -114,8 +115,8 @@ function test_sync() {
     retry sudo losetup $LOOP_NAME1 $WORK_DIR/disk1.img --sector-size 4096
     $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_aio_create $LOOP_NAME0 aio0 4096
     $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_aio_create $LOOP_NAME1 aio1 4096
-    $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock --plugin vda_rpc_plugin bdev_raid1_create --raid1-name $RAID1_NAME --bdev0-name aio0 --bdev1-name aio1
-    wait_for_raid1 10
+    $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock --plugin vda_rpc_plugin bdev_raid1_create --raid1-name $RAID1_NAME --bdev0-name aio0 --bdev1-name aio1 --strip-size-kb $strip_size_kb
+    wait_for_raid1 600
     $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock --plugin vda_rpc_plugin bdev_raid1_delete --raid1-name $RAID1_NAME
     check_raid1_counter aio0 3
     check_raid1_counter aio1 3
@@ -129,7 +130,8 @@ function test_sync() {
 }
 
 function test_normal_rw() {
-    echo "test normal rw"
+    strip_size_kb=$1
+    echo "test normal rw, strip_size_kb=$strip_size_kb"
     cp $WORK_DIR/random.img $WORK_DIR/disk0.img
     dd if=/dev/zero of=$WORK_DIR/disk1.img bs=1M count=1024
     sleep 1
@@ -137,8 +139,8 @@ function test_normal_rw() {
     retry sudo losetup $LOOP_NAME1 $WORK_DIR/disk1.img --sector-size 4096
     $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_aio_create $LOOP_NAME0 aio0 4096
     $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_aio_create $LOOP_NAME1 aio1 4096
-    $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock --plugin vda_rpc_plugin bdev_raid1_create --raid1-name $RAID1_NAME --bdev0-name aio0 --bdev1-name aio1
-    wait_for_raid1 10
+    $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock --plugin vda_rpc_plugin bdev_raid1_create --raid1-name $RAID1_NAME --bdev0-name aio0 --bdev1-name aio1 --strip-size-kb $strip_size_kb
+    wait_for_raid1 600
     $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock nvmf_create_subsystem --serial-number $NVMF_SERIAL_NUMBER --model-number VDA_CONTROLLER $NVMF_NQN
     $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock nvmf_subsystem_add_ns $NVMF_NQN $RAID1_NAME
     $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock nvmf_subsystem_add_listener --trtype tcp --traddr 127.0.0.1 --adrfam ipv4 --trsvcid $NVMF_PORT $NVMF_NQN
@@ -159,7 +161,8 @@ function test_normal_rw() {
 }
 
 function test_rw_during_sync() {
-    echo "test rw during sync"
+    strip_size_kb=$1
+    echo "test rw during sync, strip_size_kb=$strip_size_kb"
     rm -f $WORK_DIR/disk0.img
     for i in $(seq 4); do cat $WORK_DIR/random.img >> $WORK_DIR/disk0.img; done
     dd if=/dev/zero of=$WORK_DIR/disk1.img bs=1M count=4096
@@ -170,7 +173,7 @@ function test_rw_during_sync() {
     sudo dmsetup create ${DELAY_NAME1} --table "0 $(sudo blockdev --getsz ${LOOP_NAME1}) delay ${LOOP_NAME1} 0 100"
     $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_aio_create "/dev/mapper/$DELAY_NAME0" aio0 4096
     $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_aio_create "/dev/mapper/$DELAY_NAME1" aio1 4096
-    $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock --plugin vda_rpc_plugin bdev_raid1_create --raid1-name $RAID1_NAME --bdev0-name aio0 --bdev1-name aio1
+    $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock --plugin vda_rpc_plugin bdev_raid1_create --raid1-name $RAID1_NAME --bdev0-name aio0 --bdev1-name aio1 --strip-size-kb $strip_size_kb
     $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock nvmf_create_subsystem --serial-number $NVMF_SERIAL_NUMBER --model-number VDA_CONTROLLER $NVMF_NQN
     $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock nvmf_subsystem_add_ns $NVMF_NQN $RAID1_NAME
     $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock nvmf_subsystem_add_listener --trtype tcp --traddr 127.0.0.1 --adrfam ipv4 --trsvcid $NVMF_PORT $NVMF_NQN
@@ -197,8 +200,10 @@ function test_rw_during_sync() {
     verify_disk_file
 }
 
-function test_secondary_fail_and_add_old_secondary_after_sync() {
-    echo "test secondary fail and add old secondary after sync"
+function test_secondary_fail_after_sync() {
+    strip_size_kb=$1
+    new_secondary=$2
+    echo "test secondary fail after sync, strip_size_kb=$strip_size_kb, new_secondary=$new_secondary"
     dd if=/dev/zero of=$WORK_DIR/disk0.img bs=1M count=1024
     dd if=/dev/zero of=$WORK_DIR/disk1.img bs=1M count=1024
     sleep 1
@@ -208,7 +213,7 @@ function test_secondary_fail_and_add_old_secondary_after_sync() {
     sudo dmsetup create ${FLAKEY_NAME1} --table "0 $(sudo blockdev --getsz ${LOOP_NAME1}) flakey ${LOOP_NAME0} 0 10 3600"
     $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_aio_create "$LOOP_NAME0" aio0 4096
     $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_aio_create "/dev/mapper/$FLAKEY_NAME1" aio1 4096
-    $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock --plugin vda_rpc_plugin bdev_raid1_create --raid1-name $RAID1_NAME --bdev0-name aio0 --bdev1-name aio1
+    $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock --plugin vda_rpc_plugin bdev_raid1_create --raid1-name $RAID1_NAME --bdev0-name aio0 --bdev1-name aio1 --strip-size-kb $strip_size_kb
     $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock nvmf_create_subsystem --serial-number $NVMF_SERIAL_NUMBER --model-number VDA_CONTROLLER $NVMF_NQN
     $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock nvmf_subsystem_add_ns $NVMF_NQN $RAID1_NAME
     $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock nvmf_subsystem_add_listener --trtype tcp --traddr 127.0.0.1 --adrfam ipv4 --trsvcid $NVMF_PORT $NVMF_NQN
@@ -232,10 +237,15 @@ function test_secondary_fail_and_add_old_secondary_after_sync() {
     $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock --plugin vda_rpc_plugin bdev_raid1_delete --raid1-name $RAID1_NAME
     $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_aio_delete aio1
     retry sudo dmsetup remove $FLAKEY_NAME1
+    if [ "$new_secondary" == "yes" ]; then
+        sudo dd if=/dev/zero of=$LOOP_NAME1 bs=1M count=1024
+    fi
     $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_aio_create "$LOOP_NAME1" aio1 4096
     $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock --plugin vda_rpc_plugin bdev_raid1_create --raid1-name $RAID1_NAME --bdev0-name aio0 --bdev1-name aio1
     wait_for_raid1 600
     $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock --plugin vda_rpc_plugin bdev_raid1_delete --raid1-name $RAID1_NAME
+    check_raid1_counter aio0 5
+    check_raid1_counter aio1 5
     $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_aio_delete aio0
     $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_aio_delete aio1
     sudo losetup --detach $LOOP_NAME0
@@ -255,10 +265,12 @@ $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock nvmf_create_transport --tr
 echo "creating random disk"
 dd if=/dev/random of=$WORK_DIR/random.img bs=1M count=1024
 
-test_sync
-test_normal_rw
-test_rw_during_sync
-test_secondary_fail_and_add_old_secondary_after_sync
+test_sync 4096
+test_normal_rw 4096
+test_rw_during_sync 4096
+test_secondary_fail_after_sync 4096 "no"
+test_secondary_fail_after_sync 4096 "yes"
+
 cleanup
 
 echo "succeed"
