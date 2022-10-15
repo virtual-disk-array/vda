@@ -1203,7 +1203,7 @@ raid1_init_pos(struct raid1_bdev *r1_bdev, struct spdk_bdev_io *bdev_io,
 	uint64_t offset = bdev_io->u.bdev.offset_blocks * r1_bdev->bdev.blocklen;
 	raid1_io->strip_idx = offset / r1_bdev->strip_size;
 	raid1_io->region_idx = offset / r1_bdev->region_size;
-	raid1_io->strip_in_region = raid1_io->strip_idx % r1_bdev->region_size;
+	raid1_io->strip_in_region = raid1_io->strip_idx % (RAID1_BYTESZ * PAGE_SIZE);
 	SPDK_DEBUGLOG(bdev_raid1, "raid1_init_pos %s %p %" PRIu64 " %" PRIu64 " %" PRIu64 "\n",
 		r1_bdev->raid1_name, raid1_io,
 		raid1_io->strip_idx, raid1_io->region_idx, raid1_io->strip_in_region);
@@ -2375,6 +2375,10 @@ raid1_bdev_init(struct raid1_create_ctx *create_ctx)
 		goto free_inflight_cnt;
 	}
 
+	SPDK_DEBUGLOG(bdev_raid1, "r1_bdev: %p\n", r1_bdev);
+	SPDK_DEBUGLOG(bdev_raid1, "r1_bdev->regions: %p\n", r1_bdev->regions);
+	SPDK_DEBUGLOG(bdev_raid1, "r1_bdev->bm_buf: %p\n", r1_bdev->bm_buf);
+	SPDK_DEBUGLOG(bdev_raid1, "region_cnt: %ld\n", r1_bdev->region_cnt);
 	for(i = 0; i < r1_bdev->region_cnt; i++) {
 		region = &r1_bdev->regions[i];
 		region->r1_bdev = r1_bdev;
@@ -2385,6 +2389,7 @@ raid1_bdev_init(struct raid1_create_ctx *create_ctx)
 		TAILQ_INIT(&region->delay_queue);
 		TAILQ_INIT(&region->bm_writing_queue);
 		region->bm_writing = false;
+		SPDK_DEBUGLOG(bdev_raid1, "region: %p %p %ld\n", region, region->bm_buf, region->idx);
 	}
 
 	raid1_resync_allocate(r1_bdev);
