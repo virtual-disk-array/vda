@@ -88,6 +88,26 @@ static inline bool raid1_bm_test(uint8_t *bm, int idx)
 		return false;
 }
 
+static inline void
+raid1_bm_show(uint8_t *bm, int length)
+{
+	int i, start, step;
+	uint8_t buf[8];
+	start = 0;
+	while (start < length) {
+		step = spdk_min(8, length-start);
+		for (i = 0; i < step; i++) {
+			buf[i] = bm[start+i];
+		}
+		for (i = step; i < 8; i++) {
+			buf[i] = 0;
+		}
+		SPDK_DEBUGLOG(bdev_raid1, "0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x\n",
+			buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7]);
+		start += step;
+	}
+}
+
 static uint8_t g_raid1_zero_buf[PAGE_SIZE] = {0};
 static inline bool
 raid1_is_buffer_all_zero(const uint8_t *buf, size_t n)
@@ -952,7 +972,7 @@ raid1_resync_write_complete(void *arg, int rc)
 			assert(raid1_bm_test(resync->needed_bm, resync_ctx->bit_idx));
 			assert(raid1_bm_test(region->bm_buf, idx_in_region));
 			raid1_bm_clear(resync->needed_bm, resync_ctx->bit_idx);
-			if (inflight_cnt == 0) {
+			if (inflight_cnt == 0 && r1_bdev->status == RAID1_BDEV_NORMAL) {
 				raid1_bm_clear(region->bm_buf, idx_in_region);
 				if (region->queue_type == RAID1_QUEUE_NONE) {
 					region->queue_type = RAID1_QUEUE_CLEAR;
@@ -1357,7 +1377,9 @@ raid1_write_delay(struct raid1_bdev *r1_bdev,
 		if (raid1_bm_test(r1_bdev->resync->needed_bm, raid1_io->strip_idx)) {
 			assert(raid1_bm_test(region->bm_buf, raid1_io->strip_in_region));
 		} else {
-			assert(!raid1_bm_test(region->bm_buf, raid1_io->strip_in_region));
+			if (r1_bdev->status == RAID1_BDEV_NORMAL) {
+				assert(!raid1_bm_test(region->bm_buf, raid1_io->strip_in_region));
+			}
 			raid1_bm_set(region->bm_buf, raid1_io->strip_in_region);
 		}
 	}
@@ -1435,7 +1457,8 @@ raid1_write_complete_hook(struct raid1_bdev *r1_bdev, struct raid1_bdev_io *raid
 			raid1_resync_handler(r1_bdev, resync, resync_ctx);
 		}
 		struct raid1_region *region = &r1_bdev->regions[raid1_io->region_idx];
-		if (!raid1_bm_test(resync->needed_bm, raid1_io->strip_idx)) {
+		if (!raid1_bm_test(resync->needed_bm, raid1_io->strip_idx) &&
+			r1_bdev->status == RAID1_BDEV_NORMAL) {
 			assert(!raid1_bm_test(resync->active_bm, raid1_io->strip_idx));
 			assert(raid1_bm_test(region->bm_buf, raid1_io->strip_in_region));
 			raid1_bm_clear(region->bm_buf, raid1_io->strip_in_region);
@@ -1692,6 +1715,7 @@ raid1_bdev_write_handler(struct raid1_bdev *r1_bdev, struct raid1_bdev_io *raid1
 {
 	struct raid1_region *region;
 	uint8_t inflight_cnt;
+
 	if (r1_bdev->delete_ctx.deleted) {
 		raid1_io_failed(raid1_io);
 		return;
@@ -1839,6 +1863,7 @@ raid1_bdev_dump_info_json(void *ctx, struct spdk_json_write_ctx *w)
 	spdk_json_write_named_uint64(w, "write_delivered", r1_bdev->write_delivered);
 	spdk_json_write_named_uint64(w, "poller_counter", r1_bdev->poller_counter);
 	spdk_json_write_named_bool(w, "sb_writing", r1_bdev->sb_writing);
+	spdk_json_write_named_bool(w, "resync_done", r1_bdev->resync_done);
 	spdk_json_write_named_uint64(w, "status", r1_bdev->status);
 	spdk_json_write_object_end(w);
 	return 0;
@@ -1887,14 +1912,18 @@ raid1_deleting_poller(struct raid1_bdev *r1_bdev)
 		&& r1_bdev->bm_io_cnt == 0 && r1_bdev->data_io_cnt == 0
 		&& !r1_bdev->sb_sync) {
 		if (r1_bdev->status == RAID1_BDEV_NORMAL) {
+			SPDK_DEBUGLOG(bdev_raid1, "Syncup sb before deleting\n");
 			raid1_syncup_sb(r1_bdev);
 			event_cnt++;
 		} else {
+			SPDK_DEBUGLOG(bdev_raid1, "Skip sb syncup due to raid1 status: %d\n",
+				r1_bdev->status);
 			r1_bdev->sb_sync = true;
 		}
 	}
 	if (r1_bdev->sb_sync && !r1_bdev->sb_writing) {
-		SPDK_DEBUGLOG(bdev_raid1, "Release in thread for deleting: %s\n", r1_bdev->raid1_name);
+		SPDK_DEBUGLOG(bdev_raid1, "Release in thread for deleting: %s\n",
+			r1_bdev->raid1_name);
 		assert(r1_bdev->resync->num_inflight == 0);
 		assert(r1_bdev->bm_io_cnt == 0);
 		assert(r1_bdev->data_io_cnt == 0);
@@ -1911,8 +1940,8 @@ raid1_resync_poller(struct raid1_bdev *r1_bdev)
 	int event_cnt = 0;
 	struct raid1_resync *resync = r1_bdev->resync;
 	uint32_t i;
-	SPDK_DEBUGLOG(bdev_raid1, "In poller max_resync: %" PRIu64 "\n",
-		r1_bdev->max_resync);
+	SPDK_DEBUGLOG(bdev_raid1, "In poller max_resync: %" PRIu64 " curr_bit: %" PRIu64 " strip_cnt: %" PRIu64 "\n",
+		r1_bdev->max_resync, resync->curr_bit, r1_bdev->strip_cnt);
 	for (i = 0; i < r1_bdev->max_resync; i++) {
 		if (resync->curr_bit == r1_bdev->strip_cnt) {
 			r1_bdev->resync_done = true;
@@ -1942,6 +1971,8 @@ raid1_resync_poller(struct raid1_bdev *r1_bdev)
 				raid1_resync_handler(r1_bdev, resync, resync_ctx);
 			}
 			event_cnt++;
+		} else {
+			SPDK_DEBUGLOG(bdev_raid1, "Resync bit is 0: %" PRIu64 "\n", resync->curr_bit);
 		}
 		resync->curr_bit++;
 	}
@@ -2370,6 +2401,9 @@ raid1_bdev_init(struct raid1_create_ctx *create_ctx)
 		goto free_sb_buf;
 	}
 	memcpy(r1_bdev->bm_buf, meta_buf+RAID1_SB_SIZE, r1_bdev->bm_size);
+	SPDK_DEBUGLOG(bdev_raid1, "r1_bdev->bm_buf: %p\n", r1_bdev->bm_buf);
+	SPDK_DEBUGLOG(bdev_raid1, "r1_bdev->bm_size: %" PRIu64 "\n", r1_bdev->bm_size);
+	raid1_bm_show(r1_bdev->bm_buf, r1_bdev->bm_size);
 
 	r1_bdev->inflight_cnt = calloc(r1_bdev->strip_cnt, sizeof(uint8_t));
 	if (r1_bdev->inflight_cnt == NULL) {
@@ -2387,7 +2421,6 @@ raid1_bdev_init(struct raid1_create_ctx *create_ctx)
 
 	SPDK_DEBUGLOG(bdev_raid1, "r1_bdev: %p\n", r1_bdev);
 	SPDK_DEBUGLOG(bdev_raid1, "r1_bdev->regions: %p\n", r1_bdev->regions);
-	SPDK_DEBUGLOG(bdev_raid1, "r1_bdev->bm_buf: %p\n", r1_bdev->bm_buf);
 	SPDK_DEBUGLOG(bdev_raid1, "region_cnt: %" PRIu64 "\n", r1_bdev->region_cnt);
 	for(i = 0; i < r1_bdev->region_cnt; i++) {
 		region = &r1_bdev->regions[i];
@@ -2547,6 +2580,7 @@ raid1_create_update_secondary(struct raid1_create_ctx *create_ctx)
 	struct raid1_per_io *per_io;
 	int idx = 1 - create_ctx->primary_idx;
 	per_io = &create_ctx->multi_io.io_leg[idx].per_io;
+	SPDK_ERRLOG("update_secondary: %d %c\n", idx, create_ctx->meta_buf[idx][0]);
 	raid1_per_io_init(per_io, create_ctx->per_thread_ptr[idx],
 		create_ctx->meta_buf[idx], RAID1_SB_START_BYTE,
 		create_ctx->meta_size, RAID1_IO_WRITE,
@@ -2675,6 +2709,7 @@ raid1_create_meta_multi_read_complete(void *arg, uint8_t err_mask)
 		raid1_create_update_primary(create_ctx);
 	} else {
 		create_ctx->primary_idx = 0;
+		memset(create_ctx->meta_buf[0], 0, create_ctx->meta_size);
 		strncpy(sb0->magic, RAID1_MAGIC_STRING, RAID1_MAGIC_STRING_LEN);
 		spdk_uuid_generate(&sb0->uuid);
 		to_le64(&sb0->meta_size, create_ctx->meta_size);
@@ -2882,7 +2917,7 @@ raid1_bdev_create(const char *raid1_name, struct raid1_create_param *param,
 	create_ctx->cb_arg = cb_arg;
 	if (create_ctx->multi) {
 		raid1_multi_io_read(&create_ctx->multi_io, create_ctx->per_thread_ptr,
-			create_ctx->meta_buf, RAID1_SB_START_BYTE, RAID1_SB_SIZE,
+			create_ctx->meta_buf, RAID1_SB_START_BYTE, create_ctx->meta_size,
 			raid1_create_meta_multi_read_complete, create_ctx);
 	} else {
 		struct raid1_per_io *per_io = &create_ctx->multi_io.io_leg[0].per_io;
