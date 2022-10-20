@@ -658,7 +658,7 @@ raid1_bdev_status_to_str(enum raid1_bdev_status status)
 {
 	switch (status) {
 	case RAID1_BDEV_NORMAL:
-		return "RIAD1_BDEV_NORMAL";
+		return "RAID1_BDEV_NORMAL";
 	case RAID1_BDEV_DEGRADED:
 		return "RAID1_BDEV_DEGRADED";
 	case RAID1_BDEV_FAILED:

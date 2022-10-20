@@ -453,6 +453,58 @@ function test_primary_fail_during_sync() {
     verify_disk_file
 }
 
+function test_two_bdevs_fail() {
+    strip_size_kb=$1
+    echo "test two bdevs fail, strip_size_kb=$strip_size_kb"
+    dd if=/dev/zero of=$WORK_DIR/disk0.img bs=1M count=1024
+    dd if=/dev/zero of=$WORK_DIR/disk1.img bs=1M count=1024
+    sleep 1
+    retry sudo losetup $LOOP_NAME0 $WORK_DIR/disk0.img --sector-size 4096
+    retry sudo losetup $LOOP_NAME1 $WORK_DIR/disk1.img --sector-size 4096
+    sudo dmsetup create ${FLAKEY_NAME0} --table "0 $(sudo blockdev --getsz ${LOOP_NAME0}) flakey ${LOOP_NAME0} 0 10 3600"
+    sudo dmsetup create ${FLAKEY_NAME1} --table "0 $(sudo blockdev --getsz ${LOOP_NAME1}) flakey ${LOOP_NAME1} 0 10 3600"
+    $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_aio_create "/dev/mapper/${FLAKEY_NAME0}" aio0 4096
+    $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_aio_create "/dev/mapper/${FLAKEY_NAME1}" aio1 4096
+    $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock --plugin vda_rpc_plugin bdev_raid1_create --raid1-name $RAID1_NAME --bdev0-name aio0 --bdev1-name aio1 --strip-size-kb $strip_size_kb --synced
+    wait_for_raid1 600
+    status=$($BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_get_bdevs --name $RAID1_NAME | jq -rM '.[0].driver_specific.raid1.status')
+    if [ $status != "RAID1_BDEV_NORMAL" ]; then
+        echo "raid1 status incorrect: $status"
+        exit 1
+    fi
+    sleep 10
+    # We do not really want to dump sb because there is no sb in the aggregated raid1 bdev.
+    # We just want to generate some IOs on the
+    set +e
+    $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock --plugin vda_rpc_plugin bdev_raid1_dump --bdev-name $RAID1_NAME
+    set -e
+    status=$($BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_get_bdevs --name $RAID1_NAME | jq -rM '.[0].driver_specific.raid1.status')
+    if [ $status != "RAID1_BDEV_FAILED" ]; then
+        echo "raid1 status incorrect: $status"
+        exit 1
+    fi
+    $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock --plugin vda_rpc_plugin bdev_raid1_delete --raid1-name $RAID1_NAME
+    $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_aio_delete aio0
+    $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_aio_delete aio1
+    retry sudo dmsetup remove $FLAKEY_NAME0
+    retry sudo dmsetup remove $FLAKEY_NAME1
+    $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_aio_create "$LOOP_NAME0" aio0 4096
+    $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_aio_create "$LOOP_NAME1" aio1 4096
+    check_raid1_counter aio0 2
+    check_raid1_counter aio1 1
+    $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock --plugin vda_rpc_plugin bdev_raid1_create --raid1-name $RAID1_NAME --bdev0-name aio0 --bdev1-name aio1 --strip-size-kb $strip_size_kb --synced
+    wait_for_raid1 600
+    $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock --plugin vda_rpc_plugin bdev_raid1_delete --raid1-name $RAID1_NAME
+    check_raid1_counter aio0 3
+    check_raid1_counter aio1 3
+    $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_aio_delete aio0
+    $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_aio_delete aio1
+    sudo losetup --detach $LOOP_NAME0
+    sudo losetup --detach $LOOP_NAME1
+    verify_disk_file
+}
+
+
 sudo rm -rf $WORK_DIR
 mkdir -p $WORK_DIR
 
@@ -475,6 +527,7 @@ test_secondary_fail_during_sync 4096 100 "yes"
 test_primary_fail_after_sync 4096 "no"
 test_primary_fail_after_sync 4096 "yes"
 test_primary_fail_during_sync 4096 100
+test_two_bdevs_fail 4096
 
 test_sync 4
 test_normal_rw 4
@@ -487,6 +540,7 @@ test_primary_fail_after_sync 4 "no"
 test_primary_fail_after_sync 4096 "yes"
 test_primary_fail_during_sync 4 0 "no"
 test_primary_fail_during_sync 4 0
+test_two_bdevs_fail 4
 
 cleanup
 
