@@ -653,6 +653,21 @@ enum raid1_bdev_status {
 	RAID1_BDEV_FAILED,
 };
 
+static inline const char *
+raid1_bdev_status_to_str(enum raid1_bdev_status status)
+{
+	switch (status) {
+	case RAID1_BDEV_NORMAL:
+		return "RIAD1_BDEV_NORMAL";
+	case RAID1_BDEV_DEGRADED:
+		return "RAID1_BDEV_DEGRADED";
+	case RAID1_BDEV_FAILED:
+		return "RAID1_BDEV_FAILED";
+	default:
+		assert(false);
+	}
+}
+
 struct raid1_bdev;
 
 enum raid1_queue_type {
@@ -1187,16 +1202,21 @@ static void
 raid1_update_status(struct raid1_bdev *r1_bdev)
 {
 	assert(!r1_bdev->online[0] || !r1_bdev->online[1]);
-	r1_bdev->resync_done = true;
 	if (!r1_bdev->online[0] && !r1_bdev->online[1]) {
+		SPDK_ERRLOG("Two underling bdevs failed: %s\n",
+			r1_bdev->raid1_name);
 		r1_bdev->status = RAID1_BDEV_FAILED;
+		r1_bdev->resync_done = true;
 		raid1_bdev_failed_hook(r1_bdev);
 		return;
 	}
 	if (!r1_bdev->online[0] && !r1_bdev->resync_done) {
+		SPDK_ERRLOG("Primary failed during sync: %s\n",
+			r1_bdev->raid1_name);
 		assert(r1_bdev->status == RAID1_BDEV_NORMAL);
 		r1_bdev->online[0] = false;
 		r1_bdev->status = RAID1_BDEV_FAILED;
+		r1_bdev->resync_done = true;
 		raid1_bdev_failed_hook(r1_bdev);
 		return;
 	}
@@ -1206,6 +1226,9 @@ raid1_update_status(struct raid1_bdev *r1_bdev)
 		r1_bdev->health_idx = 1;
 	}
 	assert(r1_bdev->status == RAID1_BDEV_NORMAL);
+	SPDK_ERRLOG("One bdev failed: %s %d %d\n",
+		r1_bdev->raid1_name, r1_bdev->online[0], r1_bdev->online[1]);
+	r1_bdev->resync_done = true;
 	r1_bdev->status = RAID1_BDEV_DEGRADED;
 	raid1_update_sb(r1_bdev);
 }
@@ -1864,7 +1887,8 @@ raid1_bdev_dump_info_json(void *ctx, struct spdk_json_write_ctx *w)
 	spdk_json_write_named_uint64(w, "poller_counter", r1_bdev->poller_counter);
 	spdk_json_write_named_bool(w, "sb_writing", r1_bdev->sb_writing);
 	spdk_json_write_named_bool(w, "resync_done", r1_bdev->resync_done);
-	spdk_json_write_named_uint64(w, "status", r1_bdev->status);
+	spdk_json_write_named_string(w, "status",
+		raid1_bdev_status_to_str(r1_bdev->status));
 	spdk_json_write_object_end(w);
 	return 0;
 }
@@ -2580,7 +2604,6 @@ raid1_create_update_secondary(struct raid1_create_ctx *create_ctx)
 	struct raid1_per_io *per_io;
 	int idx = 1 - create_ctx->primary_idx;
 	per_io = &create_ctx->multi_io.io_leg[idx].per_io;
-	SPDK_ERRLOG("update_secondary: %d %c\n", idx, create_ctx->meta_buf[idx][0]);
 	raid1_per_io_init(per_io, create_ctx->per_thread_ptr[idx],
 		create_ctx->meta_buf[idx], RAID1_SB_START_BYTE,
 		create_ctx->meta_size, RAID1_IO_WRITE,
