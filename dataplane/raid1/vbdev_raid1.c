@@ -2467,7 +2467,6 @@ raid1_bdev_init(struct raid1_create_ctx *create_ctx)
 		goto free_regions;
 	}
 
-	r1_bdev->resync_done = false;
 	r1_bdev->sb_writing = false;
 	r1_bdev->bm_io_cnt = 0;
 	r1_bdev->data_io_cnt = 0;
@@ -2477,10 +2476,19 @@ raid1_bdev_init(struct raid1_create_ctx *create_ctx)
 		r1_bdev->status = RAID1_BDEV_NORMAL;
 		r1_bdev->online[0] = true;
 		r1_bdev->online[1] = true;
+		if (create_ctx->synced) {
+			r1_bdev->resync_done = true;
+			r1_bdev->resync->curr_bit = r1_bdev->strip_cnt;
+		} else {
+			r1_bdev->resync_done = false;
+			r1_bdev->resync->curr_bit = 0;
+		}
 	} else {
 		r1_bdev->status = RAID1_BDEV_DEGRADED;
 		r1_bdev->online[0] = true;
 		r1_bdev->online[1] = false;
+		r1_bdev->resync_done = true;
+		r1_bdev->resync->curr_bit = 0;
 	}
 
 	r1_bdev->read_idx = 0;
@@ -2713,9 +2721,11 @@ raid1_create_meta_multi_read_complete(void *arg, uint8_t err_mask)
 		} else {
 			create_ctx->primary_idx = 1;
 		}
+		create_ctx->synced = false;
 		raid1_bdev_init(create_ctx);
 	} else if (valid_sb0) {
 		create_ctx->primary_idx = 0;
+		create_ctx->synced = false;
 		raid1_set_all_bm(create_ctx->meta_buf[0] + RAID1_SB_SIZE,
 			create_ctx->strip_cnt);
 		memcpy(create_ctx->meta_buf[1], create_ctx->meta_buf[0],
@@ -2724,6 +2734,7 @@ raid1_create_meta_multi_read_complete(void *arg, uint8_t err_mask)
 		raid1_create_update_primary(create_ctx);
 	} else if (valid_sb1) {
 		create_ctx->primary_idx = 1;
+		create_ctx->synced = false;
 		raid1_set_all_bm(create_ctx->meta_buf[1] + RAID1_SB_SIZE,
 			create_ctx->strip_cnt);
 		memcpy(create_ctx->meta_buf[0], create_ctx->meta_buf[1],
@@ -2809,6 +2820,7 @@ raid1_create_meta_single_read_complete(void *arg, int rc)
 		/* 	rc = -EINVAL; */
 		/* 	goto err_out; */
 		/* } */
+		memset(create_ctx->meta_buf[0], 0, create_ctx->meta_size);
 		strncpy(sb->magic, RAID1_MAGIC_STRING, RAID1_MAGIC_STRING_LEN);
 		spdk_uuid_generate(&sb->uuid);
 		to_le64(&sb->meta_size, create_ctx->meta_size);
@@ -2817,9 +2829,10 @@ raid1_create_meta_single_read_complete(void *arg, int rc)
 		to_le32(&sb->major_version, RAID1_MAJOR_VERSION);
 		to_le32(&sb->minor_version, RAID1_MINOR_VERSION);
 		to_le64(&sb->strip_size, create_ctx->strip_size);
+	} else {
+		raid1_sb_counter_add(sb, 1);
 	}
-	raid1_set_all_bm(create_ctx->meta_buf[0] + RAID1_SB_SIZE,
-		create_ctx->strip_cnt);
+	create_ctx->synced = false;
 	raid1_create_single_sb_update(create_ctx);
 	return;
 
@@ -2848,7 +2861,7 @@ raid1_bdev_create(const char *raid1_name, struct raid1_create_param *param,
 		goto call_cb;
 	}
 
-	if (create_ctx->bdev1_name) {
+	if (strncmp(param->bdev1_name, "-", 1)) {
 		create_ctx->multi = true;
 	} else {
 		create_ctx->multi = false;
