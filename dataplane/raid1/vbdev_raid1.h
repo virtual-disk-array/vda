@@ -52,7 +52,9 @@ struct raid1_create_param {
 	uint64_t clean_ratio;
 	uint64_t max_delay;
 	uint64_t max_resync;
+	uint64_t meta_size;
 	bool synced;
+	bool ignore_zero_block;
 };
 
 typedef void (*raid1_create_cb)(void *arg, int rc);

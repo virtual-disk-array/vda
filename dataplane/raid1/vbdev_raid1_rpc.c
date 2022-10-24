@@ -11,7 +11,9 @@ struct rpc_bdev_raid1_create {
 	uint64_t clean_ratio;
 	uint64_t max_delay;
 	uint64_t max_resync;
+	uint64_t meta_size;
 	bool synced;
+	bool ignore_zero_block;
 };
 
 static void
@@ -46,7 +48,9 @@ static const struct spdk_json_object_decoder rpc_bdev_raid1_create_decoders[] = 
 	{"clean_ratio",  offsetof(struct rpc_bdev_raid1_create, clean_ratio), spdk_json_decode_uint64, true},
 	{"max_delay",  offsetof(struct rpc_bdev_raid1_create, max_delay), spdk_json_decode_uint64, true},
 	{"max_resync",  offsetof(struct rpc_bdev_raid1_create, max_resync), spdk_json_decode_uint64, true},
+	{"meat_size",  offsetof(struct rpc_bdev_raid1_create, meta_size), spdk_json_decode_uint64, true},
 	{"synced", offsetof(struct rpc_bdev_raid1_create, synced), spdk_json_decode_bool, true},
+	{"ignore_zero_block", offsetof(struct rpc_bdev_raid1_create, ignore_zero_block), spdk_json_decode_bool, true},
 };
 
 static void
@@ -72,7 +76,9 @@ rpc_bdev_raid1_create(struct spdk_jsonrpc_request *request,
 	param.clean_ratio = req.clean_ratio == 0 ? RAID1_DEFAULT_CLEAN_RATIO : req.clean_ratio;
 	param.max_delay = req.max_delay == 0 ? RAID1_DEFAULT_MAX_DELAY : req.max_delay;
 	param.max_resync = req.max_resync == 0 ? RAID1_DEFAULT_MAX_RESYNC : req.max_resync;
+	param.meta_size = req.meta_size;
 	param.synced = req.synced;
+	param.ignore_zero_block = req.ignore_zero_block;
 
 	raid1_bdev_create(req.raid1_name, &param, bdev_raid1_create_cb, request);
 
