@@ -21,6 +21,22 @@ message ErrInfo {
   string timestamp = 3;
 }
 
+message Raid1Info {
+  bool bdev0_online = 1;
+  bool bdev1_online = 2;
+  uint64 total_strip = 3;
+  uint64 synced_strip = 4;
+  uint64 resync_io_cnt = 5;
+  string status =  6;
+}
+
+message DaLvsInfo {
+  uint64 total_data_clusters = 1;
+  uint64 free_clusters = 2;
+  uint64 block_size = 3;
+  uint64 cluster_size = 4;
+}
+
 message NvmfListener {
   string tr_type = 1;
   string adr_fam = 2;
@@ -122,6 +138,30 @@ message ExpFeInfo {
   ErrInfo err_info = 1;
 }
 
+message MtFeConf {
+  uint32 grp_idx = 1;
+  uint32 vd_idx = 2;
+  NvmfListener src_listener = 3;
+  string src_vd_id = 4;
+  NvmfListener dst_listener = 5;
+  string dst_vd_id = 6;
+}
+
+message MtFeInfo {
+  ErrInfo err_info = 1;
+  Raid1Info raid1_info = 2;
+}
+
+message ItFeConf {
+  NvmfListener src_listener = 1;
+  string snap_name = 2;
+}
+
+message ItFeInfo {
+  ErrInfo err_info = 1;
+  Raid1Info raid1_info = 2;
+}
+
 message CntlrFeConf {
   string da_id = 1;
   uint32 strip_size_kb = 2;
@@ -157,6 +197,16 @@ message ExpFeReq {
   ExpFeConf exp_fe_conf = 2;
 }
 
+message MtFeReq {
+  string mt_id = 1;
+  MtFeConf mt_fe_conf = 2;
+}
+
+message ItFeReq {
+  string it_id = 1;
+  ItFeConf it_fe_conf = 2;
+}
+
 message CntlrFeReq {
   string cntlr_id = 1;
   CntlrFeConf cntlr_fe_conf = 2;
@@ -164,6 +214,8 @@ message CntlrFeReq {
   repeated GrpFeReq grp_fe_req_list = 4;
   repeated SnapFeReq snap_fe_req_list = 5;
   repeated ExpFeReq exp_fe_req_list = 6;
+  repeated MtFeReq mt_fe_req_list = 7;
+  repeated ItFeReq it_fe_req_list = 8;
 }
 
 message CnReq {
@@ -174,7 +226,8 @@ message CnReq {
 message SyncupCnRequest {
   string req_id = 1;
   uint64 version = 2;
-  CnReq cn_req = 3;
+  bool no_delete = 3;
+  CnReq cn_req = 4;
 }
 
 message VdFeRsp {
@@ -198,12 +251,24 @@ message ExpFeRsp {
   ExpFeInfo exp_fe_info = 2;
 }
 
+message MtFeRsp {
+  string mt_id = 1;
+  MtFeInfo mt_fe_info = 2;
+}
+
+message ItFeRsp {
+  string it_id = 1;
+  ItFeInfo it_fe_info = 2;
+}
+
 message CntlrFeRsp {
   string cntlr_id = 1;
   CntlrFeInfo cntlr_fe_info = 2;
   repeated GrpFeRsp grp_fe_rsp_list = 3;
   repeated SnapFeRsp snap_fe_rsp_list = 4;
   repeated ExpFeRsp exp_fe_rsp_list = 5;
+  repeated MtFeRsp mt_fe_rsp_list = 6;
+  repeated ItFeRsp it_fe_rsp_list = 7;
 }
 
 message CnRsp {

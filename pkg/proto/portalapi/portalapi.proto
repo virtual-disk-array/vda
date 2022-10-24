@@ -33,6 +33,21 @@ service Portal {
   rpc ListExp(ListExpRequest) returns (ListExpReply) {}
   rpc GetExp(GetExpRequest) returns (GetExpReply) {}
   rpc CreateSnap(CreateSnapRequest) returns (CreateSnapReply) {}
+  rpc DeleteSnap(DeleteSnapRequest) returns (DeleteSnapReply) {}
+  rpc ModifySnap(ModifySnapRequest) returns (ModifySnapReply) {}
+  rpc ListSnap(ListSnapRequest) returns (ListSnapReply) {}
+  rpc GetSnap(GetSnapRequest) returns (GetSnapReply) {}
+  rpc CreateMt(CreateMtRequest) returns (CreateMtReply) {}
+  rpc CancelMt(CancelMtRequest) returns (CancelMtReply) {}
+  rpc ModifyMt(ModifyMtRequest) returns (ModifyMtReply) {}
+  rpc ListMt(ListMtRequest) returns (ListMtReply) {}
+  rpc GetMt(GetMtRequest) returns (GetMtReply) {}
+  rpc CreateIt(CreateItRequest) returns (CreateItReply) {}
+  rpc CancelIt(CancelItRequest) returns (CancelItReply) {}
+  rpc ModifyIt(ModifyItRequest) returns (ModifyItReply) {}
+  rpc ListIt(ListItRequest) returns (ListItReply) {}
+  rpc GetIt(GetItRequest) returns (GetItReply) {}
+  rpc GetClusterSummary(GetClusterSummaryRequest) returns (GetClusterSummaryReply) {}
 }
 
 message ReplyInfo {
@@ -61,6 +76,22 @@ message ErrInfo {
   bool is_err = 1;
   string err_msg = 2;
   string timestamp = 3;
+}
+
+message Raid1Info {
+  bool bdev0_online = 1;
+  bool bdev1_online = 2;
+  uint64 total_strip = 3;
+  uint64 synced_strip = 4;
+  uint64 resync_io_cnt = 5;
+  string status =  6;
+}
+
+message TaskDescriptor {
+  string start_time = 1;
+  string stop_time = 2;
+  uint64 keep_seconds = 3;
+  string status = 4;
 }
 
 message NvmfListener {
@@ -276,7 +307,8 @@ message SnapSummary {
 message ExpInfo {
   uint32 cntlr_idx = 1;
   NvmfListener nvmf_listener = 2;
-  ErrInfo err_info = 3;
+  bool is_offline = 3;
+  ErrInfo err_info = 4;
 }
 
 message Exporter {
@@ -599,4 +631,210 @@ message CreateSnapRequest {
 
 message CreateSnapReply {
   ReplyInfo reply_info = 1;
+}
+
+message DeleteSnapRequest {
+  string da_name = 1;
+  string snap_name = 2;
+}
+
+message DeleteSnapReply {
+  ReplyInfo reply_info = 1;
+}
+
+message ModifySnapRequest {
+  string da_name = 1;
+  string snap_name = 2;
+  oneof attr {
+    string description = 3;
+  }
+}
+
+message ModifySnapReply {
+  ReplyInfo reply_info = 1;
+}
+
+message ListSnapRequest {
+  string da_name = 1;
+}
+
+message ListSnapReply {
+  ReplyInfo reply_info = 1;
+  repeated SnapSummary snap_summary_list = 2;
+}
+
+message GetSnapRequest {
+  string da_name = 1;
+  string snap_name = 2;
+}
+
+message GetSnapReply {
+  ReplyInfo reply_info = 1;
+  Snap snap = 2;
+}
+
+message MovingTask {
+  string mt_id = 1;
+  string mt_name = 2;
+  string description = 3;
+  uint32 grp_idx = 4;
+  uint32 vd_idx = 5;
+  string src_sock_addr = 6;
+  string src_pd_name = 7;
+  string src_vd_id = 8;
+  string dst_sock_addr = 9;
+  string dst_pd_name = 10;
+  TaskDescriptor desc = 11;
+  ErrInfo err_info = 12;
+  Raid1Info raid1_info = 13;
+}
+
+message MtSummary {
+  string mt_name = 1;
+  string description = 2;
+}
+
+message CreateMtRequest {
+  string da_name = 1;
+  string mt_name = 2;
+  string description = 3;
+  uint32 grp_idx = 4;
+  uint32 vd_idx = 5;
+  string dst_sock_addr = 6;
+  string dst_pd_name = 7;
+  uint64 keep_seconds = 8;
+}
+
+message CreateMtReply {
+  ReplyInfo reply_info = 1;
+}
+
+message CancelMtRequest {
+  string da_name = 1;
+  string mt_name = 2;
+}
+
+message CancelMtReply {
+  ReplyInfo reply_info = 1;
+}
+
+message ModifyMtRequest {
+  string da_name = 1;
+  string mt_name = 2;
+  oneof attr {
+    string description = 3;
+    string keep_seconds = 4;
+  }
+}
+
+message ModifyMtReply {
+  ReplyInfo reply_info = 1;
+}
+
+message ListMtRequest {
+  string da_name = 1;
+}
+
+message ListMtReply {
+  ReplyInfo reply_info = 1;
+  repeated MtSummary mt_summary_list = 2;
+}
+
+message GetMtRequest {
+  string da_name = 1;
+  string mt_name = 2;
+}
+
+message GetMtReply {
+  ReplyInfo reply_info = 1;
+  MovingTask moving_task = 2;
+}
+
+message ImportingTask {
+  string it_id = 1;
+  string it_name = 2;
+  string description = 3;
+  NvmfListener src_listener = 4;
+  string snap_name = 5;
+  TaskDescriptor desc = 6;
+  ErrInfo err_info = 7;
+  Raid1Info raid1_info = 8;
+}
+
+message ItSummary {
+  string it_name = 1;
+  string description = 2;
+}
+
+message CreateItRequest {
+  string da_name = 1;
+  string it_name = 2;
+  string description = 3;
+  NvmfListener src_listener = 4;
+  string snap_name = 5;
+  string keep_seconds = 6;
+}
+
+message CreateItReply {
+  ReplyInfo reply_info = 1;
+}
+
+message CancelItRequest {
+  string da_name = 1;
+  string it_name = 2;
+}
+
+message CancelItReply {
+  ReplyInfo reply_info = 1;
+}
+
+message ModifyItRequest {
+  string da_name = 1;
+  string it_name = 2;
+  oneof attr {
+    string description = 3;
+    string keep_seconds = 4;
+  }
+}
+
+message ModifyItReply {
+  ReplyInfo reply_info = 1;
+}
+
+message ListItRequest {
+  string da_name = 1;
+}
+
+message ListItReply {
+  ReplyInfo reply_info = 1;
+  repeated ItSummary it_summary_list = 2;
+}
+
+message GetItRequest {
+  string da_name = 1;
+  string it_name = 2;
+}
+
+message GetItReply {
+  ReplyInfo reply_info = 1;
+  ImportingTask importing_task = 2;
+}
+
+message ClusterSummary {
+  uint64 total_size = 1;
+  uint64 free_size = 2;
+  uint32 dn_cnt = 3;
+  uint32 pd_cnt = 4;
+  uint32 cn_cnt = 5;
+  uint32 da_cnt = 6;
+  uint32 dn_err_cnt = 7;
+  uint32 cn_err_cnt = 8;
+}
+
+message GetClusterSummaryRequest {
+}
+
+message GetClusterSummaryReply {
+  ReplyInfo reply_info = 1;
+  ClusterSummary cluster_summary = 2;
 }

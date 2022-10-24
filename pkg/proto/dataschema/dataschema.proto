@@ -10,6 +10,29 @@ message ErrInfo {
   string timestamp = 3;
 }
 
+message Raid1Info {
+  bool bdev0_online = 1;
+  bool bdev1_online = 2;
+  uint64 total_strip = 3;
+  uint64 synced_strip = 4;
+  uint64 resync_io_cnt = 5;
+  string status =  6;
+}
+
+message DaLvsInfo {
+  uint64 total_data_clusters = 1;
+  uint64 free_clusters = 2;
+  uint64 block_size = 3;
+  uint64 cluster_size = 4;
+}
+
+message TaskDescriptor {
+  string start_time = 1;
+  string stop_time = 2;
+  uint64 keep_seconds = 3;
+  string status = 4;
+}
+
 message NvmfListener {
   string tr_type = 1;
   string adr_fam = 2;
@@ -219,6 +242,42 @@ message ExpFrontend {
   ExpFeInfo exp_fe_info = 3;
 }
 
+message MtFeConf {
+  uint32 grp_idx = 1;
+  uint32 vd_idx = 2;
+  NvmfListener src_listener = 3;
+  string src_vd_id = 4;
+  NvmfListener dst_listener = 5;
+  string dst_vd_id = 6;
+}
+
+message MtFeInfo {
+  ErrInfo err_info = 1;
+  Raid1Info raid1_info = 2;
+}
+
+message MtFrontend {
+  string mt_id = 1;
+  MtFeConf mt_fe_conf = 2;
+  MtFeInfo mt_fe_info = 3;
+}
+
+message ItFeConf {
+  NvmfListener src_listener = 1;
+  string snap_name = 2;
+}
+
+message ItFeInfo {
+  ErrInfo err_info = 1;
+  Raid1Info raid1_info = 2;
+}
+
+message ItFrontend {
+  string it_id = 1;
+  ItFeConf it_fe_conf = 2;
+  ItFeInfo it_fe_info = 3;
+}
+
 message CntlrFeConf {
   string da_id = 1;
   string da_name = 2;
@@ -238,6 +297,8 @@ message CntlrFrontend {
   repeated GrpFrontend grp_fe_list = 5;
   repeated SnapFrontend snap_fe_list = 6;
   repeated ExpFrontend exp_fe_list = 7;
+  repeated MtFrontend mt_fe_list = 8;
+  repeated ItFrontend it_fe_list = 9;
 }
 
 message CnConf {
@@ -301,6 +362,30 @@ message Exporter {
   string snap_name = 5;
 }
 
+message MovingTask {
+  string mt_id = 1;
+  string mt_name = 2;
+  string description = 3;
+  uint32 grp_idx = 4;
+  uint32 vd_idx = 5;
+  string src_sock_addr = 6;
+  string src_pd_name = 7;
+  string src_vd_id = 8;
+  string dst_sock_addr = 9;
+  string dst_pd_name = 10;
+  string dst_vd_id = 11;
+  TaskDescriptor desc = 12;
+}
+
+message ImportingTask {
+  string it_id = 1;
+  string it_name = 2;
+  string description = 3;
+  NvmfListener src_listener = 4;
+  string snap_name = 5;
+  TaskDescriptor desc = 6;
+}
+
 message DaConf {
   BdevQos qos = 1;
   uint32 strip_cnt = 2;
@@ -319,6 +404,8 @@ message DiskArray {
   repeated Group grp_list = 6;
   repeated Snap snap_list = 7;
   repeated Exporter exp_list = 8;
+  repeated MovingTask mt_list = 9;
+  repeated ImportingTask it_list = 10;
 }
 
 // /{vda_prefix}/capacity/dn/{free_size@sock_addr@pd_name}
