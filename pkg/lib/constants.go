@@ -47,4 +47,7 @@ const (
 	GrpcCacheTTL      = 600
 	GrpcCacheStep     = 10
 	GrpcCacheInterval = 10
+
+	DefaultClusterSize = uint64(4*1024*1024)
+	DefaultExtendRatio = 100
 )

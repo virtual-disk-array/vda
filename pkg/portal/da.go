@@ -664,6 +664,13 @@ func (po *portalServer) CreateDa(ctx context.Context, req *pbpo.CreateDaRequest)
 		}, nil
 	}
 
+	if req.DaConf.ClusterSize == 0 {
+		req.DaConf.ClusterSize = lib.DefaultClusterSize
+	}
+	if req.DaConf.ExtendRatio == 0 {
+		req.DaConf.ExtendRatio = lib.DefaultExtendRatio
+	}
+
 	dnList, cnList, err := po.createNewDa(ctx, req)
 	if err != nil {
 		if serr, ok := err.(*portalError); ok {

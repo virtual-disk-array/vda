@@ -108,9 +108,9 @@ func init() {
 		"da read mbytes per second")
 	daCreateCmd.Flags().Uint64VarP(&daCreateArgs.wMbytesPerSec, "w-mbytes-per-sec", "", 0,
 		"da write mbytes per second")
-	daCreateCmd.Flags().Uint64VarP(&daCreateArgs.clusterSz, "cluster-sz", "", 1024*1024*uint64(4),
+	daCreateCmd.Flags().Uint64VarP(&daCreateArgs.clusterSz, "cluster-sz", "", 0,
 		"cluster size of the logical volume store in bytes")
-	daCreateCmd.Flags().Uint32VarP(&daCreateArgs.extendRatio, "extend-ratio", "", 100,
+	daCreateCmd.Flags().Uint32VarP(&daCreateArgs.extendRatio, "extend-ratio", "", 0,
 		"reserved metadata pages per cluster")
 	daCmd.AddCommand(daCreateCmd)
 
