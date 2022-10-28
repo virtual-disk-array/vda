@@ -396,7 +396,7 @@ func (po *portalServer) modifyExpDescription(ctx context.Context, daName string,
 		return nil
 	}
 
-	err := po.sw.RunStm(apply, ctx, "DeleteExp: "+daName+" "+expName)
+	err := po.sw.RunStm(apply, ctx, "ModifyExp: "+daName+" "+expName)
 	if err != nil {
 		if serr, ok := err.(*portalError); ok {
 			return &pbpo.ModifyExpReply{

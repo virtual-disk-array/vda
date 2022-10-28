@@ -348,3 +348,200 @@ func (po *portalServer) DeleteSnap(ctx context.Context, req *pbpo.DeleteSnapRequ
 		},
 	}, nil
 }
+
+func (po *portalServer) modifySnapDescription(ctx context.Context, daName string,
+	snapName string, description string) (*pbpo.ModifySnapReply, error) {
+	daEntityKey := po.kf.DaEntityKey(daName)
+	diskArray := &pbds.DiskArray{}
+
+	apply := func(stm concurrency.STM) error {
+		dnEntityVal := []byte(stm.Get(daEntityKey))
+		if len(dnEntityVal) == 0 {
+			return &portalError{
+				lib.PortalUnknownResErrCode,
+				daEntityKey,
+			}
+		}
+		if err := proto.Unmarshal(dnEntityVal, diskArray); err != nil {
+			logger.Error("Unmarshal diskArray err: %s %v", daEntityKey, err)
+			return err
+		}
+		var targetSnap *pbds.Snap
+		for _, snap := range diskArray.SnapList {
+			if snap.SnapName == snapName {
+				targetSnap = snap
+				break
+			}
+		}
+		if targetSnap == nil {
+			return &portalError{
+				lib.PortalUnknownResErrCode,
+				snapName,
+			}
+		}
+		targetSnap.Description = description
+		newDaEntityVal, err := proto.Marshal(diskArray)
+		if err != nil {
+			logger.Error("Marshal diskArray err: %v %v", diskArray, err)
+			return err
+		}
+		stm.Put(daEntityKey, string(newDaEntityVal))
+		return nil
+	}
+
+	err := po.sw.RunStm(apply, ctx, "ModifySnap: "+daName+" "+snapName)
+	if err != nil {
+		if serr, ok := err.(*portalError); ok {
+			return &pbpo.ModifySnapReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: serr.code,
+					ReplyMsg:  serr.msg,
+				},
+			}, nil
+		} else {
+			return &pbpo.ModifySnapReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: lib.PortalInternalErrCode,
+					ReplyMsg:  err.Error(),
+				},
+			}, nil
+		}
+	}
+
+	return &pbpo.ModifySnapReply{
+		ReplyInfo: &pbpo.ReplyInfo{
+			ReqId:     lib.GetReqId(ctx),
+			ReplyCode: lib.PortalSucceedCode,
+			ReplyMsg:  lib.PortalSucceedMsg,
+		},
+	}, nil
+}
+
+func (po *portalServer) ModifySnap(ctx context.Context, req *pbpo.ModifySnapRequest) (
+	*pbpo.ModifySnapReply, error) {
+	invalidParamMsg := ""
+	if req.DaName == "" {
+		invalidParamMsg = "DaName is empty"
+	} else if req.SnapName == "" {
+		invalidParamMsg = "SnapName is empty"
+	}
+	if invalidParamMsg != "" {
+		return &pbpo.ModifySnapReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInvalidParamCode,
+				ReplyMsg:  invalidParamMsg,
+			},
+		}, nil
+	}
+	switch x := req.Attr.(type) {
+	case *pbpo.ModifySnapRequest_Description:
+		return po.modifySnapDescription(ctx, req.DaName, req.SnapName, x.Description)
+	default:
+		logger.Error("Unknow attr: %v", x)
+		return &pbpo.ModifySnapReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInvalidParamCode,
+				ReplyMsg:  "Unknow attr",
+			},
+		}, nil
+	}
+}
+
+func (po *portalServer) ListSnap(ctx context.Context, req *pbpo.ListSnapRequest) (
+	*pbpo.ListSnapReply, error) {
+	invalidParamMsg := ""
+	if req.DaName == "" {
+		invalidParamMsg = "DaName is empty"
+	}
+	if invalidParamMsg != "" {
+		return &pbpo.ListSnapReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInvalidParamCode,
+				ReplyMsg:  invalidParamMsg,
+			},
+		}, nil
+	}
+
+	daEntityKey := po.kf.DaEntityKey(req.DaName)
+	diskArray := &pbds.DiskArray{}
+	snapSummaryList := make([]*pbpo.SnapSummary, 0)
+	apply := func(stm concurrency.STM) error {
+		dnEntityVal := []byte(stm.Get(daEntityKey))
+		if len(dnEntityVal) == 0 {
+			return &portalError{
+				lib.PortalUnknownResErrCode,
+				daEntityKey,
+			}
+		}
+		if err := proto.Unmarshal(dnEntityVal, diskArray); err != nil {
+			logger.Error("Unmarshal diskArray err: %s %v", daEntityKey, err)
+			return err
+		}
+		for _, snap := range diskArray.SnapList {
+			snapSummary := &pbpo.SnapSummary{
+				SnapName: snap.SnapName,
+				Description: snap.Description,
+			}
+			snapSummaryList = append(snapSummaryList, snapSummary)
+		}
+		return nil
+	}
+
+	err := po.sw.RunStm(apply, ctx, "ListSnap: "+req.DaName)
+	if err != nil {
+		if serr, ok := err.(*portalError); ok {
+			return &pbpo.ListSnapReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: serr.code,
+					ReplyMsg:  serr.msg,
+				},
+			}, nil
+		} else {
+			return &pbpo.ListSnapReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: lib.PortalInternalErrCode,
+					ReplyMsg:  err.Error(),
+				},
+			}, nil
+		}
+	} else {
+		return &pbpo.ListSnapReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalSucceedCode,
+				ReplyMsg:  lib.PortalSucceedMsg,
+			},
+			SnapSummaryList: snapSummaryList,
+		}, nil
+	}
+}
+
+func (po *portalServer) GetSnap(ctx context.Context, req *pbpo.GetSnapRequest) (
+	*pbpo.GetSnapReply, error) {
+	invalidParamMsg := ""
+	if req.DaName == "" {
+		invalidParamMsg = "DaName is empty"
+	} else if req.SnapName == "" {
+		invalidParamMsg = "SnapName is empty"
+	}
+	if invalidParamMsg != "" {
+		return &pbpo.GetSnapReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInvalidParamCode,
+				ReplyMsg:  invalidParamMsg,
+			},
+		}, nil
+	}
+
+	daEntityKey := po.kf.DaEntityKey(req.DaName)
+	diskArray := &pbds.DiskArray{}
+	var snap *pbpo.Snap
+}
