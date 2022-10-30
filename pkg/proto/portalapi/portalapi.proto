@@ -150,13 +150,6 @@ message BdevQos {
   uint64 w_mbytes_per_sec = 4;
 }
 
-message SnapAttr {
-  bool snapshot = 1;
-  bool clone = 2;
-  string base_snapshot = 3;
-  repeated string clones = 4;
-}
-
 message DiskNode {
   string dn_id = 1;
   string sock_addr = 2;
@@ -294,9 +287,10 @@ message Snap {
   string snap_name = 2;
   string description = 3;
   string ori_name = 4;
-  uint64 size = 5;
-  ErrInfo err_info = 6;
-  SnapAttr snap_attr = 7;
+  bool is_clone = 5;
+  uint64 idx = 6;
+  uint64 size = 7;
+  ErrInfo err_info = 8;
 }
 
 message SnapSummary {

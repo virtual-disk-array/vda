@@ -89,13 +89,6 @@ message BdevQos {
   uint64 w_mbytes_per_sec = 4;
 }
 
-message SnapAttr {
-  bool snapshot = 1;
-  bool clone = 2;
-  string base_snapshot = 3;
-  repeated string clones = 4;
-}
-
 message Controller {
   string cntlr_id = 1;
   string cn_sock_addr = 2;

@@ -106,53 +106,61 @@ func (po *portalServer) CreateSnap(ctx context.Context, req *pbpo.CreateSnapRequ
 
 		stm.Put(daEntityKey, string(newDaEntityVal))
 
+		var targetCntlr *pbds.Controller
 		for _, cntlr := range diskArray.CntlrList {
 			if cntlr.IsPrimary {
-				controllerNode := &pbds.ControllerNode{}
-				cnEntityKey := po.kf.CnEntityKey(cntlr.CnSockAddr)
-				cnEntityVal := []byte(stm.Get(cnEntityKey))
-				if err := proto.Unmarshal(cnEntityVal, controllerNode); err != nil {
-					logger.Error("Unmarshal controllerNode err: %s %v", cnEntityKey, err)
-					return err
-				}
-				primarySockAddr = controllerNode.SockAddr
-				snapFe := &pbds.SnapFrontend{
-					SnapId: newSnap.SnapId,
-					SnapFeConf: &pbds.SnapFeConf{
-						OriId:   oriSnap.SnapId,
-						IsClone: newSnap.IsClone,
-						Idx:     newSnap.Idx,
-						Size:    newSnap.Size,
-					},
-					SnapFeInfo: &pbds.SnapFeInfo{
-						ErrInfo: &pbds.ErrInfo{
-							IsErr:     true,
-							ErrMsg:    lib.ResUninitMsg,
-							Timestamp: lib.ResTimestamp(),
-						},
-					},
-				}
-				var targetCntlrFe *pbds.CntlrFrontend
-				for _, cntlrFe := range controllerNode.CntlrFeList {
-					if cntlrFe.CntlrId == cntlr.CntlrId {
-						targetCntlrFe = cntlrFe
-						break
-					}
-				}
-				if targetCntlrFe == nil {
-					logger.Error("Can not find cntlr: %v %v", cntlr, controllerNode)
-					return fmt.Errorf("Can not find cntlr")
-				}
-				targetCntlrFe.SnapFeList = append(targetCntlrFe.SnapFeList, snapFe)
-				controllerNode.Version++
-				newCnEntityVal, err := proto.Marshal(controllerNode)
-				if err != nil {
-					logger.Error("Marshal controllerNode err: %v %v", controllerNode, err)
-					return fmt.Errorf("marshal controllerNode err: %v", err)
-				}
-				stm.Put(cnEntityKey, string(newCnEntityVal))
+				targetCntlr = cntlr
+				break
 			}
 		}
+		if targetCntlr == nil {
+			logger.Error("Can not find primary cntlr: %v", diskArray)
+			return fmt.Errorf("Can not find primary cntlr: %s",
+				req.DaName)
+		}
+		controllerNode := &pbds.ControllerNode{}
+		cnEntityKey := po.kf.CnEntityKey(targetCntlr.CnSockAddr)
+		cnEntityVal := []byte(stm.Get(cnEntityKey))
+		if err := proto.Unmarshal(cnEntityVal, controllerNode); err != nil {
+			logger.Error("Unmarshal controllerNode err: %s %v", cnEntityKey, err)
+			return err
+		}
+		primarySockAddr = controllerNode.SockAddr
+		snapFe := &pbds.SnapFrontend{
+			SnapId: newSnap.SnapId,
+			SnapFeConf: &pbds.SnapFeConf{
+				OriId:   oriSnap.SnapId,
+				IsClone: newSnap.IsClone,
+				Idx:     newSnap.Idx,
+				Size:    newSnap.Size,
+			},
+			SnapFeInfo: &pbds.SnapFeInfo{
+				ErrInfo: &pbds.ErrInfo{
+					IsErr:     true,
+					ErrMsg:    lib.ResUninitMsg,
+					Timestamp: lib.ResTimestamp(),
+				},
+			},
+		}
+		var targetCntlrFe *pbds.CntlrFrontend
+		for _, cntlrFe := range controllerNode.CntlrFeList {
+			if cntlrFe.CntlrId == targetCntlr.CntlrId {
+				targetCntlrFe = cntlrFe
+				break
+			}
+		}
+		if targetCntlrFe == nil {
+			logger.Error("Can not find cntlr: %v %v", targetCntlr, controllerNode)
+			return fmt.Errorf("Can not find cntlr")
+		}
+		targetCntlrFe.SnapFeList = append(targetCntlrFe.SnapFeList, snapFe)
+		controllerNode.Version++
+		newCnEntityVal, err := proto.Marshal(controllerNode)
+		if err != nil {
+			logger.Error("Marshal controllerNode err: %v %v", controllerNode, err)
+			return fmt.Errorf("marshal controllerNode err: %v", err)
+		}
+		stm.Put(cnEntityKey, string(newCnEntityVal))
 		return nil
 	}
 	err := po.sw.RunStm(apply, ctx, "CreateSnap: "+req.DaName+" "+req.SnapName)
@@ -544,4 +552,121 @@ func (po *portalServer) GetSnap(ctx context.Context, req *pbpo.GetSnapRequest) (
 	daEntityKey := po.kf.DaEntityKey(req.DaName)
 	diskArray := &pbds.DiskArray{}
 	var snap *pbpo.Snap
+
+	apply := func(stm concurrency.STM) error {
+		daEntityVal := []byte(stm.Get(daEntityKey))
+		if len(daEntityVal) == 0 {
+			return &portalError{
+				lib.PortalUnknownResErrCode,
+				daEntityKey,
+			}
+		}
+		if err := proto.Unmarshal(daEntityVal, diskArray); err != nil {
+			logger.Error("Unmarshal diskArray err: %s %v", daEntityKey, err)
+			return err
+		}
+		var targetSnap *pbds.Snap
+		for _, snap := range diskArray.SnapList {
+			if snap.SnapName == req.SnapName {
+				targetSnap = snap
+				break
+			}
+		}
+		if targetSnap == nil {
+			return &portalError{
+				lib.PortalUnknownResErrCode,
+				req.SnapName,
+			}
+		}
+
+		var targetCntlr *pbds.Controller
+		for _,  cntlr := range diskArray.CntlrList {
+			if cntlr.IsPrimary {
+				targetCntlr = cntlr
+				break
+			}
+		}
+		if targetCntlr == nil {
+			logger.Error("Can not find primary cntlr: %v", diskArray)
+			return fmt.Errorf("Can not find primary cntlr: %s",
+				req.DaName)
+		}
+		controllerNode := &pbds.ControllerNode{}
+		cnEntityKey := po.kf.CnEntityKey(targetCntlr.CnSockAddr)
+		cnEntityVal := []byte(stm.Get(cnEntityKey))
+		if err := proto.Unmarshal(cnEntityVal, controllerNode); err != nil {
+			logger.Error("Unmarshal controllerNode err: %s %v", cnEntityKey, err)
+			return err
+		}
+		var targetCntlrFe *pbds.CntlrFrontend
+		for _, cntlrFe := range controllerNode.CntlrFeList {
+			if cntlrFe.CntlrId == targetCntlr.CntlrId {
+				targetCntlrFe = cntlrFe
+				break
+			}
+		}
+		if targetCntlrFe == nil {
+			logger.Error("Can not find cntlr: %v %v",
+				targetCntlr, controllerNode)
+			return fmt.Errorf("Can not find cntlr")
+		}
+		var targetSnapFe *pbds.SnapFrontend
+		for _, snapFe := range targetCntlrFe.SnapFeList {
+			if snapFe.SnapId == targetSnap.SnapId {
+				targetSnapFe = snapFe
+				break
+			}
+		}
+		if targetSnapFe == nil {
+			logger.Error("Can not find snapFe: %v %v",
+				targetSnap, controllerNode)
+			return fmt.Errorf("Can not find snapFe: %s %s",
+				targetSnap.SnapName, controllerNode.SockAddr)
+		}
+		snap = &pbpo.Snap{
+			SnapId: targetSnap.SnapId,
+			SnapName: targetSnap.SnapName,
+			Description: targetSnap.Description,
+			OriName: targetSnap.SnapName,
+			IsClone: targetSnap.IsClone,
+			Idx: targetSnap.Idx,
+			Size: targetSnap.Size,
+			ErrInfo: &pbpo.ErrInfo{
+				IsErr: targetSnapFe.SnapFeInfo.ErrInfo.IsErr,
+				ErrMsg: targetSnapFe.SnapFeInfo.ErrInfo.ErrMsg,
+				Timestamp: targetSnapFe.SnapFeInfo.ErrInfo.Timestamp,
+			},
+		}
+		return nil
+	}
+
+	err := po.sw.RunStm(apply, ctx, "GetSnap: "+req.DaName+" "+req.SnapName)
+	if err != nil {
+		if serr, ok := err.(*portalError); ok {
+			return &pbpo.GetSnapReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: serr.code,
+					ReplyMsg:  serr.msg,
+				},
+			}, nil
+		} else {
+			return &pbpo.GetSnapReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: lib.PortalInternalErrCode,
+					ReplyMsg:  err.Error(),
+				},
+			}, nil
+		}
+	} else {
+		return &pbpo.GetSnapReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalSucceedCode,
+				ReplyMsg:  lib.PortalSucceedMsg,
+			},
+			Snap: snap,
+		}, nil
+	}
 }
