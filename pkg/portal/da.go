@@ -29,7 +29,6 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 
 	daId := lib.NewHexStrUuid()
 	grpId := lib.NewHexStrUuid()
-	snapId := lib.NewHexStrUuid()
 	grpSize := vdSize * uint64(req.DaConf.StripCnt)
 
 	apply := func(stm concurrency.STM) error {
@@ -131,17 +130,6 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 		grpList = append(grpList, grp)
 
 		snapList := make([]*pbds.Snap, 0)
-		snap := &pbds.Snap{
-			SnapId:      snapId,
-			SnapName:    lib.DefaultSanpName,
-			Description: lib.DefaultSanpDescription,
-			OriName:     "",
-			IsClone:     false,
-			Idx:         0,
-			Size:        req.Size,
-		}
-		snapList = append(snapList, snap)
-
 		expList := make([]*pbds.Exporter, 0)
 
 		vdFeList := make([]*pbds.VdFrontend, 0)
@@ -189,25 +177,6 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 		grpFeList = append(grpFeList, grpFe)
 
 		snapFeList := make([]*pbds.SnapFrontend, 0)
-		emptySnapFeList := make([]*pbds.SnapFrontend, 0)
-		snapFe := &pbds.SnapFrontend{
-			SnapId: snap.SnapId,
-			SnapFeConf: &pbds.SnapFeConf{
-				OriId:   "",
-				IsClone: snap.IsClone,
-				Idx:     snap.Idx,
-				Size:    snap.Size,
-			},
-			SnapFeInfo: &pbds.SnapFeInfo{
-				ErrInfo: &pbds.ErrInfo{
-					IsErr:     true,
-					ErrMsg:    lib.ResUninitMsg,
-					Timestamp: lib.ResTimestamp(),
-				},
-			},
-		}
-		snapFeList = append(snapFeList, snapFe)
-
 		expFeList := make([]*pbds.ExpFrontend, 0)
 
 		var primCntlr *pbds.Controller
@@ -239,6 +208,7 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 			DaName:      req.DaName,
 			Description: req.Description,
 			DaConf: &pbds.DaConf{
+				Size: req.DaConf.Size,
 				Qos: &pbds.BdevQos{
 					RwIosPerSec:    req.DaConf.Qos.RwIosPerSec,
 					RwMbytesPerSec: req.DaConf.Qos.RwMbytesPerSec,
@@ -503,13 +473,10 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 
 			cntlr := cntlrList[i]
 			var thisGrpFeList []*pbds.GrpFrontend
-			var thisSnapFeList []*pbds.SnapFrontend
 			if cntlr.IsPrimary {
 				thisGrpFeList = grpFeList
-				thisSnapFeList = snapFeList
 			} else {
 				thisGrpFeList = emptyGrpFeList
-				thisSnapFeList = emptySnapFeList
 			}
 			cntlrFe := &pbds.CntlrFrontend{
 				CntlrId: cntlr.CntlrId,
@@ -517,6 +484,7 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 					DaId:        daId,
 					DaName:      req.DaName,
 					StripSizeKb: req.DaConf.StripSizeKb,
+					Size:         req.DaConf.Size,
 					CntlrList:   cntlrList,
 				},
 				CntlrFeInfo: &pbds.CntlrFeInfo{
@@ -526,9 +494,9 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 						Timestamp: lib.ResTimestamp(),
 					},
 				},
-				IsInit:     false,
+				IsInited:   false,
 				GrpFeList:  thisGrpFeList,
-				SnapFeList: thisSnapFeList,
+				SnapFeList: snapFeList,
 				ExpFeList:  expFeList,
 			}
 			controllerNode.CntlrFeList = append(controllerNode.CntlrFeList, cntlrFe)
@@ -639,15 +607,15 @@ func (po *portalServer) CreateDa(ctx context.Context, req *pbpo.CreateDaRequest)
 	invalidParamMsg := ""
 	if req.DaName == "" {
 		invalidParamMsg = "DnName is empty"
-	} else if req.Size == 0 {
-		invalidParamMsg = "Size is zero"
 	} else if req.PhysicalSize == 0 {
 		invalidParamMsg = "PhysicalSize is zero"
 	} else if req.CntlrCnt == 0 {
 		invalidParamMsg = "CntlrCnt is zero"
 	} else if req.DaConf == nil {
 		invalidParamMsg = "DaConf is empty"
-	} else if req.DaConf.Qos == nil {
+	} else if req.DaConf.Size == 0 {
+		invalidParamMsg = "Size is zero"
+	}else if req.DaConf.Qos == nil {
 		invalidParamMsg = "Qos is empty"
 	} else if req.DaConf.StripCnt == 0 {
 		invalidParamMsg = "StripCnt is zero"

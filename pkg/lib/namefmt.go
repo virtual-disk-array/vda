@@ -139,12 +139,28 @@ func (nf *NameFmt) GrpBdevName(grpId string) string {
 	return fmt.Sprintf("%s-%s", nf.GrpBdevPrefix(), grpId)
 }
 
-func (nf *NameFmt) SnapName(snapId string) string {
-	return fmt.Sprintf("%s", snapId)
+func (nf *NameFmt) SnapshotPrefix() string {
+	return "snapshot"
 }
 
-func (nf *NameFmt) SnapFullName(daId, snapId string) string {
-	return fmt.Sprintf("%s/%s", nf.DaLvsName(daId), nf.SnapName(snapId))
+func (nf *NameFmt) SnapshotName(snapId string) string {
+	return fmt.Sprintf("%s-%s", nf.SnapshotPrefix(), snapId)
+}
+
+func (nf *NameFmt) SnapshotFullName(daId, snapId string) string {
+	return fmt.Sprintf("%s/%s", nf.DaLvsName(daId), nf.SnapshotName(snapId))
+}
+
+func (nf *NameFmt) ClonePrefix() string {
+	return "clone"
+}
+
+func (nf *NameFmt) CloneName(snapId string) string {
+	return fmt.Sprintf("%s-%s", nf.ClonePrefix(), snapId)
+}
+
+func (nf *NameFmt) CloneFullName(daId, snapId string) string {
+	return fmt.Sprintf("%s/%s", nf.DaLvsName(daId), nf.CloneName(snapId))
 }
 
 func (nf *NameFmt) ExpNqnName(daName, expName string) string {

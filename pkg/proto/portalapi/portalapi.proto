@@ -287,10 +287,9 @@ message Snap {
   string snap_name = 2;
   string description = 3;
   string ori_name = 4;
-  bool is_clone = 5;
-  uint64 idx = 6;
-  uint64 size = 7;
-  ErrInfo err_info = 8;
+  uint64 idx = 5;
+  uint64 size = 6;
+  ErrInfo err_info = 7;
 }
 
 message SnapSummary {
@@ -323,11 +322,12 @@ message ExpSummary {
 }
 
 message DaConf {
-  BdevQos qos = 1;
-  uint32 strip_cnt = 2;
-  uint32 strip_size_kb = 3;
-  uint64 cluster_size = 4;
-  uint32 extend_ratio = 5;
+  uint64 size = 1;
+  BdevQos qos = 2;
+  uint32 strip_cnt = 3;
+  uint32 strip_size_kb = 4;
+  uint64 cluster_size = 5;
+  uint32 extend_ratio = 6;
 }
 
 message DiskArray {
@@ -513,10 +513,9 @@ message GetCnReply {
 message CreateDaRequest {
   string da_name = 1;
   string description = 2;
-  uint64 size = 3;
-  uint64 physical_size = 4;
-  uint32 cntlr_cnt = 5;
-  DaConf daConf = 6;
+  uint64 physical_size = 3;
+  uint32 cntlr_cnt = 4;
+  DaConf daConf = 5;
 }
 
 message CreateDaReply {
@@ -619,8 +618,7 @@ message CreateSnapRequest {
   string snap_name = 2;
   string description = 3;
   string ori_name = 4;
-  bool   is_clone = 5;
-  uint64 size = 6;
+  uint64 size = 5;
 }
 
 message CreateSnapReply {

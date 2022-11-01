@@ -203,9 +203,8 @@ message GrpFrontend {
 
 message SnapFeConf {
   string ori_id = 1;
-  bool is_clone = 2;
-  uint64 idx = 3;
-  uint64 size = 4;
+  uint64 idx = 2;
+  uint64 size = 3;
 }
 
 message SnapFeInfo {
@@ -275,7 +274,8 @@ message CntlrFeConf {
   string da_id = 1;
   string da_name = 2;
   uint32 strip_size_kb = 3;
-  repeated Controller cntlr_list = 4;
+  uint64 size = 4;
+  repeated Controller cntlr_list = 5;
 }
 
 message CntlrFeInfo {
@@ -286,7 +286,7 @@ message CntlrFrontend {
   string cntlr_id = 1;
   CntlrFeConf cntlr_fe_conf = 2;
   CntlrFeInfo cntlr_fe_info = 3;
-  bool is_init = 4;
+  bool is_inited = 4;
   repeated GrpFrontend grp_fe_list = 5;
   repeated SnapFrontend snap_fe_list = 6;
   repeated ExpFrontend exp_fe_list = 7;
@@ -342,9 +342,8 @@ message Snap {
   string snap_name = 2;
   string description = 3;
   string ori_name = 4;
-  bool is_clone = 5;
-  uint64 idx = 6;
-  uint64 size = 7;
+  uint64 idx = 5;
+  uint64 size = 6;
 }
 
 message Exporter {
@@ -380,11 +379,12 @@ message ImportingTask {
 }
 
 message DaConf {
-  BdevQos qos = 1;
-  uint32 strip_cnt = 2;
-  uint32 strip_size_kb = 3;
-  uint64 cluster_size = 4;
-  uint32 extend_ratio = 5;
+  uint64 size = 1;
+  BdevQos qos = 2;
+  uint32 strip_cnt = 3;
+  uint32 strip_size_kb = 4;
+  uint64 cluster_size = 5;
+  uint32 extend_ratio = 6;
 }
 
 // /{vda_prefix}/da/{da_name}

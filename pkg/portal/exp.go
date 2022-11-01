@@ -35,9 +35,6 @@ func (po *portalServer) CreateExp(ctx context.Context, req *pbpo.CreateExpReques
 
 	expId := lib.NewHexStrUuid()
 	snapName := req.SnapName
-	if snapName == "" {
-		snapName = lib.DefaultSanpName
-	}
 
 	exp := &pbds.Exporter{
 		ExpId:        expId,
@@ -64,24 +61,18 @@ func (po *portalServer) CreateExp(ctx context.Context, req *pbpo.CreateExpReques
 			logger.Error("Unmarshal diskArray err: %s %v", daEntityKey, err)
 			return err
 		}
-		var targetSnap *pbds.Snap
+		var snapId = ""
 		for _, snap := range diskArray.SnapList {
 			if snap.SnapName == snapName {
-				targetSnap = snap
+				snapId = snap.SnapId
 				break
-			}
-		}
-		if targetSnap == nil {
-			return &portalError{
-				lib.PortalUnknownResErrCode,
-				snapName,
 			}
 		}
 		expFe := &pbds.ExpFrontend{
 			ExpId: expId,
 			ExpFeConf: &pbds.ExpFeConf{
 				InitiatorNqn: req.InitiatorNqn,
-				SnapId:       targetSnap.SnapId,
+				SnapId:       snapId,
 				DaName:       diskArray.DaName,
 				ExpName:      req.ExpName,
 			},

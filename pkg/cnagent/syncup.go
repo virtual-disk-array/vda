@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
-	"strings"
+	// "strings"
 	"sync/atomic"
 
 	"github.com/virtual-disk-array/vda/pkg/lib"
@@ -124,15 +124,26 @@ func (sh *syncupHelper) syncupSnapFe(cntlrFeReq *pbcn.CntlrFeReq,
 	logger.Info("syncupSnapFe: %v", snapFeReq)
 	var snapErr error
 	daLvsName := sh.nf.DaLvsName(cntlrFeReq.CntlrFeConf.DaId)
-	snapName := sh.nf.SnapName(snapFeReq.SnapId)
-	oriName := sh.nf.SnapName(snapFeReq.SnapFeConf.OriId)
-	isClone := snapFeReq.SnapFeConf.IsClone
-	snapSize := snapFeReq.SnapFeConf.Size
-	snapFullName := sh.nf.SnapFullName(cntlrFeReq.CntlrFeConf.DaId,
+	snapshotName := sh.nf.SnapshotName(snapFeReq.SnapId)
+	cloneName := sh.nf.CloneName(snapFeReq.SnapId)
+	var oriName string
+	if snapFeReq.SnapFeConf.OriId == "" {
+		oriName = lib.MainLvName
+	} else {
+		oriName = sh.nf.CloneName(snapFeReq.SnapFeConf.OriId)
+	}
+	cloneFullName := sh.nf.CloneFullName(cntlrFeReq.CntlrFeConf.DaId,
 		snapFeReq.SnapId)
-	sh.snapMap[snapFullName] = true
+	sh.snapMap[cloneFullName] = true
 	if snapErr == nil {
-		sh.oc.CreateSnap(daLvsName, snapName, oriName, isClone, snapSize)
+		snapErr = sh.oc.CreateSnapshot(daLvsName, snapshotName, oriName)
+	}
+	if snapErr == nil {
+		snapErr = sh.oc.CreateClone(daLvsName, cloneName, snapshotName)
+	}
+	if snapErr == nil {
+		snapErr = sh.oc.ResizeLv(daLvsName, cloneName,
+			snapFeReq.SnapFeConf.Size)
 	}
 	snapFeRsp := &pbcn.SnapFeRsp{
 		SnapId: snapFeReq.SnapId,
@@ -149,17 +160,24 @@ func (sh *syncupHelper) syncupExpFe(cntlrFeReq *pbcn.CntlrFeReq,
 	var expFeErr error
 	expNqnName := sh.nf.ExpNqnName(expFeReq.ExpFeConf.DaName, expFeReq.ExpFeConf.ExpName)
 	sh.expNqnMap[expNqnName] = true
-	snapFullName := sh.nf.SnapFullName(cntlrFeReq.CntlrFeConf.DaId, expFeReq.ExpFeConf.SnapId)
+	var lvFullName string
+	if expFeReq.ExpFeConf.SnapId == "" {
+		daLvsName := sh.nf.DaLvsName(cntlrFeReq.CntlrFeConf.DaId)
+		lvFullName = daLvsName + "/" + lib.MainLvName
+	} else {
+		lvFullName = sh.nf.CloneFullName(cntlrFeReq.CntlrFeConf.DaId,
+			expFeReq.ExpFeConf.SnapId)
+	}
 	initiatorNqn := expFeReq.ExpFeConf.InitiatorNqn
 	lisConf := sh.lisConf
 
 	if expFeErr == nil {
-		expFeErr = sh.oc.EnableHistogram(snapFullName)
+		expFeErr = sh.oc.EnableHistogram(lvFullName)
 	}
 
 	if expFeErr == nil {
 		expFeErr = sh.oc.CreateExpPrimaryNvmf(expNqnName,
-			snapFullName, initiatorNqn, secNqnList, lisConf)
+			lvFullName, initiatorNqn, secNqnList, lisConf)
 	}
 
 	expFeRsp := &pbcn.ExpFeRsp{
@@ -205,10 +223,13 @@ func (sh *syncupHelper) syncupPrimary(cntlrFeReq *pbcn.CntlrFeReq,
 	daLvsName := sh.nf.DaLvsName(cntlrFeReq.CntlrFeConf.DaId)
 	sh.daLvsMap[daLvsName] = true
 	if cntlrFeErr == nil {
-		if cntlrFeReq.IsInit {
+		if cntlrFeReq.IsInited {
 			cntlrFeErr = sh.oc.WaitForLvs(daLvsName)
 		} else {
 			cntlrFeErr = sh.oc.CreateDaLvs(daLvsName, aggBdevName)
+		}
+		if cntlrFeErr == nil {
+			sh.oc.CreateMainLv(daLvsName, cntlrFeReq.CntlrFeConf.Size)
 		}
 	}
 
@@ -402,37 +423,37 @@ func (sh *syncupHelper) syncupCn(cnReq *pbcn.CnReq) *pbcn.CnRsp {
 		}
 	}
 
-	if cnErr == nil {
-		snapFullNamePrefix := sh.nf.SnapFullNamePrefix()
-		snapFullNameList, cnErr := sh.oc.GetSnapList(snapFullNamePrefix)
-		if cnErr == nil {
-			toBeDeleted1 := make([]string, 0)
-			toBeDeleted2 := make([]string, 0)
-			for _, snapFullName := range snapFullNameList {
-				_, ok := sh.snapMap[snapFullName]
-				if !ok {
-					toBeDeleted1 = append(toBeDeleted1, snapFullName)
-				}
-			}
-			for {
-				for _, snapFullName := range toBeDeleted1 {
-					tmpErr := sh.oc.DeleteSnap(snapFullName)
-					if tmpErr != nil {
-						toBeDeleted2 = append(toBeDeleted2, snapFullName)
-					}
-				}
-				if len(toBeDeleted1) == len(toBeDeleted2) {
-					break
-				}
-				toBeDeleted1 = toBeDeleted2
-				toBeDeleted2 = make([]string, 0)
-			}
-			if len(toBeDeleted1) != 0 {
-				cnErr = fmt.Errorf("can not delete snap(s): %s",
-					strings.Join(toBeDeleted1, ","))
-			}
-		}
-	}
+	// if cnErr == nil {
+	// 	snapFullNamePrefix := sh.nf.SnapFullNamePrefix()
+	// 	snapFullNameList, cnErr := sh.oc.GetSnapList(snapFullNamePrefix)
+	// 	if cnErr == nil {
+	// 		toBeDeleted1 := make([]string, 0)
+	// 		toBeDeleted2 := make([]string, 0)
+	// 		for _, snapFullName := range snapFullNameList {
+	// 			_, ok := sh.snapMap[snapFullName]
+	// 			if !ok {
+	// 				toBeDeleted1 = append(toBeDeleted1, snapFullName)
+	// 			}
+	// 		}
+	// 		for {
+	// 			for _, snapFullName := range toBeDeleted1 {
+	// 				tmpErr := sh.oc.DeleteSnap(snapFullName)
+	// 				if tmpErr != nil {
+	// 					toBeDeleted2 = append(toBeDeleted2, snapFullName)
+	// 				}
+	// 			}
+	// 			if len(toBeDeleted1) == len(toBeDeleted2) {
+	// 				break
+	// 			}
+	// 			toBeDeleted1 = toBeDeleted2
+	// 			toBeDeleted2 = make([]string, 0)
+	// 		}
+	// 		if len(toBeDeleted1) != 0 {
+	// 			cnErr = fmt.Errorf("can not delete snap(s): %s",
+	// 				strings.Join(toBeDeleted1, ","))
+	// 		}
+	// 	}
+	// }
 
 	if cnErr == nil {
 		daLvsPrefix := sh.nf.DaLvsPrefix()

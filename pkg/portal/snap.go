@@ -18,8 +18,6 @@ func (po *portalServer) CreateSnap(ctx context.Context, req *pbpo.CreateSnapRequ
 		invalidParamMsg = "DaName is empty"
 	} else if req.SnapName == "" {
 		invalidParamMsg = "SnapName is empty"
-	} else if req.OriName == "" {
-		invalidParamMsg = "OriName is empty"
 	}
 	if invalidParamMsg != "" {
 		return &pbpo.CreateSnapReply{
@@ -49,49 +47,44 @@ func (po *portalServer) CreateSnap(ctx context.Context, req *pbpo.CreateSnapRequ
 			logger.Error("Unmarshal diskArray err: %s %v", daEntityKey, err)
 			return err
 		}
-		snapMap := make(map[string]*pbds.Snap)
-		for _, snap := range diskArray.SnapList {
-			snapMap[snap.SnapName] = snap
-		}
-
-		if _, ok := snapMap[req.OriName]; !ok {
-			invalidParamMsg = "OriSnap does not exist"
-		} else if snapMap[req.OriName].IsClone && req.IsClone {
-			invalidParamMsg = "Both the ori snap and the new snap are clone"
-		}
-
-		if invalidParamMsg != "" {
-			return fmt.Errorf("request parameter err: %v", invalidParamMsg)
-		}
-
-		var oriSnap *pbds.Snap
+		oriName := ""
+		oriId := ""
+		oriSize := uint64(0)
 		if req.OriName == "" {
-			if _, ok := snapMap[lib.DefaultSanpName]; ok {
-				oriSnap = snapMap[lib.DefaultSanpName]
-			} else {
-				return fmt.Errorf("default snap is not existed")
-			}
-		} else {
-			oriSnap = snapMap[req.OriName]
+			oriSize = diskArray.DaConf.Size
 		}
-
+		if req.OriName != "" {
+			for _, snap := range diskArray.SnapList {
+				if snap.SnapName == req.OriName {
+					oriName = snap.SnapName
+					oriId = snap.SnapId
+					oriSize = snap.Size
+					break
+				}
+			}
+			if oriName == "" {
+				return fmt.Errorf("OriSnap does not exist: %v", req.OriName)
+			}
+		}
+		if oriSize == 0 {
+			panic("oriSize is zero, it should never happen")
+		}
 		var newSnapSize uint64
 		if req.Size == 0 {
-			newSnapSize = oriSnap.Size
+			newSnapSize = oriSize
 		} else {
 			newSnapSize = req.Size
 		}
 
-		if newSnapSize < oriSnap.Size {
-			return fmt.Errorf("request parameter err: req.Size should greater than oriSnap Size %d", oriSnap.Size)
+		if newSnapSize < oriSize {
+			return fmt.Errorf("request parameter err: req.Size should greater than ori size %d", oriSize)
 		}
 
 		newSnap = &pbds.Snap{
 			SnapId:      lib.NewHexStrUuid(),
 			SnapName:    req.SnapName,
 			Description: req.Description,
-			OriName:     oriSnap.SnapName,
-			IsClone:     req.IsClone,
+			OriName:     oriName,
 			Idx:         uint64(stm.Rev(daEntityKey)),
 			Size:        newSnapSize,
 		}
@@ -129,8 +122,7 @@ func (po *portalServer) CreateSnap(ctx context.Context, req *pbpo.CreateSnapRequ
 		snapFe := &pbds.SnapFrontend{
 			SnapId: newSnap.SnapId,
 			SnapFeConf: &pbds.SnapFeConf{
-				OriId:   oriSnap.SnapId,
-				IsClone: newSnap.IsClone,
+				OriId:   oriId,
 				Idx:     newSnap.Idx,
 				Size:    newSnap.Size,
 			},
@@ -628,7 +620,6 @@ func (po *portalServer) GetSnap(ctx context.Context, req *pbpo.GetSnapRequest) (
 			SnapName: targetSnap.SnapName,
 			Description: targetSnap.Description,
 			OriName: targetSnap.SnapName,
-			IsClone: targetSnap.IsClone,
 			Idx: targetSnap.Idx,
 			Size: targetSnap.Size,
 			ErrInfo: &pbpo.ErrInfo{

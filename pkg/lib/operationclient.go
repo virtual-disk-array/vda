@@ -1034,13 +1034,13 @@ func (oc *OperationClient) DeletePdBdev(bdevName string) error {
 	}
 }
 
-func (oc *OperationClient) CreateExpPrimaryNvmf(expNqnName, snapFullName, initiatorNqn string,
+func (oc *OperationClient) CreateExpPrimaryNvmf(expNqnName, lvFullName, initiatorNqn string,
 	secNqnList []string, lisConf *LisConf) error {
-	logger.Info("CreateExpPrimaryNvmf: expNqnName %v snapFullName %v initiatorNqn %v secNqnList %v lisConf %v",
-		expNqnName, snapFullName, initiatorNqn, secNqnList, lisConf)
+	logger.Info("CreateExpPrimaryNvmf: expNqnName %v lvFullName %v initiatorNqn %v secNqnList %v lisConf %v",
+		expNqnName, lvFullName, initiatorNqn, secNqnList, lisConf)
 	nvmf, ok := oc.nqnToNvmf[expNqnName]
 	if ok {
-		bdevName, err := oc.getBdevName(snapFullName)
+		bdevName, err := oc.getBdevName(lvFullName)
 		if err != nil {
 			return err
 		}
@@ -1053,7 +1053,7 @@ func (oc *OperationClient) CreateExpPrimaryNvmf(expNqnName, snapFullName, initia
 	}
 	if nvmf != nil {
 		if len(nvmf.Namespaces) == 0 {
-			if err := oc.createNvmfNs(expNqnName, snapFullName); err != nil {
+			if err := oc.createNvmfNs(expNqnName, lvFullName); err != nil {
 				return err
 			}
 		}
@@ -1093,7 +1093,7 @@ func (oc *OperationClient) CreateExpPrimaryNvmf(expNqnName, snapFullName, initia
 		if err := oc.createNvmfSubsystem(expNqnName); err != nil {
 			return err
 		}
-		if err := oc.createNvmfNs(expNqnName, snapFullName); err != nil {
+		if err := oc.createNvmfNs(expNqnName, lvFullName); err != nil {
 			return err
 		}
 		if err := oc.createNvmfListener(expNqnName, lisConf); err != nil {
@@ -1318,75 +1318,27 @@ func (oc *OperationClient) DeleteSnap(name string) error {
 	return nil
 }
 
-func (oc *OperationClient) createMainSnap(daLvsName, snapName string,
-	snapSize uint64) error {
-	params := &struct {
-		LvolName      string `json:"lvol_name"`
-		Size          uint64 `json:"size"`
-		LvsName       string `json:"lvs_name"`
-		ClearMethod   string `json:"clear_method"`
-		ThinProvision bool   `json:"thin_provision"`
-	}{
-		LvolName:      snapName,
-		Size:          snapSize,
-		LvsName:       daLvsName,
-		ClearMethod:   "unmap",
-		ThinProvision: true,
-	}
-	rsp := &struct {
-		Error *spdkErr `json:"error"`
-	}{}
-	err := oc.sc.Invoke("bdev_lvol_create", params, rsp)
+func (oc *OperationClient) CreateSnapshot(daLvsName, snapshotName, oriName string) error {
+	snapshotFullName := daLvsName + "/" + snapshotName
+	exist, err := oc.bdevExist(snapshotFullName)
 	if err != nil {
-		logger.Error("bdev_lvol_create failed: %v", err)
 		return err
 	}
-	if rsp.Error != nil {
-		logger.Error("bdev_lvol_create rsp err: %v", *rsp.Error)
-		return fmt.Errorf("bdev_lvol_create rsp err: %d %s",
-			rsp.Error.Code, rsp.Error.Message)
+	if exist {
+		return nil
 	}
-	return nil
-}
-
-func (oc *OperationClient) createClone(daLvsName, snapName, oriName string) error {
-	fullName := "daLvsName" + "/" + oriName
-	params := &struct {
-		SnapshotName string `json:"snapshot_name"`
-		CloneName    string `json:"clone_name"`
-	}{
-		SnapshotName: fullName,
-		CloneName:    snapName,
-	}
-	rsp := &struct {
-		Error *spdkErr `json:"error"`
-	}{}
-	err := oc.sc.Invoke("bdev_lvol_clone", params, rsp)
-	if err != nil {
-		logger.Error("bdev_lvol_clone failed: %v", err)
-		return err
-	}
-	if rsp.Error != nil {
-		logger.Error("bdev_lvol_clone rsp err: %v", *rsp.Error)
-		return fmt.Errorf("bdev_lvol_clone rsp err: %d %s",
-			rsp.Error.Code, rsp.Error.Message)
-	}
-	return nil
-}
-
-func (oc *OperationClient) createSnapshot(daLvsName, snapName, oriName string) error {
-	fullName := "daLvsName" + "/" + oriName
+	oriFullName := daLvsName + "/" + oriName
 	params := &struct {
 		LvolName     string `json:"lvol_name"`
 		SnapshotName string `json:"snapshot_name"`
 	}{
-		LvolName:     fullName,
-		SnapshotName: snapName,
+		LvolName:     oriFullName,
+		SnapshotName: snapshotName,
 	}
 	rsp := &struct {
 		Error *spdkErr `json:"error"`
 	}{}
-	err := oc.sc.Invoke("bdev_lvol_snapshot", params, rsp)
+	err = oc.sc.Invoke("bdev_lvol_snapshot", params, rsp)
 	if err != nil {
 		logger.Error("bdev_lvol_snapshot failed: %v", err)
 		return err
@@ -1399,25 +1351,62 @@ func (oc *OperationClient) createSnapshot(daLvsName, snapName, oriName string) e
 	return nil
 }
 
-func (oc *OperationClient) CreateSnap(daLvsName, snapName, oriName string,
-	isClone bool, snapSize uint64) error {
-	logger.Info("CreateSnap: daLvsName %v snapName %v oriName %v isClone %v snapSize %v",
-		daLvsName, snapName, oriName, isClone, snapSize)
-	fullName := daLvsName + "/" + snapName
-	exist, err := oc.bdevExist(fullName)
+func (oc *OperationClient) CreateClone(daLvsName, cloneName, snapshotName string) error {
+	cloneFullfullName := daLvsName + "/" + cloneName
+	exist, err := oc.bdevExist(cloneFullfullName)
 	if err != nil {
 		return err
 	}
 	if exist {
 		return nil
 	}
-	if oriName == "" {
-		return oc.createMainSnap(daLvsName, snapName, snapSize)
-	} else if isClone {
-		return oc.createClone(daLvsName, snapName, oriName)
-	} else {
-		return oc.createSnapshot(daLvsName, snapName, oriName)
+	snapshotFullName := daLvsName + "/" + snapshotName
+	params := &struct {
+		SnapshotName string `json:"snapshot_name"`
+		CloneName    string `json:"clone_name"`
+	}{
+		SnapshotName: snapshotFullName,
+		CloneName:    cloneName,
 	}
+	rsp := &struct {
+		Error *spdkErr `json:"error"`
+	}{}
+	err = oc.sc.Invoke("bdev_lvol_clone", params, rsp)
+	if err != nil {
+		logger.Error("bdev_lvol_clone failed: %v", err)
+		return err
+	}
+	if rsp.Error != nil {
+		logger.Error("bdev_lvol_clone rsp err: %v", *rsp.Error)
+		return fmt.Errorf("bdev_lvol_clone rsp err: %d %s",
+			rsp.Error.Code, rsp.Error.Message)
+	}
+	return nil
+}
+
+func (oc *OperationClient) ResizeLv(daLvsName, lvName string, size uint64) error {
+	lvFullName := daLvsName + "/" + lvName
+	params := &struct {
+		Name string `json:"name"`
+		Size uint64 `json:"size"`
+	}{
+		Name: lvFullName,
+		Size: size,
+	}
+	rsp := &struct {
+		Error *spdkErr `json:"error"`
+	}{}
+	err := oc.sc.Invoke("bdev_lvol_resize", params, rsp)
+	if err != nil {
+		logger.Error("bdev_lvol_resize failed: %v", err)
+		return err
+	}
+	if rsp.Error != nil {
+		logger.Error("bdev_lvol_resize rsp err: %v", *rsp.Error)
+		return fmt.Errorf("bdev_lvol_resize rsp err: %d %s",
+			rsp.Error.Code, rsp.Error.Message)
+	}
+	return nil
 }
 
 func (oc *OperationClient) GetDaLvsList(prefix string) ([]string, error) {
@@ -1450,7 +1439,7 @@ func (oc *OperationClient) CreateDaLvs(daLvsName, aggBdevName string) error {
 	}{
 		LvsName:                   daLvsName,
 		BdevName:                  aggBdevName,
-		ClearMethod:               "unmap",
+		ClearMethod:               "none",
 		ClusterSz:                 CLUSTER_SIZE,
 		NumMdPagesPerClusterRatio: 100,
 	}
@@ -1485,6 +1474,45 @@ func (oc *OperationClient) WaitForLvs(daLvsName string) error {
 	}
 	logger.Warning("Can not find lvs: %s", daLvsName)
 	return fmt.Errorf("Can not find lvs: %s", daLvsName)
+}
+
+func (oc *OperationClient) CreateMainLv(daLvsName string, size uint64) error {
+	logger.Info("CreateMainLv: daLvsName %v size %v", daLvsName, size)
+	fullName := daLvsName + "/" + MainLvName
+	exist, err := oc.bdevExist(fullName)
+	if err != nil {
+		return err
+	}
+	if exist {
+		return nil
+	}
+	params := &struct {
+		LvolName      string `json:"lvol_name"`
+		Size          uint64 `json:"size"`
+		LvsName       string `json:"lvs_name"`
+		ClearMethod   string `json:"clear_method"`
+		ThinProvision bool   `json:"thin_provision"`
+	}{
+		LvolName:      MainLvName,
+		Size:          size,
+		LvsName:       daLvsName,
+		ClearMethod:   "none",
+		ThinProvision: true,
+	}
+	rsp := &struct {
+		Error *spdkErr `json:"error"`
+	}{}
+	err = oc.sc.Invoke("bdev_lvol_create", params, rsp)
+	if err != nil {
+		logger.Error("bdev_lvol_create failed: %v", err)
+		return err
+	}
+	if rsp.Error != nil {
+		logger.Error("bdev_lvol_create rsp err: %v", *rsp.Error)
+		return fmt.Errorf("bdev_lvol_create rsp err: %d %s",
+			rsp.Error.Code, rsp.Error.Message)
+	}
+	return nil
 }
 
 func (oc *OperationClient) GetAggBdevList(prefix string) ([]string, error) {

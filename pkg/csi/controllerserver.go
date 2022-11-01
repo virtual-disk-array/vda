@@ -28,10 +28,10 @@ func (cs *ControllerServer) CreateVolume(
 	request := pbpo.CreateDaRequest{
 		DaName:       name,
 		Description:  "csi created volume",
-		Size:         uint64(size),
 		PhysicalSize: uint64(size),
 		CntlrCnt:     1,
 		DaConf: &pbpo.DaConf{
+			Size:        uint64(size),
 			StripCnt:    1,
 			StripSizeKb: 64,
 			Qos: &pbpo.BdevQos{

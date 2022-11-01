@@ -424,7 +424,6 @@ func (sm *SyncupManager) buildSyncupCnRequest(
 				SnapId: snapFe.SnapId,
 				SnapFeConf: &pbcn.SnapFeConf{
 					OriId:   snapFe.SnapFeConf.OriId,
-					IsClone: snapFe.SnapFeConf.IsClone,
 					Idx:     snapFe.SnapFeConf.Idx,
 					Size:    snapFe.SnapFeConf.Size,
 				},
@@ -465,9 +464,10 @@ func (sm *SyncupManager) buildSyncupCnRequest(
 			CntlrFeConf: &pbcn.CntlrFeConf{
 				DaId:        cntlrFe.CntlrFeConf.DaId,
 				StripSizeKb: cntlrFe.CntlrFeConf.StripSizeKb,
+				Size:        cntlrFe.CntlrFeConf.Size,
 				CntlrList:   cntlrList,
 			},
-			IsInit:        cntlrFe.IsInit,
+			IsInited:      cntlrFe.IsInited,
 			GrpFeReqList:  grpFeReqList,
 			SnapFeReqList: snapFeReqList,
 			ExpFeReqList:  expFeReqList,
@@ -561,7 +561,7 @@ func (sm *SyncupManager) setCnInfo(controllerNode *pbds.ControllerNode,
 			logger.Error("Can not find thisCntlr: %s %v", controllerNode.SockAddr, cntlrFe)
 		} else {
 			if thisCntlr.IsPrimary && !cntlrFe.CntlrFeInfo.ErrInfo.IsErr {
-				cntlrFe.IsInit = true
+				cntlrFe.IsInited = true
 			}
 		}
 		for _, grpFe := range cntlrFe.GrpFeList {

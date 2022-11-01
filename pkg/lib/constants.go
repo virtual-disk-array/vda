@@ -36,8 +36,7 @@ const (
 	AllocLockTTL  = 2
 	AllocMaxRetry = 10
 
-	DefaultSanpName        = "%default%"
-	DefaultSanpDescription = "default snap"
+	MainLvName = "main"
 
 	PortalDefaultListLimit = int64(100)
 	PortalMaxListLimit     = int64(1000)

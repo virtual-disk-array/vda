@@ -164,7 +164,6 @@ func TestPrimSyncup(t *testing.T) {
 							SnapId: snapId,
 							SnapFeConf: &pbcn.SnapFeConf{
 								OriId:   "",
-								IsClone: false,
 								Idx:     uint64(0),
 								Size:    snapSize,
 							},

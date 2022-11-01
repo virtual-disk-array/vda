@@ -146,10 +146,10 @@ func (cli *client) createDa(args *daCreateArgsStruct) string {
 	req := &pbpo.CreateDaRequest{
 		DaName:       args.daName,
 		Description:  args.description,
-		Size:         args.sizeMb * 1024 * 1024,
 		PhysicalSize: args.physicalSizeMb * 1024 * 1024,
 		CntlrCnt:     args.cntlrCnt,
 		DaConf: &pbpo.DaConf{
+			Size: args.sizeMb * 1024 * 1024,
 			Qos: &pbpo.BdevQos{
 				RwIosPerSec:    args.rwIosPerSec,
 				RwMbytesPerSec: args.rwMbytesPerSec,
