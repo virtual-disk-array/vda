@@ -9,10 +9,10 @@ source $CURR_DIR/utils.sh
 cleanup
 
 set +e
-umount_dir "$work_dir/da0"
-umount_dir "$work_dir/da1"
-umount_dir "$work_dir/da2"
-umount_dir "$work_dir/da3"
+umount_dir "$WORK_DIR/da0"
+umount_dir "$WORK_DIR/da1"
+umount_dir "$WORK_DIR/da2"
+umount_dir "$WORK_DIR/da3"
 set -e
 
 sleep 1

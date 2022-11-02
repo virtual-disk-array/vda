@@ -1,5 +1,6 @@
 #!/bin/bash
 
+set -x
 set -e
 
 CURR_DIR=$(readlink -f $(dirname $0))
