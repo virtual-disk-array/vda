@@ -163,6 +163,14 @@ func (nf *NameFmt) CloneFullName(daId, snapId string) string {
 	return fmt.Sprintf("%s/%s", nf.DaLvsName(daId), nf.CloneName(snapId))
 }
 
+func (nf *NameFmt) IsClone(bdevName string) bool {
+	return strings.Contains(bdevName, nf.ClonePrefix())
+}
+
+func (nf *NameFmt) CloneToSnapshot(bdevName string) string {
+	return strings.Replace(bdevName, nf.ClonePrefix(),  nf.SnapshotPrefix(), 1)
+}
+
 func (nf *NameFmt) ExpNqnName(daName, expName string) string {
 	return fmt.Sprintf("%s-%s-%s", nf.ExpNqnPrefix(), daName, expName)
 }

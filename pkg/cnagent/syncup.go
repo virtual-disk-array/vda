@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sort"
-	// "strings"
 	"sync/atomic"
 
 	"github.com/virtual-disk-array/vda/pkg/lib"
@@ -423,37 +422,39 @@ func (sh *syncupHelper) syncupCn(cnReq *pbcn.CnReq) *pbcn.CnRsp {
 		}
 	}
 
-	// if cnErr == nil {
-	// 	snapFullNamePrefix := sh.nf.SnapFullNamePrefix()
-	// 	snapFullNameList, cnErr := sh.oc.GetSnapList(snapFullNamePrefix)
-	// 	if cnErr == nil {
-	// 		toBeDeleted1 := make([]string, 0)
-	// 		toBeDeleted2 := make([]string, 0)
-	// 		for _, snapFullName := range snapFullNameList {
-	// 			_, ok := sh.snapMap[snapFullName]
-	// 			if !ok {
-	// 				toBeDeleted1 = append(toBeDeleted1, snapFullName)
-	// 			}
-	// 		}
-	// 		for {
-	// 			for _, snapFullName := range toBeDeleted1 {
-	// 				tmpErr := sh.oc.DeleteSnap(snapFullName)
-	// 				if tmpErr != nil {
-	// 					toBeDeleted2 = append(toBeDeleted2, snapFullName)
-	// 				}
-	// 			}
-	// 			if len(toBeDeleted1) == len(toBeDeleted2) {
-	// 				break
-	// 			}
-	// 			toBeDeleted1 = toBeDeleted2
-	// 			toBeDeleted2 = make([]string, 0)
-	// 		}
-	// 		if len(toBeDeleted1) != 0 {
-	// 			cnErr = fmt.Errorf("can not delete snap(s): %s",
-	// 				strings.Join(toBeDeleted1, ","))
-	// 		}
-	// 	}
-	// }
+	if cnErr == nil {
+		toBeDeleted1 := make([]string, 0)
+		toBeDeleted2 := make([]string, 0)
+		snapFullNamePrefix := sh.nf.SnapFullNamePrefix()
+		snapFullNameList, cnErr := sh.oc.GetSnapList(snapFullNamePrefix)
+		for _, snapName := range snapFullNameList {
+			if sh.nf.IsClone(snapName) {
+				_, ok := sh.snapMap[snapName]
+				if !ok {
+					cnErr = sh.oc.DeleteSnap(snapName)
+					if cnErr != nil {
+						break
+					}
+					snapshotName := sh.nf.CloneToSnapshot(snapName)
+					toBeDeleted1 = append(toBeDeleted1, snapshotName)
+				}
+			}
+		}
+
+		for {
+			for _, snapshotName := range toBeDeleted1 {
+				tmpErr := sh.oc.DeleteSnap(snapshotName)
+				if tmpErr != nil {
+					toBeDeleted2 = append(toBeDeleted2, snapshotName)
+				}
+			}
+			if len(toBeDeleted1) == len(toBeDeleted2) {
+				break
+			}
+			toBeDeleted1 = toBeDeleted2
+			toBeDeleted2 = make([]string, 0)
+		}
+	}
 
 	if cnErr == nil {
 		daLvsPrefix := sh.nf.DaLvsPrefix()
