@@ -28,7 +28,6 @@ func (cs *ControllerServer) CreateVolume(
 	request := pbpo.CreateDaRequest{
 		DaName:       name,
 		Description:  "csi created volume",
-		PhysicalSize: uint64(size),
 		CntlrCnt:     1,
 		DaConf: &pbpo.DaConf{
 			Size:        uint64(size),
@@ -40,6 +39,7 @@ func (cs *ControllerServer) CreateVolume(
 				RMbytesPerSec:  0,
 				WMbytesPerSec:  0,
 			},
+			InitGrpSize: uint64(size),
 		},
 	}
 	klog.Infof("CreateDa request: %v", request)

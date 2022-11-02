@@ -47,6 +47,11 @@ const (
 	GrpcCacheStep     = 10
 	GrpcCacheInterval = 10
 
+	DefaultStripCnt = 1
+	DefaultStripSizeKb = 16
 	DefaultClusterSize = uint64(4*1024*1024)
-	DefaultExtendRatio = 100
+	DefaultExtendRatio = 10000
+	DefaultInitGrpRatio = 10
+	DefaultMaxGrpSize = uint64(100*1024*1024*1024)
+	DefaultLowWaterMark = uint64(100*1024*1024)
 )

@@ -555,7 +555,7 @@ func (po *portalServer) createNewDa(ctx context.Context, req *pbpo.CreateDaReque
 		}
 	}()
 
-	vdSize := lib.DivCeil(req.PhysicalSize, uint64(req.DaConf.StripCnt))
+	vdSize := lib.DivCeil(req.DaConf.InitGrpSize, uint64(req.DaConf.StripCnt))
 	qos := &lib.BdevQos{
 		RwIosPerSec:    lib.DivCeil(req.DaConf.Qos.RwIosPerSec, uint64(req.DaConf.StripCnt)),
 		RwMbytesPerSec: lib.DivCeil(req.DaConf.Qos.RwMbytesPerSec, uint64(req.DaConf.StripCnt)),
@@ -607,8 +607,6 @@ func (po *portalServer) CreateDa(ctx context.Context, req *pbpo.CreateDaRequest)
 	invalidParamMsg := ""
 	if req.DaName == "" {
 		invalidParamMsg = "DnName is empty"
-	} else if req.PhysicalSize == 0 {
-		invalidParamMsg = "PhysicalSize is zero"
 	} else if req.CntlrCnt == 0 {
 		invalidParamMsg = "CntlrCnt is zero"
 	} else if req.DaConf == nil {
@@ -617,10 +615,6 @@ func (po *portalServer) CreateDa(ctx context.Context, req *pbpo.CreateDaRequest)
 		invalidParamMsg = "Size is zero"
 	}else if req.DaConf.Qos == nil {
 		invalidParamMsg = "Qos is empty"
-	} else if req.DaConf.StripCnt == 0 {
-		invalidParamMsg = "StripCnt is zero"
-	} else if req.DaConf.StripSizeKb == 0 {
-		invalidParamMsg = "StripSizeKb is zero"
 	}
 	if invalidParamMsg != "" {
 		return &pbpo.CreateDaReply{
@@ -632,11 +626,27 @@ func (po *portalServer) CreateDa(ctx context.Context, req *pbpo.CreateDaRequest)
 		}, nil
 	}
 
+	if req.DaConf.StripCnt == 0 {
+		req.DaConf.StripCnt = lib.DefaultStripCnt
+	}
+	if req.DaConf.StripSizeKb == 0 {
+		req.DaConf.StripSizeKb = lib.DefaultStripSizeKb
+	}
 	if req.DaConf.ClusterSize == 0 {
 		req.DaConf.ClusterSize = lib.DefaultClusterSize
 	}
 	if req.DaConf.ExtendRatio == 0 {
 		req.DaConf.ExtendRatio = lib.DefaultExtendRatio
+	}
+	if req.DaConf.InitGrpSize == 0 {
+		req.DaConf.InitGrpSize = lib.DivCeil(
+			req.DaConf.Size, lib.DefaultInitGrpRatio)
+	}
+	if req.DaConf.MaxGrpSize == 0 {
+		req.DaConf.MaxGrpSize = lib.DefaultMaxGrpSize
+	}
+	if req.DaConf.LowWaterMark == 0 {
+		req.DaConf.LowWaterMark = lib.DefaultLowWaterMark
 	}
 
 	dnList, cnList, err := po.createNewDa(ctx, req)

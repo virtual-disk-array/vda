@@ -89,16 +89,16 @@ echo "create cn localhost:9821"
 $BIN_DIR/vda_cli cn create --sock-addr localhost:9821 --tr-svc-id 4431
 
 echo "create da0"
-$BIN_DIR/vda_cli da create --da-name da0 --size-mb 64 --physical-size-mb 64 \
+$BIN_DIR/vda_cli da create --da-name da0 --size-mb 64 --init-grp-size-mb 64 \
                  --cntlr-cnt 1 --strip-cnt 1 --strip-size-kb 64
 echo "create da1"
-$BIN_DIR/vda_cli da create --da-name da1 --size-mb 64 --physical-size-mb 64 \
+$BIN_DIR/vda_cli da create --da-name da1 --size-mb 64 --init-grp-size-mb 64 \
                  --cntlr-cnt 2 --strip-cnt 1 --strip-size-kb 64
 echo "create da2"
-$BIN_DIR/vda_cli da create --da-name da2 --size-mb 64 --physical-size-mb 64 \
+$BIN_DIR/vda_cli da create --da-name da2 --size-mb 64 --init-grp-size-mb 64 \
                  --cntlr-cnt 1 --strip-cnt 2 --strip-size-kb 64
 echo "create da3"
-$BIN_DIR/vda_cli da create --da-name da3 --size-mb 512 --physical-size-mb 512 \
+$BIN_DIR/vda_cli da create --da-name da3 --size-mb 512 --init-grp-size-mb 512 \
                  --cntlr-cnt 2 --strip-cnt 1 --strip-size-kb 64
 host_nqn="nqn.2016-06.io.spdk:host0"
 

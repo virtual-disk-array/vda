@@ -9,17 +9,19 @@ import (
 type daCreateArgsStruct struct {
 	daName         string
 	description    string
-	sizeMb         uint64
-	physicalSizeMb uint64
 	cntlrCnt       uint32
+	sizeMb         uint64
 	stripCnt       uint32
 	stripSizeKb    uint32
 	rwIosPerSec    uint64
 	rwMbytesPerSec uint64
 	rMbytesPerSec  uint64
 	wMbytesPerSec  uint64
-	clusterSz      uint64
+	clusterSize    uint64
 	extendRatio    uint32
+	initGrpSizeMb  uint64
+	maxGrpSizeMb   uint64
+	lowWaterMarkMb uint64
 }
 
 type daDeleteArgsStruct struct {
@@ -88,17 +90,14 @@ func init() {
 	daCreateCmd.MarkFlagRequired("da-name")
 	daCreateCmd.Flags().StringVarP(&daCreateArgs.description, "description", "", "",
 		"da description")
+	daCreateCmd.Flags().Uint32VarP(&daCreateArgs.cntlrCnt, "cntlr-cnt", "", 0,
+		"da controller count")
 	daCreateCmd.Flags().Uint64VarP(&daCreateArgs.sizeMb, "size-mb", "", 0,
 		"da size in MB")
 	daCreateCmd.MarkFlagRequired("size")
-	daCreateCmd.Flags().Uint64VarP(&daCreateArgs.physicalSizeMb, "physical-size-mb", "", 0,
-		"da physical size in MB")
-	daCreateCmd.MarkFlagRequired("physical-size")
-	daCreateCmd.Flags().Uint32VarP(&daCreateArgs.cntlrCnt, "cntlr-cnt", "", 1,
-		"da controller count")
-	daCreateCmd.Flags().Uint32VarP(&daCreateArgs.stripCnt, "strip-cnt", "", 1,
+	daCreateCmd.Flags().Uint32VarP(&daCreateArgs.stripCnt, "strip-cnt", "", 0,
 		"da strip count")
-	daCreateCmd.Flags().Uint32VarP(&daCreateArgs.stripSizeKb, "strip-size-kb", "", 64,
+	daCreateCmd.Flags().Uint32VarP(&daCreateArgs.stripSizeKb, "strip-size-kb", "", 0,
 		"da strip size in KB")
 	daCreateCmd.Flags().Uint64VarP(&daCreateArgs.rwIosPerSec, "rw-ios-per-sec", "", 0,
 		"da read/write ios per second")
@@ -108,10 +107,16 @@ func init() {
 		"da read mbytes per second")
 	daCreateCmd.Flags().Uint64VarP(&daCreateArgs.wMbytesPerSec, "w-mbytes-per-sec", "", 0,
 		"da write mbytes per second")
-	daCreateCmd.Flags().Uint64VarP(&daCreateArgs.clusterSz, "cluster-sz", "", 0,
+	daCreateCmd.Flags().Uint64VarP(&daCreateArgs.clusterSize, "cluster-size", "", 0,
 		"cluster size of the logical volume store in bytes")
 	daCreateCmd.Flags().Uint32VarP(&daCreateArgs.extendRatio, "extend-ratio", "", 0,
 		"reserved metadata pages per cluster")
+	daCreateCmd.Flags().Uint64VarP(&daCreateArgs.initGrpSizeMb, "init-grp-size-mb", "", 0,
+		"the init group size")
+	daCreateCmd.Flags().Uint64VarP(&daCreateArgs.maxGrpSizeMb, "max-grp-size-mb", "", 0,
+		"the max group size")
+	daCreateCmd.Flags().Uint64VarP(&daCreateArgs.lowWaterMarkMb, "low-water-mark-mb", "", 0,
+		"the low water mark in MB")
 	daCmd.AddCommand(daCreateCmd)
 
 	daDeleteCmd.Flags().StringVarP(&daDeleteArgs.daName, "da-name", "", "",
@@ -146,7 +151,6 @@ func (cli *client) createDa(args *daCreateArgsStruct) string {
 	req := &pbpo.CreateDaRequest{
 		DaName:       args.daName,
 		Description:  args.description,
-		PhysicalSize: args.physicalSizeMb * 1024 * 1024,
 		CntlrCnt:     args.cntlrCnt,
 		DaConf: &pbpo.DaConf{
 			Size: args.sizeMb * 1024 * 1024,
@@ -158,8 +162,11 @@ func (cli *client) createDa(args *daCreateArgsStruct) string {
 			},
 			StripCnt:    args.stripCnt,
 			StripSizeKb: args.stripSizeKb,
-			ClusterSize: args.clusterSz,
+			ClusterSize: args.clusterSize,
 			ExtendRatio: args.extendRatio,
+			InitGrpSize: args.initGrpSizeMb * 1024 * 1024,
+			MaxGrpSize: args.maxGrpSizeMb * 1024 * 1024,
+			LowWaterMark: args.lowWaterMarkMb * 1024 * 1024,
 		},
 	}
 	reply, err := cli.c.CreateDa(cli.ctx, req)

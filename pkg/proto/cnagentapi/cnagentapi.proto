@@ -156,9 +156,11 @@ message ItFeInfo {
 
 message CntlrFeConf {
   string da_id = 1;
-  uint32 strip_size_kb = 2;
+  repeated Controller cntlr_list = 2;
   uint64 size = 3;
-  repeated Controller cntlr_list = 4;
+  uint32 strip_size_kb = 4;
+  uint64 cluster_size = 5;
+  uint32 extend_ratio = 6;
 }
 
 message CntlrFeInfo {
