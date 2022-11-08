@@ -728,14 +728,14 @@ struct raid1_delete_ctx {
     struct spdk_thread *orig_thread;
 };
 
-#define RAID1_MAX_INFLIGHT_PER_STRIP (255)
+#define RAID1_MAX_INFLIGHT_PER_BIT (255)
 
 struct raid1_bdev_io {
 	struct spdk_thread *orig_thread;
 	enum spdk_bdev_io_status status;
-	uint64_t strip_idx;
+	uint64_t bit_idx;
 	uint64_t region_idx;
-	uint64_t strip_in_region;
+	uint64_t bit_in_region;
 	union {
 	    struct {
 	        struct raid1_per_iov per_iov;
@@ -750,16 +750,16 @@ struct raid1_bdev_io {
 
 TAILQ_HEAD(raid1_io_head, raid1_bdev_io);
 
-struct raid1_strip_and_region {
-	uint64_t strip_cnt;
+struct raid1_bit_and_region {
+	uint64_t bit_cnt;
 	uint64_t region_cnt;
 };
 
 static inline void
-raid1_calc_strip_and_region(uint64_t data_size, uint64_t strip_size, uint64_t *strip_cnt, uint64_t *region_cnt)
+raid1_calc_bit_and_region(uint64_t data_size, uint64_t bit_size, uint64_t *bit_cnt, uint64_t *region_cnt)
 {
-	*strip_cnt = SPDK_CEIL_DIV(data_size, strip_size);
-	*region_cnt = SPDK_CEIL_DIV(*strip_cnt, RAID1_STRIP_PER_REGION);
+	*bit_cnt = SPDK_CEIL_DIV(data_size, bit_size);
+	*region_cnt = SPDK_CEIL_DIV(*bit_cnt, RAID1_BIT_PER_REGION);
 }
 
 static int
@@ -768,7 +768,7 @@ raid1_bdev_get_ctx_size(void)
 	return sizeof(struct raid1_bdev_io);
 }
 
-#define RAID1_MAX_INFLIGHT_PER_STRIP (255)
+#define RAID1_MAX_INFLIGHT_PER_BIT (255)
 
 struct raid1_bdev {
 	char raid1_name[RAID1_MAX_NAME_LEN];
@@ -783,14 +783,14 @@ struct raid1_bdev {
 	uint64_t start_blocks;
 	struct raid1_sb *sb;
 	struct raid1_multi_io sb_io;
-	uint64_t strip_size;
+	uint64_t bit_size;
 	uint64_t write_delay;
 	uint64_t clean_ratio;
 	uint64_t max_delay;
 	uint64_t max_resync;
 	uint64_t region_size;
 	uint64_t region_cnt;
-	uint64_t strip_cnt;
+	uint64_t bit_cnt;
 	uint64_t bm_size;
 	uint8_t *bm_buf;
 	uint8_t *inflight_cnt;
@@ -871,7 +871,7 @@ raid1_read_choose_bdev(struct raid1_bdev *r1_bdev, struct raid1_bdev_io *raid1_i
 		return r1_bdev->health_idx;
 	}
 	if (raid1_bm_test(r1_bdev->resync->needed_bm,
-			raid1_io->strip_idx)) {
+			raid1_io->bit_idx)) {
 		return 0;
 	}
 	r1_bdev->read_idx = 1 - r1_bdev->read_idx;
@@ -1058,13 +1058,13 @@ raid1_resync_handler(struct raid1_bdev *r1_bdev,
 	assert(raid1_bm_test(resync->needed_bm, resync_ctx->bit_idx));
 	assert(!raid1_bm_test(resync->active_bm, resync_ctx->bit_idx));
 	raid1_bm_set(resync->active_bm, resync_ctx->bit_idx);
-	resync_ctx->offset = from_le64(&r1_bdev->sb->meta_size) + r1_bdev->strip_size * resync_ctx->bit_idx;
-	if (resync_ctx->bit_idx == r1_bdev->strip_cnt - 1) {
-		/* In the last strip might be smaller than the strip size */
+	resync_ctx->offset = from_le64(&r1_bdev->sb->meta_size) + r1_bdev->bit_size * resync_ctx->bit_idx;
+	if (resync_ctx->bit_idx == r1_bdev->bit_cnt - 1) {
+		/* In the last bit might be smaller than the bit size */
 		uint64_t whole_size = from_le64(&r1_bdev->sb->meta_size) + from_le64(&r1_bdev->sb->data_size);
-		resync_ctx->nbytes = spdk_min(r1_bdev->strip_size, whole_size - resync_ctx->offset);
+		resync_ctx->nbytes = spdk_min(r1_bdev->bit_size, whole_size - resync_ctx->offset);
 	} else {
-		resync_ctx->nbytes = r1_bdev->strip_size;
+		resync_ctx->nbytes = r1_bdev->bit_size;
 	}
 	raid1_per_io_init(per_io, per_thread, resync_ctx->buf, resync_ctx->offset,
 		resync_ctx->nbytes, RAID1_IO_READ,
@@ -1254,9 +1254,9 @@ raid1_bdev_destruct(void *ctx)
 }
 
 static inline struct raid1_region *
-raid1_strip_to_region(struct raid1_bdev *r1_bdev, uint64_t strip_idx)
+raid1_bit_to_region(struct raid1_bdev *r1_bdev, uint64_t bit_idx)
 {
-	uint64_t region_idx = strip_idx / RAID1_STRIP_PER_REGION;
+	uint64_t region_idx = bit_idx / RAID1_BIT_PER_REGION;
 	return &r1_bdev->regions[region_idx];
 }
 
@@ -1265,12 +1265,12 @@ raid1_init_pos(struct raid1_bdev *r1_bdev, struct spdk_bdev_io *bdev_io,
         struct raid1_bdev_io *raid1_io)
 {
 	uint64_t offset = bdev_io->u.bdev.offset_blocks * r1_bdev->bdev.blocklen;
-	raid1_io->strip_idx = offset / r1_bdev->strip_size;
+	raid1_io->bit_idx = offset / r1_bdev->bit_size;
 	raid1_io->region_idx = offset / r1_bdev->region_size;
-	raid1_io->strip_in_region = raid1_io->strip_idx % (RAID1_BYTESZ * PAGE_SIZE);
+	raid1_io->bit_in_region = raid1_io->bit_idx % (RAID1_BYTESZ * PAGE_SIZE);
 	SPDK_DEBUGLOG(bdev_raid1, "raid1_init_pos %s %p %" PRIu64 " %" PRIu64 " %" PRIu64 "\n",
 		r1_bdev->raid1_name, raid1_io,
-		raid1_io->strip_idx, raid1_io->region_idx, raid1_io->strip_in_region);
+		raid1_io->bit_idx, raid1_io->region_idx, raid1_io->bit_in_region);
 }
 
 static void
@@ -1386,7 +1386,7 @@ raid1_write_resync_pending(struct raid1_bdev *r1_bdev, struct raid1_bdev_io *rai
 	struct raid1_resync *resync = r1_bdev->resync;
 	struct raid1_resync_ctx *resync_ctx;
 	resync_ctx = raid1_resync_hash_get(
-		resync->running_hash, resync->hash_size, raid1_io->strip_idx);
+		resync->running_hash, resync->hash_size, raid1_io->bit_idx);
 	assert(resync_ctx != NULL);
 	TAILQ_INSERT_TAIL(&resync_ctx->waiting_queue, raid1_io, link);
 }
@@ -1401,20 +1401,20 @@ static inline void
 raid1_write_delay(struct raid1_bdev *r1_bdev,
         struct raid1_region *region, struct raid1_bdev_io *raid1_io)
 {
-	r1_bdev->inflight_cnt[raid1_io->strip_idx]++;
+	r1_bdev->inflight_cnt[raid1_io->bit_idx]++;
 	r1_bdev->data_io_cnt++;
 	r1_bdev->write_delivered++;
 	region->delay_cnt++;
-	if (r1_bdev->inflight_cnt[raid1_io->strip_idx] > 1) {
-		assert(raid1_bm_test(region->bm_buf, raid1_io->strip_in_region));
+	if (r1_bdev->inflight_cnt[raid1_io->bit_idx] > 1) {
+		assert(raid1_bm_test(region->bm_buf, raid1_io->bit_in_region));
 	} else {
-		if (raid1_bm_test(r1_bdev->resync->needed_bm, raid1_io->strip_idx)) {
-			assert(raid1_bm_test(region->bm_buf, raid1_io->strip_in_region));
+		if (raid1_bm_test(r1_bdev->resync->needed_bm, raid1_io->bit_idx)) {
+			assert(raid1_bm_test(region->bm_buf, raid1_io->bit_in_region));
 		} else {
 			if (r1_bdev->status == RAID1_BDEV_NORMAL) {
-				assert(!raid1_bm_test(region->bm_buf, raid1_io->strip_in_region));
+				assert(!raid1_bm_test(region->bm_buf, raid1_io->bit_in_region));
 			}
-			raid1_bm_set(region->bm_buf, raid1_io->strip_in_region);
+			raid1_bm_set(region->bm_buf, raid1_io->bit_in_region);
 		}
 	}
 	TAILQ_INSERT_TAIL(&region->delay_queue, raid1_io, link);
@@ -1441,7 +1441,7 @@ raid1_write_delay(struct raid1_bdev *r1_bdev,
 static inline void
 raid1_write_inflight_pending(struct raid1_bdev *r1_bdev, struct raid1_bdev_io *raid1_io)
 {
-	uint64_t key = raid1_io->strip_idx % r1_bdev->pending_hash_size;
+	uint64_t key = raid1_io->bit_idx % r1_bdev->pending_hash_size;
 	struct raid1_io_head *io_head = &r1_bdev->pending_io_hash[key];
 	TAILQ_INSERT_TAIL(io_head, raid1_io, link);
 }
@@ -1461,43 +1461,43 @@ raid1_abort_region(struct raid1_bdev *r1_bdev, struct raid1_region *region)
 static void
 raid1_write_complete_hook(struct raid1_bdev *r1_bdev, struct raid1_bdev_io *raid1_io)
 {
-	uint8_t inflight_cnt = r1_bdev->inflight_cnt[raid1_io->strip_idx];
+	uint8_t inflight_cnt = r1_bdev->inflight_cnt[raid1_io->bit_idx];
 	struct raid1_resync *resync = r1_bdev->resync;
 	assert(inflight_cnt > 0);
 	inflight_cnt--;
-	r1_bdev->inflight_cnt[raid1_io->strip_idx] = inflight_cnt;
+	r1_bdev->inflight_cnt[raid1_io->bit_idx] = inflight_cnt;
 	assert(r1_bdev->data_io_cnt > 0);
 	r1_bdev->data_io_cnt--;
-	if (inflight_cnt == (RAID1_MAX_INFLIGHT_PER_STRIP - 1)) {
-		uint64_t key = raid1_io->strip_idx % r1_bdev->pending_hash_size;
+	if (inflight_cnt == (RAID1_MAX_INFLIGHT_PER_BIT - 1)) {
+		uint64_t key = raid1_io->bit_idx % r1_bdev->pending_hash_size;
 		struct raid1_io_head *io_head = &r1_bdev->pending_io_hash[key];
 		struct raid1_bdev_io *tmp, *next_raid1_io;
 		next_raid1_io = NULL;
 		TAILQ_FOREACH_SAFE(next_raid1_io, io_head, link, tmp) {
-			if (next_raid1_io->strip_idx == raid1_io->strip_idx) {
+			if (next_raid1_io->bit_idx == raid1_io->bit_idx) {
 				TAILQ_REMOVE(io_head, next_raid1_io, link);
 				raid1_bdev_write_handler(r1_bdev, next_raid1_io);
-				if (r1_bdev->inflight_cnt[raid1_io->strip_idx] == RAID1_MAX_INFLIGHT_PER_STRIP) {
+				if (r1_bdev->inflight_cnt[raid1_io->bit_idx] == RAID1_MAX_INFLIGHT_PER_BIT) {
 					break;
 				}
 			}
 		}
 	} else if (inflight_cnt == 0) {
 		struct raid1_resync_ctx *resync_ctx;
-		resync_ctx = raid1_resync_hash_get(resync->pending_hash, resync->hash_size, raid1_io->strip_idx);
+		resync_ctx = raid1_resync_hash_get(resync->pending_hash, resync->hash_size, raid1_io->bit_idx);
 		if (resync_ctx) {
 			SPDK_DEBUGLOG(bdev_raid1, "Handle resync in write complete hook\n");
-			assert(raid1_bm_test(resync->needed_bm, raid1_io->strip_idx));
+			assert(raid1_bm_test(resync->needed_bm, raid1_io->bit_idx));
 			raid1_resync_hash_del(resync->pending_hash, resync->hash_size, resync_ctx);
 			raid1_resync_hash_add(resync->running_hash, resync->hash_size, resync_ctx);
 			raid1_resync_handler(r1_bdev, resync, resync_ctx);
 		}
 		struct raid1_region *region = &r1_bdev->regions[raid1_io->region_idx];
-		if (!raid1_bm_test(resync->needed_bm, raid1_io->strip_idx) &&
+		if (!raid1_bm_test(resync->needed_bm, raid1_io->bit_idx) &&
 			r1_bdev->status == RAID1_BDEV_NORMAL) {
-			assert(!raid1_bm_test(resync->active_bm, raid1_io->strip_idx));
-			assert(raid1_bm_test(region->bm_buf, raid1_io->strip_in_region));
-			raid1_bm_clear(region->bm_buf, raid1_io->strip_in_region);
+			assert(!raid1_bm_test(resync->active_bm, raid1_io->bit_idx));
+			assert(raid1_bm_test(region->bm_buf, raid1_io->bit_in_region));
+			raid1_bm_clear(region->bm_buf, raid1_io->bit_in_region);
 			if (region->queue_type == RAID1_QUEUE_NONE) {
 				TAILQ_INSERT_TAIL(&r1_bdev->clear_queue, region, link);
 				region->queue_type = RAID1_QUEUE_CLEAR;
@@ -1599,7 +1599,7 @@ raid1_deliver_region_multi(struct raid1_bdev *r1_bdev, struct raid1_region *regi
 		struct spdk_bdev_io *bdev_io = SPDK_CONTAINEROF(raid1_io,
 			struct spdk_bdev_io, driver_ctx);
 		struct raid1_multi_iov *multi_iov = &raid1_io->u.write_ctx.multi_iov;
-		assert(!raid1_bm_test(r1_bdev->resync->active_bm, raid1_io->strip_idx));
+		assert(!raid1_bm_test(r1_bdev->resync->active_bm, raid1_io->bit_idx));
 		raid1_multi_iov_write(multi_iov, r1_bdev->per_thread_ptr,
 			bdev_io->u.bdev.iovs, bdev_io->u.bdev.iovcnt,
 			bdev_io->u.bdev.offset_blocks+r1_bdev->start_blocks, bdev_io->u.bdev.num_blocks,
@@ -1772,7 +1772,7 @@ raid1_bdev_write_handler(struct raid1_bdev *r1_bdev, struct raid1_bdev_io *raid1
 		return;
 	}
 	if (raid1_bm_test(r1_bdev->resync->active_bm,
-			raid1_io->strip_idx)) {
+			raid1_io->bit_idx)) {
 		raid1_write_resync_pending(r1_bdev, raid1_io);
 		return;
 	}
@@ -1781,9 +1781,9 @@ raid1_bdev_write_handler(struct raid1_bdev *r1_bdev, struct raid1_bdev_io *raid1
 		raid1_write_bm_writing_pending(region, raid1_io);
 		return;
 	}
-	inflight_cnt = r1_bdev->inflight_cnt[raid1_io->strip_idx];
-	if (inflight_cnt == RAID1_MAX_INFLIGHT_PER_STRIP) {
-		assert(raid1_bm_test(region->bm_buf, raid1_io->strip_in_region));
+	inflight_cnt = r1_bdev->inflight_cnt[raid1_io->bit_idx];
+	if (inflight_cnt == RAID1_MAX_INFLIGHT_PER_BIT) {
+		assert(raid1_bm_test(region->bm_buf, raid1_io->bit_in_region));
 		raid1_write_inflight_pending(r1_bdev, raid1_io);
 		raid1_write_trigger(r1_bdev, region);
 	} else {
@@ -1892,13 +1892,13 @@ raid1_bdev_dump_info_json(void *ctx, struct spdk_json_write_ctx *w)
 	spdk_json_write_named_uint64(w, "counter", from_le64(&r1_bdev->sb->counter));
 	spdk_json_write_named_uint32(w, "major_version", from_le32(&r1_bdev->sb->major_version));
 	spdk_json_write_named_uint32(w, "minor_version", from_le32(&r1_bdev->sb->minor_version));
-	spdk_json_write_named_uint64(w, "strip_size", r1_bdev->strip_size);
+	spdk_json_write_named_uint64(w, "bit_size", r1_bdev->bit_size);
 	spdk_json_write_named_uint64(w, "write_delay", r1_bdev->write_delay);
 	spdk_json_write_named_uint64(w, "clean_ratio", r1_bdev->clean_ratio);
 	spdk_json_write_named_uint64(w, "max_delay", r1_bdev->max_delay);
 	spdk_json_write_named_uint64(w, "max_resync", r1_bdev->max_resync);
-	spdk_json_write_named_uint64(w, "total_strip", r1_bdev->strip_cnt);
-	spdk_json_write_named_uint64(w, "synced_strip", r1_bdev->resync->curr_bit);
+	spdk_json_write_named_uint64(w, "total_bit", r1_bdev->bit_cnt);
+	spdk_json_write_named_uint64(w, "synced_bit", r1_bdev->resync->curr_bit);
 	spdk_json_write_named_uint64(w, "bm_io_cnt", r1_bdev->bm_io_cnt);
 	spdk_json_write_named_uint64(w, "data_io_cnt", r1_bdev->data_io_cnt);
 	spdk_json_write_named_uint64(w, "resync_io_cnt", r1_bdev->resync->num_inflight);
@@ -1985,16 +1985,16 @@ raid1_resync_poller(struct raid1_bdev *r1_bdev)
 	int event_cnt = 0;
 	struct raid1_resync *resync = r1_bdev->resync;
 	uint32_t i;
-	SPDK_DEBUGLOG(bdev_raid1, "In poller max_resync: %" PRIu64 " curr_bit: %" PRIu64 " strip_cnt: %" PRIu64 "\n",
-		r1_bdev->max_resync, resync->curr_bit, r1_bdev->strip_cnt);
+	SPDK_DEBUGLOG(bdev_raid1, "In poller max_resync: %" PRIu64 " curr_bit: %" PRIu64 " bit_cnt: %" PRIu64 "\n",
+		r1_bdev->max_resync, resync->curr_bit, r1_bdev->bit_cnt);
 	for (i = 0; i < r1_bdev->max_resync; i++) {
-		if (resync->curr_bit == r1_bdev->strip_cnt) {
+		if (resync->curr_bit == r1_bdev->bit_cnt) {
 			if (resync->num_inflight == 0) {
 				resync->stopped = true;
 			}
 			break;
 		}
-		assert(resync->curr_bit < r1_bdev->strip_cnt);
+		assert(resync->curr_bit < r1_bdev->bit_cnt);
 		if (TAILQ_EMPTY(&resync->available_queue)) {
 			SPDK_DEBUGLOG(bdev_raid1, "In poller available_queue empty\n");
 			break;
@@ -2006,7 +2006,7 @@ raid1_resync_poller(struct raid1_bdev *r1_bdev)
 			resync->num_inflight++;
 			resync_ctx->bit_idx = resync->curr_bit;
 			uint8_t inflight_cnt = r1_bdev->inflight_cnt[resync->curr_bit];
-			struct raid1_region *region = raid1_strip_to_region(
+			struct raid1_region *region = raid1_bit_to_region(
 				r1_bdev, resync->curr_bit);
 			if (inflight_cnt > 0) {
 				SPDK_DEBUGLOG(bdev_raid1, "Queue resync_ctx, curr_bit=%" PRIu64 " inflight_cnt=%d\n",
@@ -2139,7 +2139,7 @@ raid1_resync_allocate(struct raid1_bdev *r1_bdev)
 	TAILQ_INIT(&resync->available_queue);
 	for (i = 0; i < r1_bdev->max_resync; i++) {
 		resync_ctx = &resync->resync_ctx_array[i];
-		resync_ctx->buf = spdk_dma_malloc(r1_bdev->strip_size,
+		resync_ctx->buf = spdk_dma_malloc(r1_bdev->bit_size,
 			r1_bdev->buf_align, NULL);
 		if (resync_ctx->buf == NULL) {
 			for (j = 0; j < i; j++) {
@@ -2291,7 +2291,7 @@ struct raid1_create_ctx {
 	char raid1_name[RAID1_MAX_NAME_LEN];
 	char bdev0_name[RAID1_MAX_NAME_LEN];
 	char bdev1_name[RAID1_MAX_NAME_LEN];
-	uint64_t strip_size;
+	uint64_t bit_size;
 	uint64_t write_delay;
 	uint64_t clean_ratio;
 	uint64_t max_delay;
@@ -2304,7 +2304,7 @@ struct raid1_create_ctx {
 	uint64_t data_size;
 	size_t buf_align;
 	uint64_t region_cnt;
-	uint64_t strip_cnt;
+	uint64_t bit_cnt;
 	uint64_t bm_size;
 	struct raid1_per_bdev per_bdev[2];
 	struct raid1_per_thread per_thread[2];
@@ -2419,7 +2419,7 @@ raid1_bdev_init(struct raid1_create_ctx *create_ctx)
 		meta_buf = create_ctx->meta_buf[1];
 	}
 	r1_bdev->multi = create_ctx->multi;
-	r1_bdev->strip_size = create_ctx->strip_size;
+	r1_bdev->bit_size = create_ctx->bit_size;
 	r1_bdev->write_delay = create_ctx->write_delay;
 	r1_bdev->clean_ratio = create_ctx->clean_ratio;
 	r1_bdev->clean_counter = 0;
@@ -2427,9 +2427,9 @@ raid1_bdev_init(struct raid1_create_ctx *create_ctx)
 	r1_bdev->max_resync = create_ctx->max_resync;
 	r1_bdev->buf_align = create_ctx->buf_align;
 	r1_bdev->region_cnt = create_ctx->region_cnt;
-	r1_bdev->strip_cnt = create_ctx->strip_cnt;
+	r1_bdev->bit_cnt = create_ctx->bit_cnt;
 	r1_bdev->bm_size = create_ctx->bm_size;
-	r1_bdev->region_size = RAID1_BYTESZ * PAGE_SIZE * r1_bdev->strip_size;
+	r1_bdev->region_size = RAID1_BYTESZ * PAGE_SIZE * r1_bdev->bit_size;
 	r1_bdev->start_blocks = create_ctx->meta_size / r1_bdev->per_bdev[0].block_size;
 	r1_bdev->ignore_zero_block = create_ctx->ignore_zero_block;
 
@@ -2454,9 +2454,9 @@ raid1_bdev_init(struct raid1_create_ctx *create_ctx)
 	SPDK_DEBUGLOG(bdev_raid1, "r1_bdev->bm_size: %" PRIu64 "\n", r1_bdev->bm_size);
 	raid1_bm_show(r1_bdev->bm_buf, r1_bdev->bm_size);
 
-	r1_bdev->inflight_cnt = calloc(r1_bdev->strip_cnt, sizeof(uint8_t));
+	r1_bdev->inflight_cnt = calloc(r1_bdev->bit_cnt, sizeof(uint8_t));
 	if (r1_bdev->inflight_cnt == NULL) {
-		SPDK_ERRLOG("Could not allocate inflight_cnt, size: %" PRIu64 "\n", r1_bdev->strip_cnt);
+		SPDK_ERRLOG("Could not allocate inflight_cnt, size: %" PRIu64 "\n", r1_bdev->bit_cnt);
 		rc = -ENOMEM;
 		goto free_bm_buf;
 	}
@@ -2504,7 +2504,7 @@ raid1_bdev_init(struct raid1_create_ctx *create_ctx)
 		r1_bdev->online[1] = true;
 		if (create_ctx->synced) {
 			r1_bdev->resync->stopped = true;
-			r1_bdev->resync->curr_bit = r1_bdev->strip_cnt;
+			r1_bdev->resync->curr_bit = r1_bdev->bit_cnt;
 		} else {
 			r1_bdev->resync->stopped = false;
 			r1_bdev->resync->curr_bit = 0;
@@ -2551,7 +2551,7 @@ raid1_bdev_init(struct raid1_create_ctx *create_ctx)
 		r1_bdev->bdev.blocklen = r1_bdev->per_bdev[0].block_size;
 	}
 	r1_bdev->bdev.blockcnt = from_le64(&r1_bdev->sb->data_size) / r1_bdev->bdev.blocklen;
-	r1_bdev->bdev.optimal_io_boundary = r1_bdev->strip_size;
+	r1_bdev->bdev.optimal_io_boundary = r1_bdev->bit_size;
 	r1_bdev->bdev.split_on_optimal_io_boundary = true;
 	r1_bdev->bdev.ctxt = r1_bdev;
 	r1_bdev->bdev.fn_table = &g_raid1_bdev_fn_table;
@@ -2605,8 +2605,8 @@ raid1_good_sb(struct raid1_create_ctx *create_ctx, struct raid1_sb *sb)
 		SPDK_ERRLOG("raid1 data_size mismatch\n");
 		return false;
 	}
-	if (from_le64(&sb->strip_size) != create_ctx->strip_size) {
-		SPDK_ERRLOG("raid1 strip_size mismatch\n");
+	if (from_le64(&sb->bit_size) != create_ctx->bit_size) {
+		SPDK_ERRLOG("raid1 bit_size mismatch\n");
 		return false;
 	}
 	return true;
@@ -2679,11 +2679,11 @@ raid1_create_update_primary(struct raid1_create_ctx *create_ctx)
 }
 
 static void
-raid1_set_all_bm(uint8_t *bm, uint64_t strip_cnt)
+raid1_set_all_bm(uint8_t *bm, uint64_t bit_cnt)
 {
-	int written_cnt = (strip_cnt / RAID1_BYTESZ) * RAID1_BYTESZ;
-	memset(bm, 0xff, strip_cnt / RAID1_BYTESZ);
-	for (int i = written_cnt; i < strip_cnt; i++) {
+	int written_cnt = (bit_cnt / RAID1_BYTESZ) * RAID1_BYTESZ;
+	memset(bm, 0xff, bit_cnt / RAID1_BYTESZ);
+	for (int i = written_cnt; i < bit_cnt; i++) {
 		raid1_bm_set(bm, i);
 	}
 }
@@ -2753,7 +2753,7 @@ raid1_create_meta_multi_read_complete(void *arg, uint8_t err_mask)
 		create_ctx->primary_idx = 0;
 		create_ctx->synced = false;
 		raid1_set_all_bm(create_ctx->meta_buf[0] + RAID1_SB_SIZE,
-			create_ctx->strip_cnt);
+			create_ctx->bit_cnt);
 		memcpy(create_ctx->meta_buf[1], create_ctx->meta_buf[0],
 			create_ctx->meta_size);
 		raid1_sb_counter_add(sb0, 1);
@@ -2762,7 +2762,7 @@ raid1_create_meta_multi_read_complete(void *arg, uint8_t err_mask)
 		create_ctx->primary_idx = 1;
 		create_ctx->synced = false;
 		raid1_set_all_bm(create_ctx->meta_buf[1] + RAID1_SB_SIZE,
-			create_ctx->strip_cnt);
+			create_ctx->bit_cnt);
 		memcpy(create_ctx->meta_buf[0], create_ctx->meta_buf[1],
 			create_ctx->meta_size);
 		raid1_sb_counter_add(sb1, 1);
@@ -2777,10 +2777,10 @@ raid1_create_meta_multi_read_complete(void *arg, uint8_t err_mask)
 		to_le64(&sb0->counter, 1);
 		to_le32(&sb0->major_version, RAID1_MAJOR_VERSION);
 		to_le32(&sb0->minor_version, RAID1_MINOR_VERSION);
-		to_le64(&sb0->strip_size, create_ctx->strip_size);
+		to_le64(&sb0->bit_size, create_ctx->bit_size);
 		if (!create_ctx->synced) {
 			raid1_set_all_bm(create_ctx->meta_buf[0] + RAID1_SB_SIZE,
-				create_ctx->strip_cnt);
+				create_ctx->bit_cnt);
 		}
 		memcpy(create_ctx->meta_buf[1], create_ctx->meta_buf[0],
 			create_ctx->meta_size);
@@ -2854,7 +2854,7 @@ raid1_create_meta_single_read_complete(void *arg, int rc)
 		to_le64(&sb->counter, 1);
 		to_le32(&sb->major_version, RAID1_MAJOR_VERSION);
 		to_le32(&sb->minor_version, RAID1_MINOR_VERSION);
-		to_le64(&sb->strip_size, create_ctx->strip_size);
+		to_le64(&sb->bit_size, create_ctx->bit_size);
 	} else {
 		raid1_sb_counter_add(sb, 1);
 	}
@@ -2874,7 +2874,7 @@ raid1_bdev_create(const char *raid1_name, struct raid1_create_param *param,
 	raid1_create_cb cb_fn, void *cb_arg)
 {
 	struct raid1_create_ctx *create_ctx;
-	uint64_t whole_size, meta_size, data_size, bm_size, strip_cnt, region_cnt;
+	uint64_t whole_size, meta_size, data_size, bm_size, bit_cnt, region_cnt;
 	size_t buf_align;
 	int rc;
 
@@ -2899,7 +2899,7 @@ raid1_bdev_create(const char *raid1_name, struct raid1_create_param *param,
 		strncpy(create_ctx->bdev1_name, param->bdev1_name, RAID1_MAX_NAME_LEN);
 	}
 
-	create_ctx->strip_size = param->strip_size;
+	create_ctx->bit_size = param->bit_size;
 	create_ctx->write_delay = param->write_delay;
 	create_ctx->clean_ratio = param->clean_ratio;
 	create_ctx->max_delay = param->max_delay;
@@ -2936,8 +2936,8 @@ raid1_bdev_create(const char *raid1_name, struct raid1_create_param *param,
 	create_ctx->per_thread_ptr[0] = &create_ctx->per_thread[0];
 	create_ctx->per_thread_ptr[1] = &create_ctx->per_thread[1];
 
-	if (create_ctx->strip_size % PAGE_SIZE) {
-		SPDK_ERRLOG("strip_size is not alignment to %lu\n", PAGE_SIZE);
+	if (create_ctx->bit_size % PAGE_SIZE) {
+		SPDK_ERRLOG("bit_size is not alignment to %lu\n", PAGE_SIZE);
 		rc = -EINVAL;
 		goto close_bdev1_per_thread;
 	}
@@ -2952,7 +2952,7 @@ raid1_bdev_create(const char *raid1_name, struct raid1_create_param *param,
 		whole_size = create_ctx->per_bdev[0].block_size * create_ctx->per_bdev[0].num_blocks;
 	}
 
-	raid1_calc_strip_and_region(whole_size, param->strip_size, &strip_cnt, &region_cnt);
+	raid1_calc_bit_and_region(whole_size, param->bit_size, &bit_cnt, &region_cnt);
 	bm_size = region_cnt * PAGE_SIZE;
 	meta_size = RAID1_SB_SIZE + bm_size;
 	if (param->meta_size != 0) {
@@ -2965,7 +2965,7 @@ raid1_bdev_create(const char *raid1_name, struct raid1_create_param *param,
 		meta_size = param->meta_size;
 	}
 	data_size = whole_size - meta_size;
-	raid1_calc_strip_and_region(data_size, param->strip_size, &strip_cnt, &region_cnt);
+	raid1_calc_bit_and_region(data_size, param->bit_size, &bit_cnt, &region_cnt);
 
 	create_ctx->meta_buf[0] = spdk_dma_zmalloc(meta_size, buf_align, NULL);
 	if (!create_ctx->meta_buf[0]) {
@@ -2985,7 +2985,7 @@ raid1_bdev_create(const char *raid1_name, struct raid1_create_param *param,
 	create_ctx->meta_size = meta_size;
 	create_ctx->data_size = data_size;
 	create_ctx->region_cnt = region_cnt;
-	create_ctx->strip_cnt = strip_cnt;
+	create_ctx->bit_cnt = bit_cnt;
 	create_ctx->bm_size = bm_size;
 	create_ctx->cb_fn = cb_fn;
 	create_ctx->cb_arg = cb_arg;

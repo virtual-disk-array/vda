@@ -8,7 +8,7 @@
 #include "spdk/bdev_module.h"
 
 #define RAID1_MAX_NAME_LEN (128)
-#define RAID1_DEFAULT_STRIP_SIZE (4*1024*1024)
+#define RAID1_DEFAULT_BIT_SIZE (4*1024*1024)
 #define RAID1_DEFAULT_WRITE_DELAY (1000)
 #define RAID1_DEFAULT_CLEAN_RATIO (1000)
 #define RAID1_DEFAULT_MAX_DELAY (1024)
@@ -22,7 +22,7 @@
 #define RAID1_BM_START_BYTE (RAID1_BM_START_PAGE * PAGE_SIZE)
 #define RAID1_MAJOR_VERSION (1)
 #define RAID1_MINOR_VERSION (0)
-#define RAID1_STRIP_PER_REGION (PAGE_SIZE * RAID1_BYTESZ)
+#define RAID1_BIT_PER_REGION (PAGE_SIZE * RAID1_BYTESZ)
 
 #define RAID1_MAX_DELAY_CNT (255)
 
@@ -39,7 +39,7 @@ struct raid1_sb {
 	uint64_t counter;
 	uint32_t major_version;
 	uint32_t minor_version;
-	uint64_t strip_size;
+	uint64_t bit_size;
 }__attribute__((packed));
 
 SPDK_STATIC_ASSERT(sizeof(struct raid1_sb)<RAID1_SB_SIZE, "sb size is too large");
@@ -47,7 +47,7 @@ SPDK_STATIC_ASSERT(sizeof(struct raid1_sb)<RAID1_SB_SIZE, "sb size is too large"
 struct raid1_create_param {
 	char *bdev0_name;
 	char *bdev1_name;
-	uint64_t strip_size;
+	uint64_t bit_size;
 	uint64_t write_delay;
 	uint64_t clean_ratio;
 	uint64_t max_delay;

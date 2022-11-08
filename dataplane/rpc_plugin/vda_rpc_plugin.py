@@ -52,15 +52,15 @@ def bdev_susres_resume_func(client, base_bdev_name, name):
 
 
 def bdev_raid1_create_func(client, raid1_name, bdev0_name, bdev1_name,
-                           strip_size_kb, write_delay, clean_ratio,
+                           bit_size_kb, write_delay, clean_ratio,
                            max_delay, max_resync, synced):
     params = {
         'raid1_name': raid1_name,
         'bdev0_name': bdev0_name,
         'bdev1_name': bdev1_name,
     }
-    if strip_size_kb is not None:
-        params['strip_size_kb'] = strip_size_kb
+    if bit_size_kb is not None:
+        params['bit_size_kb'] = bit_size_kb
     if write_delay is not None:
         params['write_delay'] = write_delay
     if clean_ratio is not None:
@@ -132,7 +132,7 @@ def spdk_rpc_plugin_initialize(subparsers):
                                           raid1_name=args.raid1_name,
                                           bdev0_name=args.bdev0_name,
                                           bdev1_name=args.bdev1_name,
-                                          strip_size_kb=args.strip_size_kb,
+                                          bit_size_kb=args.bit_size_kb,
                                           write_delay=args.write_delay,
                                           clean_ratio=args.clean_ratio,
                                           max_delay=args.max_delay,
@@ -147,8 +147,8 @@ def spdk_rpc_plugin_initialize(subparsers):
                    help="The first underling bdev name")
     p.add_argument('-b1', '--bdev1-name', required=True,
                    help="The second underling bdev name")
-    p.add_argument('-s', '--strip-size-kb', type=int,
-                   help="The strip size in kb")
+    p.add_argument('-s', '--bit-size-kb', type=int,
+                   help="The bit size in kb")
     p.add_argument('-w', '--write-delay', type=int,
                    help="Write delay")
     p.add_argument('-c', '--clean-ratio', type=int,

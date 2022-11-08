@@ -6,7 +6,7 @@ struct rpc_bdev_raid1_create {
 	char *raid1_name;
 	char *bdev0_name;
 	char *bdev1_name;
-	uint64_t strip_size_kb;
+	uint64_t bit_size_kb;
 	uint64_t write_delay;
 	uint64_t clean_ratio;
 	uint64_t max_delay;
@@ -43,7 +43,7 @@ static const struct spdk_json_object_decoder rpc_bdev_raid1_create_decoders[] = 
 	{"raid1_name",  offsetof(struct rpc_bdev_raid1_create, raid1_name), spdk_json_decode_string},
 	{"bdev0_name",  offsetof(struct rpc_bdev_raid1_create, bdev0_name), spdk_json_decode_string},
 	{"bdev1_name",  offsetof(struct rpc_bdev_raid1_create, bdev1_name), spdk_json_decode_string},
-	{"strip_size_kb",  offsetof(struct rpc_bdev_raid1_create, strip_size_kb), spdk_json_decode_uint64, true},
+	{"bit_size_kb",  offsetof(struct rpc_bdev_raid1_create, bit_size_kb), spdk_json_decode_uint64, true},
 	{"write_delay",  offsetof(struct rpc_bdev_raid1_create, write_delay), spdk_json_decode_uint64, true},
 	{"clean_ratio",  offsetof(struct rpc_bdev_raid1_create, clean_ratio), spdk_json_decode_uint64, true},
 	{"max_delay",  offsetof(struct rpc_bdev_raid1_create, max_delay), spdk_json_decode_uint64, true},
@@ -71,7 +71,7 @@ rpc_bdev_raid1_create(struct spdk_jsonrpc_request *request,
 
 	param.bdev0_name = req.bdev0_name;
 	param.bdev1_name = req.bdev1_name;
-	param.strip_size = req.strip_size_kb == 0 ? RAID1_DEFAULT_STRIP_SIZE : req.strip_size_kb * 1024;
+	param.bit_size = req.bit_size_kb == 0 ? RAID1_DEFAULT_BIT_SIZE : req.bit_size_kb * 1024;
 	param.write_delay = req.write_delay == 0 ? RAID1_DEFAULT_WRITE_DELAY : req.write_delay;
 	param.clean_ratio = req.clean_ratio == 0 ? RAID1_DEFAULT_CLEAN_RATIO : req.clean_ratio;
 	param.max_delay = req.max_delay == 0 ? RAID1_DEFAULT_MAX_DELAY : req.max_delay;
@@ -167,7 +167,7 @@ raid1_bdev_dump_cb(void *cb_arg, struct raid1_sb *sb, int rc)
 			spdk_json_write_named_uint64(w, "counter", from_le64(&sb->counter));
 			spdk_json_write_named_uint32(w, "major_version", from_le32(&sb->major_version));
 			spdk_json_write_named_uint32(w, "minor_version", from_le32(&sb->minor_version));
-			spdk_json_write_named_uint64(w, "strip_size", from_le64(&sb->strip_size));
+			spdk_json_write_named_uint64(w, "bit_size", from_le64(&sb->bit_size));
 		} else {
 			spdk_json_write_named_bool(w, "valid", false);
 		}
