@@ -38,6 +38,7 @@ type syncupHelper struct {
 	expNqnMap    map[string]bool
 	grpBdevMap   map[string]bool
 	raid0BdevMap map[string]bool
+	raid1BdevMap map[string]bool
 	secNvmeMap   map[string]bool
 	reqId        string
 }
@@ -95,11 +96,46 @@ func (sh *syncupHelper) syncupGrpFe(cntlrFeReq *pbcn.CntlrFeReq,
 		}
 	}
 
+	raid0BdevList := make([]string, 0)
+	if cntlrFeReq.CntlrFeConf.Redundancy == nil {
+		for _, bdevName := range feBdevList {
+			raid0BdevList = append(raid0BdevList, bdevName)
+		}
+	} else {
+		switch x := cntlrFeReq.CntlrFeConf.Redundancy.(type) {
+		case *pbcn.CntlrFeConf_Raid1Conf:
+			var leg0, leg1 string
+			for i, bdevName := range feBdevList {
+				if i % 2 == 0 {
+					leg0 = bdevName
+				} else {
+					leg1 = bdevName
+					raid1BdevName := sh.nf.Raid1BdevName(leg0, leg1)
+					sh.raid1BdevMap[raid1BdevName] = true
+					raid0BdevList = append(raid0BdevList, raid1BdevName)
+					if grpFeErr != nil {
+						grpFeErr = sh.oc.CreateRaid1Bdev(
+							raid1BdevName, leg0, leg1)
+					}
+				}
+			}
+		default:
+			logger.Warning("Unknow redundancy: %v", x)
+			grpFeErr = fmt.Errorf("UnknowRedundancyError")
+		}
+	}
+
 	raid0BdevName := sh.nf.Raid0BdevName(grpFeReq.GrpId)
 	sh.raid0BdevMap[raid0BdevName] = true
 	if grpFeErr == nil {
-		grpFeErr = sh.oc.CreateRaid0Bdev(raid0BdevName,
-			cntlrFeReq.CntlrFeConf.StripSizeKb, feBdevList)
+		if cntlrFeReq.CntlrFeConf.Raid0Conf.BdevCnt != uint32(len(raid0BdevList)) {
+			grpFeErr = fmt.Errorf("Raid0LenMismatch: %v %v",
+				cntlrFeReq.CntlrFeConf.Raid0Conf.BdevCnt, len(raid0BdevList))
+		} else {
+			grpFeErr = sh.oc.CreateRaid0Bdev(raid0BdevName,
+				cntlrFeReq.CntlrFeConf.Raid0Conf.StripSizeKb, raid0BdevList)
+		}
+		
 	}
 
 	grpBdevName := sh.nf.GrpBdevName(grpFeReq.GrpId)
@@ -225,7 +261,9 @@ func (sh *syncupHelper) syncupPrimary(cntlrFeReq *pbcn.CntlrFeReq,
 		if cntlrFeReq.IsInited {
 			cntlrFeErr = sh.oc.WaitForLvs(daLvsName)
 		} else {
-			cntlrFeErr = sh.oc.CreateDaLvs(daLvsName, aggBdevName)
+			cntlrFeErr = sh.oc.CreateDaLvs(daLvsName, aggBdevName,
+				cntlrFeReq.CntlrFeConf.LvsConf.ClusterSize,
+				cntlrFeReq.CntlrFeConf.LvsConf.ExtendRatio)
 		}
 		if cntlrFeErr == nil {
 			sh.oc.CreateMainLv(daLvsName, cntlrFeReq.CntlrFeConf.Size)
@@ -521,6 +559,22 @@ func (sh *syncupHelper) syncupCn(cnReq *pbcn.CnReq) *pbcn.CnRsp {
 	}
 
 	if cnErr == nil {
+		raid1BdevPrefix := sh.nf.Raid1BdevPrefix()
+		raid1BdevList, cnErr := sh.oc.GetRaid1BdevList(raid1BdevPrefix)
+		if cnErr == nil {
+			for _, raid1BdevName := range raid1BdevList {
+				_, ok := sh.raid1BdevMap[raid1BdevName]
+				if !ok {
+					cnErr = sh.oc.DeleteRaid1Bdev(raid1BdevName)
+					if cnErr != nil {
+						break
+					}
+				}
+			}
+		}
+	}
+
+	if cnErr == nil {
 		feNvmePrefix := sh.nf.FeNvmePrefix()
 		feNvmeList, cnErr := sh.oc.GetFeNvmeList(feNvmePrefix)
 		if cnErr == nil {
@@ -558,6 +612,7 @@ func newSyncupHelper(lisConf *lib.LisConf, nf *lib.NameFmt, sc *lib.SpdkClient) 
 		secNvmeMap:   make(map[string]bool),
 		grpBdevMap:   make(map[string]bool),
 		raid0BdevMap: make(map[string]bool),
+		raid1BdevMap: make(map[string]bool),
 	}
 }
 

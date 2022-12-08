@@ -463,14 +463,33 @@ func (sm *SyncupManager) buildSyncupCnRequest(
 			CntlrId: cntlrFe.CntlrId,
 			CntlrFeConf: &pbcn.CntlrFeConf{
 				DaId:        cntlrFe.CntlrFeConf.DaId,
-				StripSizeKb: cntlrFe.CntlrFeConf.StripSizeKb,
-				Size:        cntlrFe.CntlrFeConf.Size,
 				CntlrList:   cntlrList,
+				Size:        cntlrFe.CntlrFeConf.Size,
+				LvsConf:     &pbcn.LvsConf{
+					ClusterSize: cntlrFe.CntlrFeConf.LvsConf.ClusterSize,
+					ExtendRatio: cntlrFe.CntlrFeConf.LvsConf.ExtendRatio,
+				},
+				Raid0Conf: &pbcn.Raid0Conf{
+					StripSizeKb: cntlrFe.CntlrFeConf.Raid0Conf.StripSizeKb,
+					BdevCnt: cntlrFe.CntlrFeConf.Raid0Conf.BdevCnt,
+				},
 			},
 			IsInited:      cntlrFe.IsInited,
 			GrpFeReqList:  grpFeReqList,
 			SnapFeReqList: snapFeReqList,
 			ExpFeReqList:  expFeReqList,
+		}
+		if cntlrFe.CntlrFeConf.Redundancy != nil {
+			switch x := cntlrFe.CntlrFeConf.Redundancy.(type) {
+			case *pbds.CntlrFeConf_Raid1Conf:
+				cntlrFeReq.CntlrFeConf.Redundancy = &pbcn.CntlrFeConf_Raid1Conf{
+					Raid1Conf: &pbcn.Raid1Conf{
+						BitSizeKb: x.Raid1Conf.BitSizeKb,
+					},
+				}
+			default:
+				logger.Warning("Unknow redundancy: %v", x)
+			}
 		}
 		cntlrFeReqList = append(cntlrFeReqList, cntlrFeReq)
 	}

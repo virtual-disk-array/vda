@@ -17,11 +17,13 @@ type daCreateArgsStruct struct {
 	rwMbytesPerSec uint64
 	rMbytesPerSec  uint64
 	wMbytesPerSec  uint64
-	clusterSize    uint64
+	clusterSize    uint32
 	extendRatio    uint32
 	initGrpSizeMb  uint64
 	maxGrpSizeMb   uint64
 	lowWaterMarkMb uint64
+	redundancy     string
+	BitSizeKb      uint32
 }
 
 type daDeleteArgsStruct struct {
@@ -107,7 +109,7 @@ func init() {
 		"da read mbytes per second")
 	daCreateCmd.Flags().Uint64VarP(&daCreateArgs.wMbytesPerSec, "w-mbytes-per-sec", "", 0,
 		"da write mbytes per second")
-	daCreateCmd.Flags().Uint64VarP(&daCreateArgs.clusterSize, "cluster-size", "", 0,
+	daCreateCmd.Flags().Uint32VarP(&daCreateArgs.clusterSize, "cluster-size", "", 0,
 		"cluster size of the logical volume store in bytes")
 	daCreateCmd.Flags().Uint32VarP(&daCreateArgs.extendRatio, "extend-ratio", "", 0,
 		"reserved metadata pages per cluster")
@@ -117,6 +119,10 @@ func init() {
 		"the max group size")
 	daCreateCmd.Flags().Uint64VarP(&daCreateArgs.lowWaterMarkMb, "low-water-mark-mb", "", 0,
 		"the low water mark in MB")
+	daCreateCmd.Flags().StringVarP(&daCreateArgs.redundancy, "redundancy", "", "",
+		"redundancy type, current the only valid value is raid1")
+	daCreateCmd.Flags().Uint32VarP(&daCreateArgs.BitSizeKb, "bit-size-kb", "", 0,
+		"the bit size in kb of raid1")
 	daCmd.AddCommand(daCreateCmd)
 
 	daDeleteCmd.Flags().StringVarP(&daDeleteArgs.daName, "da-name", "", "",
@@ -160,13 +166,19 @@ func (cli *client) createDa(args *daCreateArgsStruct) string {
 				RMbytesPerSec:  args.rMbytesPerSec,
 				WMbytesPerSec:  args.wMbytesPerSec,
 			},
-			StripCnt:    args.stripCnt,
-			StripSizeKb: args.stripSizeKb,
-			ClusterSize: args.clusterSize,
-			ExtendRatio: args.extendRatio,
-			InitGrpSize: args.initGrpSizeMb * 1024 * 1024,
-			MaxGrpSize: args.maxGrpSizeMb * 1024 * 1024,
-			LowWaterMark: args.lowWaterMarkMb * 1024 * 1024,
+			ExtendPolicy: &pbpo.ExtendPolicy{
+				InitGrpSize: args.initGrpSizeMb * 1024 * 1024,
+				MaxGrpSize: args.maxGrpSizeMb * 1024 * 1024,
+				LowWaterMark: args.lowWaterMarkMb * 1024 * 1024,
+			},
+			LvsConf: &pbpo.LvsConf{
+				ClusterSize: args.clusterSize,
+				ExtendRatio: args.extendRatio,
+			},
+			Raid0Conf: &pbpo.Raid0Conf{
+				StripSizeKb: args.stripSizeKb,
+				BdevCnt: args.stripCnt,
+			},
 		},
 	}
 	reply, err := cli.c.CreateDa(cli.ctx, req)

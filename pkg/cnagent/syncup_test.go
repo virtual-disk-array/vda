@@ -12,10 +12,13 @@ import (
 
 const (
 	freeCluster      = 100
-	clusterSize      = 4 * 1024 * 1024
 	totalDataCluster = 200
 	blockSize        = 4096
+	daSize           = uint64(10 * 1024 * 1024 * 1024)
+	clusterSize      = 4 * 1024 * 1024
+	extendRatio      = 10000
 	stripSizeKb      = uint32(64)
+	bdevCnt          = 1
 	grpSize          = uint64(10 * 1024 * 1024 * 1024)
 	vdSizie          = uint64(10 * 1024 * 1024 * 1024)
 	snapSize         = uint64(10 * 1024 * 1024 * 1024)
@@ -106,7 +109,6 @@ func TestPrimSyncup(t *testing.T) {
 					CntlrId: primCntlrId,
 					CntlrFeConf: &pbcn.CntlrFeConf{
 						DaId:        daId,
-						StripSizeKb: stripSizeKb,
 						CntlrList: []*pbcn.Controller{
 							&pbcn.Controller{
 								CntlrId:    primCntlrId,
@@ -132,6 +134,15 @@ func TestPrimSyncup(t *testing.T) {
 									TrSvcId: "4431",
 								},
 							},
+						},
+						Size: daSize,
+						LvsConf: &pbcn.LvsConf{
+							ClusterSize: clusterSize,
+							ExtendRatio: extendRatio,
+						},
+						Raid0Conf: &pbcn.Raid0Conf{
+							StripSizeKb: stripSizeKb,
+							BdevCnt: bdevCnt,
 						},
 					},
 					GrpFeReqList: []*pbcn.GrpFeReq{
@@ -309,7 +320,6 @@ func TestSecSyncup(t *testing.T) {
 					CntlrId: secCntlrId,
 					CntlrFeConf: &pbcn.CntlrFeConf{
 						DaId:        daId,
-						StripSizeKb: stripSizeKb,
 						CntlrList: []*pbcn.Controller{
 							&pbcn.Controller{
 								CntlrId:    primCntlrId,
@@ -335,6 +345,15 @@ func TestSecSyncup(t *testing.T) {
 									TrSvcId: "4431",
 								},
 							},
+						},
+						Size: daSize,
+						LvsConf: &pbcn.LvsConf{
+							ClusterSize: clusterSize,
+							ExtendRatio: extendRatio,
+						},
+						Raid0Conf: &pbcn.Raid0Conf{
+							StripSizeKb: stripSizeKb,
+							BdevCnt: bdevCnt,
 						},
 					},
 					ExpFeReqList: []*pbcn.ExpFeReq{

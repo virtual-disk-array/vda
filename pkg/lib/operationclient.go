@@ -1419,7 +1419,8 @@ func (oc *OperationClient) DeleteDaLvs(daLvsName string) error {
 	return oc.deleteLvs(daLvsName)
 }
 
-func (oc *OperationClient) CreateDaLvs(daLvsName, aggBdevName string) error {
+func (oc *OperationClient) CreateDaLvs(daLvsName, aggBdevName string,
+	clusterSize uint32, extendRatio uint32) error {
 	logger.Info("CreateDaLvs: daLvsName %v aggBdevName %v",
 		daLvsName, aggBdevName)
 	exist, err := oc.lvsExist(daLvsName)
@@ -1434,14 +1435,14 @@ func (oc *OperationClient) CreateDaLvs(daLvsName, aggBdevName string) error {
 		LvsName                   string `json:"lvs_name"`
 		BdevName                  string `json:"bdev_name"`
 		ClearMethod               string `json:"clear_method"`
-		ClusterSz                 uint64 `json:"cluster_sz"`
+		ClusterSz                 uint32 `json:"cluster_sz"`
 		NumMdPagesPerClusterRatio uint32 `json:"num_md_pages_per_cluster_ratio"`
 	}{
 		LvsName:                   daLvsName,
 		BdevName:                  aggBdevName,
 		ClearMethod:               "none",
-		ClusterSz:                 CLUSTER_SIZE,
-		NumMdPagesPerClusterRatio: 100,
+		ClusterSz:                 clusterSize,
+		NumMdPagesPerClusterRatio: extendRatio,
 	}
 	rsp := &struct {
 		Error *spdkErr `json:"error"`
@@ -1668,6 +1669,70 @@ func (oc *OperationClient) CreateRaid0Bdev(raid0BdevName string,
 	if rsp.Error != nil {
 		logger.Error("bdev_raid_create rsp err: %v", *rsp.Error)
 		return fmt.Errorf("bdev_raid_create rsp err: %d %s",
+			rsp.Error.Code, rsp.Error.Message)
+	}
+	return nil
+}
+
+func (oc *OperationClient) GetRaid1BdevList(prefix string) ([]string, error) {
+	logger.Info("GetRaid1BdevList %v", prefix)
+	return oc.getBdevByPrefix(prefix)
+}
+
+func (oc *OperationClient) DeleteRaid1Bdev(raid1Name string) error {
+	logger.Info("DeleteRaid1Bdev: raid1Name %s", raid1Name)
+	params := &struct {
+		Raid1Name string `json:"raid1_name"`
+	}{
+		Raid1Name: raid1Name,
+	}
+	rsp := &struct {
+		Error *spdkErr `json:"error"`
+	}{}
+	err := oc.sc.Invoke("bdev_raid1_delete", params, rsp)
+	if err != nil {
+		logger.Error("bdev_raid1_delete failed")
+		return err
+	}
+	if rsp.Error != nil {
+		logger.Error("bdev_raid1_delete rsp err: %v", *rsp.Error)
+		return fmt.Errorf("bdev_raid1_delete rsp err: %d %s",
+			rsp.Error.Code, rsp.Error.Message)
+	}
+	return nil
+}
+
+func (oc *OperationClient) CreateRaid1Bdev(raid1Name, bdev0Name, bdev1Name string) error {
+	logger.Info("CreateRaid1Bdev: raid1Name %v bdev0Name %v bdev1Name %v",
+		raid1Name, bdev0Name, bdev1Name)
+	exist, err := oc.bdevExist(raid1Name)
+	if err != nil {
+		return err
+	}
+	if exist {
+		return nil
+	}
+
+	params := &struct {
+		Raid1Name string `json:"raid1_name"`
+		Bdev0Name string `json:"bdev0_name"`
+		Bdev1Name string `json:"bdev1_name"`
+	}{
+		Raid1Name: raid1Name,
+		Bdev0Name: bdev0Name,
+		Bdev1Name: bdev1Name,
+	}
+	rsp := &struct {
+		Error *spdkErr `json:"error"`
+	}{}
+	err = oc.sc.Invoke("bdev_raid1_create", params, rsp)
+	if err != nil {
+		logger.Error("bdev_raid1_create failed: %v", err)
+		return err
+	}
+	if rsp.Error != nil {
+		logger.Error("bdev_raid1_create rsp err: %v", *rsp.Error)
+		return fmt.Errorf("bdev_raid1_create rsp err: %d %s",
 			rsp.Error.Code, rsp.Error.Message)
 	}
 	return nil

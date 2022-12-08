@@ -25,11 +25,10 @@ func (e retriableError) Error() string {
 
 func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaRequest,
 	dnPdCandList []*lib.DnPdCand, cnCandList []*lib.CnCand,
-	qos *lib.BdevQos, vdSize uint64) error {
+	qos *lib.BdevQos, vdSize uint64, vdCnt uint32, grpSize uint64) error {
 
 	daId := lib.NewHexStrUuid()
 	grpId := lib.NewHexStrUuid()
-	grpSize := vdSize * uint64(req.DaConf.StripCnt)
 
 	apply := func(stm concurrency.STM) error {
 		dnList := make([]*pbds.DiskNode, 0)
@@ -215,15 +214,36 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 					RMbytesPerSec:  req.DaConf.Qos.RMbytesPerSec,
 					WMbytesPerSec:  req.DaConf.Qos.WMbytesPerSec,
 				},
-				StripCnt:    req.DaConf.StripCnt,
-				StripSizeKb: req.DaConf.StripSizeKb,
-				ClusterSize: req.DaConf.ClusterSize,
-				ExtendRatio: req.DaConf.ExtendRatio,
+				ExtendPolicy: &pbds.ExtendPolicy{
+					InitGrpSize: req.DaConf.ExtendPolicy.InitGrpSize,
+					MaxGrpSize: req.DaConf.ExtendPolicy.MaxGrpSize,
+					LowWaterMark: req.DaConf.ExtendPolicy.LowWaterMark,
+				},
+				LvsConf: &pbds.LvsConf{
+					ClusterSize: req.DaConf.LvsConf.ClusterSize,
+					ExtendRatio: req.DaConf.LvsConf.ExtendRatio,
+				},
+				Raid0Conf: &pbds.Raid0Conf{
+					StripSizeKb: req.DaConf.Raid0Conf.StripSizeKb,
+					BdevCnt: req.DaConf.Raid0Conf.BdevCnt,
+				},
 			},
 			CntlrList: cntlrList,
 			GrpList:   grpList,
 			SnapList:  snapList,
 			ExpList:   expList,
+		}
+		if req.DaConf.Redundancy != nil {
+			switch x := req.DaConf.Redundancy.(type) {
+			case *pbpo.DaConf_Raid1Conf:
+				diskArray.DaConf.Redundancy = &pbds.DaConf_Raid1Conf{
+					Raid1Conf: &pbds.Raid1Conf{
+						BitSizeKb: x.Raid1Conf.BitSizeKb,
+					},
+				}
+			default:
+				logger.Warning("Unknow redundancy: %v", x)
+			}
 		}
 		daEntityKey := po.kf.DaEntityKey(diskArray.DaName)
 		daEntityVal := stm.Get(daEntityKey)
@@ -483,9 +503,16 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 				CntlrFeConf: &pbds.CntlrFeConf{
 					DaId:        daId,
 					DaName:      req.DaName,
-					StripSizeKb: req.DaConf.StripSizeKb,
-					Size:         req.DaConf.Size,
 					CntlrList:   cntlrList,
+					Size:         req.DaConf.Size,
+					LvsConf: &pbds.LvsConf{
+						ClusterSize: req.DaConf.LvsConf.ClusterSize,
+						ExtendRatio: req.DaConf.LvsConf.ExtendRatio,
+					},
+					Raid0Conf: &pbds.Raid0Conf{
+						StripSizeKb: req.DaConf.Raid0Conf.StripSizeKb,
+						BdevCnt: req.DaConf.Raid0Conf.BdevCnt,
+					},
 				},
 				CntlrFeInfo: &pbds.CntlrFeInfo{
 					ErrInfo: &pbds.ErrInfo{
@@ -498,6 +525,16 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 				GrpFeList:  thisGrpFeList,
 				SnapFeList: snapFeList,
 				ExpFeList:  expFeList,
+			}
+			if req.DaConf.Redundancy != nil {
+				switch x:= req.DaConf.Redundancy.(type) {
+				case *pbpo.DaConf_Raid1Conf:
+					cntlrFe.CntlrFeConf.Redundancy = &pbds.CntlrFeConf_Raid1Conf{
+						Raid1Conf: &pbds.Raid1Conf{
+							BitSizeKb: x.Raid1Conf.BitSizeKb,
+						},
+					}
+				}
 			}
 			controllerNode.CntlrFeList = append(controllerNode.CntlrFeList, cntlrFe)
 			controllerNode.Version++
@@ -555,13 +592,27 @@ func (po *portalServer) createNewDa(ctx context.Context, req *pbpo.CreateDaReque
 		}
 	}()
 
-	vdSize := lib.DivCeil(req.DaConf.InitGrpSize, uint64(req.DaConf.StripCnt))
+	grpSize := req.DaConf.ExtendPolicy.InitGrpSize
+	vdCnt := req.DaConf.Raid0Conf.BdevCnt
 	qos := &lib.BdevQos{
-		RwIosPerSec:    lib.DivCeil(req.DaConf.Qos.RwIosPerSec, uint64(req.DaConf.StripCnt)),
-		RwMbytesPerSec: lib.DivCeil(req.DaConf.Qos.RwMbytesPerSec, uint64(req.DaConf.StripCnt)),
-		RMbytesPerSec:  lib.DivCeil(req.DaConf.Qos.RMbytesPerSec, uint64(req.DaConf.StripCnt)),
-		WMbytesPerSec:  lib.DivCeil(req.DaConf.Qos.WMbytesPerSec, uint64(req.DaConf.StripCnt)),
+		RwIosPerSec:    lib.DivCeil(req.DaConf.Qos.RwIosPerSec, uint64(req.DaConf.Raid0Conf.BdevCnt)),
+		RwMbytesPerSec: lib.DivCeil(req.DaConf.Qos.RwMbytesPerSec, uint64(req.DaConf.Raid0Conf.BdevCnt)),
+		RMbytesPerSec:  lib.DivCeil(req.DaConf.Qos.RMbytesPerSec, uint64(req.DaConf.Raid0Conf.BdevCnt)),
+		WMbytesPerSec:  lib.DivCeil(req.DaConf.Qos.WMbytesPerSec, uint64(req.DaConf.Raid0Conf.BdevCnt)),
 	}
+	if req.DaConf.Redundancy != nil {
+		switch x:= req.DaConf.Redundancy.(type) {
+		case *pbpo.DaConf_Raid1Conf:
+			vdCnt = vdCnt * 2
+			qos.RwIosPerSec = qos.RwIosPerSec * 1
+			qos.RwMbytesPerSec = qos.RwMbytesPerSec * 1
+			qos.RMbytesPerSec = qos.RMbytesPerSec * 1
+			qos.WMbytesPerSec = qos.WMbytesPerSec * 1
+		default:
+			logger.Warning("Unknow redundancy: %v", x)
+		}
+	}
+	vdSize := lib.DivCeil(grpSize, uint64(vdCnt))
 
 	retryCnt := 0
 	for {
@@ -571,7 +622,7 @@ func (po *portalServer) createNewDa(ctx context.Context, req *pbpo.CreateDaReque
 			logger.Error("Exceed max retry cnt")
 			return dnList, cnList, err
 		}
-		dnPdCandList, err := po.alloc.AllocDnPd(ctx, req.DaConf.StripCnt, vdSize, qos)
+		dnPdCandList, err := po.alloc.AllocDnPd(ctx, vdCnt, vdSize, qos)
 		if err != nil {
 			logger.Error("AllocateDnPd err: %v", err)
 			return dnList, cnList, err
@@ -581,7 +632,7 @@ func (po *portalServer) createNewDa(ctx context.Context, req *pbpo.CreateDaReque
 			logger.Error("AllocateCn err: %v", err)
 			return dnList, cnList, err
 		}
-		err = po.applyAllocation(ctx, req, dnPdCandList, cnCandList, qos, vdSize)
+		err = po.applyAllocation(ctx, req, dnPdCandList, cnCandList, qos, vdSize, vdCnt, grpSize)
 		if err != nil {
 			if serr, ok := err.(*retriableError); ok {
 				logger.Warning("Retriable error: %v", serr)
@@ -607,14 +658,10 @@ func (po *portalServer) CreateDa(ctx context.Context, req *pbpo.CreateDaRequest)
 	invalidParamMsg := ""
 	if req.DaName == "" {
 		invalidParamMsg = "DnName is empty"
-	} else if req.CntlrCnt == 0 {
-		invalidParamMsg = "CntlrCnt is zero"
 	} else if req.DaConf == nil {
 		invalidParamMsg = "DaConf is empty"
 	} else if req.DaConf.Size == 0 {
 		invalidParamMsg = "Size is zero"
-	}else if req.DaConf.Qos == nil {
-		invalidParamMsg = "Qos is empty"
 	}
 	if invalidParamMsg != "" {
 		return &pbpo.CreateDaReply{
@@ -626,27 +673,72 @@ func (po *portalServer) CreateDa(ctx context.Context, req *pbpo.CreateDaRequest)
 		}, nil
 	}
 
-	if req.DaConf.StripCnt == 0 {
-		req.DaConf.StripCnt = lib.DefaultStripCnt
+	if req.CntlrCnt == 0 {
+		req.CntlrCnt = lib.DefaultCntlrCnt
 	}
-	if req.DaConf.StripSizeKb == 0 {
-		req.DaConf.StripSizeKb = lib.DefaultStripSizeKb
+	if req.DaConf.Qos == nil {
+		req.DaConf.Qos = &pbpo.BdevQos{
+			RwIosPerSec: lib.DefaultRwIosPerSec,
+			RwMbytesPerSec: lib.DefaultRwMbytesPerSec,
+			RMbytesPerSec: lib.DefaultRMbytesPerSec,
+			WMbytesPerSec: lib.DefaultWMbytesPerSec,
+		}
 	}
-	if req.DaConf.ClusterSize == 0 {
-		req.DaConf.ClusterSize = lib.DefaultClusterSize
+	if req.DaConf.Raid0Conf.BdevCnt == 0 {
+		req.DaConf.Raid0Conf.BdevCnt = lib.DefaultRaid0BdevCnt
 	}
-	if req.DaConf.ExtendRatio == 0 {
-		req.DaConf.ExtendRatio = lib.DefaultExtendRatio
+	if req.DaConf.ExtendPolicy == nil {
+		req.DaConf.ExtendPolicy = &pbpo.ExtendPolicy{
+			InitGrpSize: lib.DivCeil(req.DaConf.Size,
+				lib.DefaultInitGrpRatio),
+			MaxGrpSize: lib.DefaultMaxGrpSize,
+			LowWaterMark: lib.DefaultLowWaterMark,
+		}
 	}
-	if req.DaConf.InitGrpSize == 0 {
-		req.DaConf.InitGrpSize = lib.DivCeil(
+	if req.DaConf.ExtendPolicy.InitGrpSize == 0 {
+		req.DaConf.ExtendPolicy.InitGrpSize = lib.DivCeil(
 			req.DaConf.Size, lib.DefaultInitGrpRatio)
 	}
-	if req.DaConf.MaxGrpSize == 0 {
-		req.DaConf.MaxGrpSize = lib.DefaultMaxGrpSize
+	if req.DaConf.ExtendPolicy.MaxGrpSize == 0 {
+		req.DaConf.ExtendPolicy.MaxGrpSize = lib.DefaultMaxGrpSize
 	}
-	if req.DaConf.LowWaterMark == 0 {
-		req.DaConf.LowWaterMark = lib.DefaultLowWaterMark
+	if req.DaConf.ExtendPolicy.LowWaterMark == 0 {
+		req.DaConf.ExtendPolicy.LowWaterMark = lib.DefaultLowWaterMark
+	}
+	if req.DaConf.LvsConf == nil {
+		req.DaConf.LvsConf = &pbpo.LvsConf{
+			ClusterSize: lib.DefaultClusterSize,
+			ExtendRatio: lib.DefaultExtendRatio,
+		}
+	}
+	if req.DaConf.LvsConf.ClusterSize == 0 {
+		req.DaConf.LvsConf.ClusterSize = lib.DefaultClusterSize
+	}
+	if req.DaConf.LvsConf.ExtendRatio == 0 {
+		req.DaConf.LvsConf.ExtendRatio = lib.DefaultExtendRatio
+	}
+	if req.DaConf.Raid0Conf == nil {
+		req.DaConf.Raid0Conf = &pbpo.Raid0Conf{
+			StripSizeKb: lib.DefaultStripSizeKb,
+			BdevCnt: lib.DefaultRaid0BdevCnt,
+		}
+	}
+	if req.DaConf.Raid0Conf.StripSizeKb == 0 {
+		req.DaConf.Raid0Conf.StripSizeKb = lib.DefaultStripSizeKb
+	}
+	if req.DaConf.Raid0Conf.BdevCnt == 0 {
+		req.DaConf.Raid0Conf.BdevCnt = lib.DefaultRaid0BdevCnt
+	}
+	if req.DaConf.Redundancy != nil {
+		switch x := req.DaConf.Redundancy.(type) {
+		case *pbpo.DaConf_Raid1Conf:
+			if x.Raid1Conf.BitSizeKb == 0 {
+				x.Raid1Conf.BitSizeKb = lib.DefaultBitSizeKb
+			}
+		default:
+			logger.Warning("Unknow redundancy: %v", x)
+			req.DaConf.Redundancy = nil
+		}
 	}
 
 	dnList, cnList, err := po.createNewDa(ctx, req)
@@ -1460,29 +1552,52 @@ func (po *portalServer) GetDa(ctx context.Context, req *pbpo.GetDaRequest) (
 			}
 			grpList = append(grpList, poGrp)
 		}
+		da := &pbpo.DiskArray{
+			DaId:        diskArray.DaId,
+			DaName:      diskArray.DaName,
+			Description: diskArray.Description,
+			DaConf: &pbpo.DaConf{
+				Size: diskArray.DaConf.Size,
+				Qos: &pbpo.BdevQos{
+					RwIosPerSec:    diskArray.DaConf.Qos.RwIosPerSec,
+					RwMbytesPerSec: diskArray.DaConf.Qos.RwMbytesPerSec,
+					RMbytesPerSec:  diskArray.DaConf.Qos.RMbytesPerSec,
+					WMbytesPerSec:  diskArray.DaConf.Qos.WMbytesPerSec,
+				},
+				ExtendPolicy: &pbpo.ExtendPolicy{
+					InitGrpSize: diskArray.DaConf.ExtendPolicy.InitGrpSize,
+					MaxGrpSize: diskArray.DaConf.ExtendPolicy.MaxGrpSize,
+					LowWaterMark: diskArray.DaConf.ExtendPolicy.LowWaterMark,
+				},
+				LvsConf: &pbpo.LvsConf{
+					ClusterSize: diskArray.DaConf.LvsConf.ClusterSize,
+					ExtendRatio: diskArray.DaConf.LvsConf.ExtendRatio,
+				},
+				Raid0Conf: &pbpo.Raid0Conf{
+					StripSizeKb: diskArray.DaConf.Raid0Conf.StripSizeKb,
+					BdevCnt: diskArray.DaConf.Raid0Conf.BdevCnt,
+				},
+			},
+			CntlrList: cntlrList,
+			GrpList:   grpList,
+		}
+		switch x := diskArray.DaConf.Redundancy.(type) {
+		case *pbds.DaConf_Raid1Conf:
+			da.DaConf.Redundancy = &pbpo.DaConf_Raid1Conf{
+				Raid1Conf: &pbpo.Raid1Conf{
+					BitSizeKb: x.Raid1Conf.BitSizeKb,
+				},
+			}
+		default:
+			logger.Warning("Unknow redundancy: %v", x)
+		}
 		return &pbpo.GetDaReply{
 			ReplyInfo: &pbpo.ReplyInfo{
 				ReqId:     lib.GetReqId(ctx),
 				ReplyCode: lib.PortalSucceedCode,
 				ReplyMsg:  lib.PortalSucceedMsg,
 			},
-			DiskArray: &pbpo.DiskArray{
-				DaId:        diskArray.DaId,
-				DaName:      diskArray.DaName,
-				Description: diskArray.Description,
-				DaConf: &pbpo.DaConf{
-					Qos: &pbpo.BdevQos{
-						RwIosPerSec:    diskArray.DaConf.Qos.RwIosPerSec,
-						RwMbytesPerSec: diskArray.DaConf.Qos.RwMbytesPerSec,
-						RMbytesPerSec:  diskArray.DaConf.Qos.RMbytesPerSec,
-						WMbytesPerSec:  diskArray.DaConf.Qos.WMbytesPerSec,
-					},
-					StripCnt:    diskArray.DaConf.StripCnt,
-					StripSizeKb: diskArray.DaConf.StripSizeKb,
-				},
-				CntlrList: cntlrList,
-				GrpList:   grpList,
-			},
+			DiskArray: da,
 		}, nil
 	}
 }

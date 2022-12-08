@@ -15,6 +15,7 @@ const (
 	secNvmeType   = "006"
 	grpBdevType   = "007"
 	raid0BdevType = "100"
+	raid1BdevType = "101"
 
 	beNqnPrefix  = "be"
 	feNqnPrefix  = "fe"
@@ -75,6 +76,10 @@ func (nf *NameFmt) Raid0BdevPrefix() string {
 	return fmt.Sprintf("%s-%s", nf.vdaPrefix, raid0BdevType)
 }
 
+func (nf *NameFmt) Raid1BdevPrefix() string {
+	return fmt.Sprintf("%s-%s", nf.vdaPrefix, raid1BdevType)
+}
+
 func (nf *NameFmt) ExpNqnPrefix() string {
 	return fmt.Sprintf("%s:%s", nf.nqnPrefix, expNqnPrefix)
 }
@@ -133,6 +138,11 @@ func (nf *NameFmt) DaLvsName(daId string) string {
 
 func (nf *NameFmt) Raid0BdevName(grpId string) string {
 	return fmt.Sprintf("%s-%s", nf.Raid0BdevPrefix(), grpId)
+}
+
+func (nf *NameFmt) Raid1BdevName(leg0, leg1 string) string {
+	return fmt.Sprintf("%s-%s%s", nf.Raid1BdevPrefix(),
+		leg0[0:len(leg0)/2], leg1[len(leg1)/2:len(leg1)])
 }
 
 func (nf *NameFmt) GrpBdevName(grpId string) string {
