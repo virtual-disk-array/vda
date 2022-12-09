@@ -342,7 +342,7 @@ else
 fi
 
 echo "waiting for da3 recover"
-max_retry=10
+max_retry=120
 retry_cnt=0
 while true; do
     cntlr_cnt=$($BIN_DIR/vda_cli da get --da-name $da_name | jq ".disk_array.cntlr_list | length")
