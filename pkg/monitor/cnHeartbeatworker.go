@@ -93,6 +93,8 @@ func (chw *cnHeartbeatWorker) setErr(ctx context.Context,
 			}
 			primaryGrpFeList := cntlrFe.GrpFeList
 			primarySnapFeList := cntlrFe.SnapFeList
+			primaryMtFeList := cntlrFe.MtFeList
+			primaryItFeList := cntlrFe.ItFeList
 			isInited := cntlrFe.IsInited
 
 			var newPrimaryCntlr *pbds.Controller
@@ -164,10 +166,14 @@ func (chw *cnHeartbeatWorker) setErr(ctx context.Context,
 						if cntlrFe2.CntlrId == newPrimaryCntlr.CntlrId {
 							cntlrFe2.GrpFeList = primaryGrpFeList
 							cntlrFe2.SnapFeList = primarySnapFeList
+							cntlrFe2.MtFeList = primaryMtFeList
+							cntlrFe2.ItFeList = primaryItFeList
 							cntlrFe2.IsInited = isInited
 						} else {
 							cntlrFe2.GrpFeList = make([]*pbds.GrpFrontend, 0)
 							cntlrFe2.SnapFeList = make([]*pbds.SnapFrontend, 0)
+							cntlrFe2.MtFeList = make([]*pbds.MtFrontend, 0)
+							cntlrFe2.ItFeList = make([]*pbds.ItFrontend, 0)
 							cntlrFe2.IsInited = false
 						}
 						break

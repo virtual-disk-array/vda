@@ -39,8 +39,8 @@ message Raid1Info {
 }
 
 message TaskDescriptor {
-  string start_time = 1;
-  string stop_time = 2;
+  uint64 start_time = 1;
+  uint64 stop_time = 2;
   uint64 keep_seconds = 3;
   string status = 4;
 }

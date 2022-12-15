@@ -15,14 +15,6 @@ import (
 	pbpo "github.com/virtual-disk-array/vda/pkg/proto/portalapi"
 )
 
-type retriableError struct {
-	msg string
-}
-
-func (e retriableError) Error() string {
-	return e.msg
-}
-
 func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaRequest,
 	dnPdCandList []*lib.DnPdCand, cnCandList []*lib.CnCand,
 	qos *lib.BdevQos, vdSize uint64, vdCnt uint32, grpSize uint64) error {
@@ -130,6 +122,8 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 
 		snapList := make([]*pbds.Snap, 0)
 		expList := make([]*pbds.Exporter, 0)
+		mtList := make([]*pbds.MovingTask, 0)
+		itList := make([]*pbds.ImportingTask, 0)
 
 		vdFeList := make([]*pbds.VdFrontend, 0)
 		for _, vd := range vdList {
@@ -177,6 +171,8 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 
 		snapFeList := make([]*pbds.SnapFrontend, 0)
 		expFeList := make([]*pbds.ExpFrontend, 0)
+		mtFeList := make([]*pbds.MtFrontend, 0)
+		itFeList := make([]*pbds.ItFrontend, 0)
 
 		var primCntlr *pbds.Controller
 		cntlrList := make([]*pbds.Controller, 0)
@@ -232,6 +228,8 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 			GrpList:   grpList,
 			SnapList:  snapList,
 			ExpList:   expList,
+			MtList: mtList,
+			ItList: itList,
 		}
 		if req.DaConf.Redundancy != nil {
 			switch x := req.DaConf.Redundancy.(type) {
@@ -525,6 +523,8 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 				GrpFeList:  thisGrpFeList,
 				SnapFeList: snapFeList,
 				ExpFeList:  expFeList,
+				MtFeList: mtFeList,
+				ItFeList: itFeList,
 			}
 			if req.DaConf.Redundancy != nil {
 				switch x:= req.DaConf.Redundancy.(type) {
@@ -643,6 +643,8 @@ func (po *portalServer) createNewDa(ctx context.Context, req *pbpo.CreateDaReque
 			}
 		}
 
+		dnList = make([]string, 0)
+		cnList = make([]string, 0)
 		for _, cand := range dnPdCandList {
 			dnList = append(dnList, cand.SockAddr)
 		}
@@ -657,7 +659,7 @@ func (po *portalServer) CreateDa(ctx context.Context, req *pbpo.CreateDaRequest)
 	*pbpo.CreateDaReply, error) {
 	invalidParamMsg := ""
 	if req.DaName == "" {
-		invalidParamMsg = "DnName is empty"
+		invalidParamMsg = "DaName is empty"
 	} else if req.DaConf == nil {
 		invalidParamMsg = "DaConf is empty"
 	} else if req.DaConf.Size == 0 {

@@ -60,4 +60,9 @@ const (
 	DefaultRMbytesPerSec = 0
 	DefaultWMbytesPerSec = 0
 	DefaultBitSizeKb = 4*1024*1024
+	DefaultKeepSeconds = uint64(3600*24)
+
+	TaskStatusProcessing = "processing"
+	TaskStatusCancel = "cancel"
+	TaskStatusDone = "done"
 )
