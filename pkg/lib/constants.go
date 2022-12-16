@@ -63,6 +63,7 @@ const (
 	DefaultKeepSeconds = uint64(3600*24)
 
 	TaskStatusProcessing = "processing"
-	TaskStatusCancel = "cancel"
-	TaskStatusDone = "done"
+	TaskStatusCanceled = "canceled"
+	TaskStatusCompleted = "completed"
+	TaskStatusFailed = "failed"
 )
