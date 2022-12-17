@@ -32,6 +32,7 @@ type cnIdToRes struct {
 	idToVdFe    map[string]*pbcn.VdFeRsp
 	idToSnapFe  map[string]*pbcn.SnapFeRsp
 	idToExpFe   map[string]*pbcn.ExpFeRsp
+	idToMtFe    map[string]*pbcn.MtFeRsp
 }
 
 type capDiff struct {
@@ -443,6 +444,34 @@ func (sm *SyncupManager) buildSyncupCnRequest(
 			}
 			expFeReqList = append(expFeReqList, expFeReq)
 		}
+		mtFeReqList := make([]*pbcn.MtFeReq, 0)
+		for _, mtFe := range cntlrFe.MtFeList {
+			mtFeReq := &pbcn.MtFeReq{
+				MtId: mtFe.MtId,
+				MtFeConf: &pbcn.MtFeConf{
+					GrpIdx: mtFe.MtFeConf.GrpIdx,
+					VdIdx: mtFe.MtFeConf.VdIdx,
+					SrcListener: &pbcn.NvmfListener{
+						TrType:  mtFe.MtFeConf.SrcListener.TrType,
+						AdrFam:  mtFe.MtFeConf.SrcListener.AdrFam,
+						TrAddr:  mtFe.MtFeConf.SrcListener.TrAddr,
+						TrSvcId: mtFe.MtFeConf.SrcListener.TrSvcId,
+					},
+					SrcVdId: mtFe.MtFeConf.SrcVdId,
+					DstListener: &pbcn.NvmfListener{
+						TrType:  mtFe.MtFeConf.DstListener.TrType,
+						AdrFam:  mtFe.MtFeConf.DstListener.AdrFam,
+						TrAddr:  mtFe.MtFeConf.DstListener.TrAddr,
+						TrSvcId: mtFe.MtFeConf.DstListener.TrSvcId,
+					},
+					DstVdId: mtFe.MtFeConf.DstVdId,
+					Raid1Conf: &pbcn.Raid1Conf{
+						BitSizeKb: mtFe.MtFeConf.Raid1Conf.BitSizeKb,
+					},
+				},
+			}
+			mtFeReqList = append(mtFeReqList, mtFeReq)
+		}
 		cntlrList := make([]*pbcn.Controller, 0)
 		for _, cntlr := range cntlrFe.CntlrFeConf.CntlrList {
 			cntlr1 := &pbcn.Controller{
@@ -478,6 +507,7 @@ func (sm *SyncupManager) buildSyncupCnRequest(
 			GrpFeReqList:  grpFeReqList,
 			SnapFeReqList: snapFeReqList,
 			ExpFeReqList:  expFeReqList,
+			MtFeReqList:   mtFeReqList,
 		}
 		if cntlrFe.CntlrFeConf.Redundancy != nil {
 			switch x := cntlrFe.CntlrFeConf.Redundancy.(type) {
@@ -539,6 +569,9 @@ func (sm *SyncupManager) getCnRsp(reply *pbcn.SyncupCnReply, idToRes *cnIdToRes)
 		}
 		for _, expFeRsp := range cntlrFeRsp.ExpFeRspList {
 			idToRes.idToExpFe[expFeRsp.ExpId] = expFeRsp
+		}
+		for _, mtFeRsp := range cntlrFeRsp.MtFeRspList {
+			idToRes.idToMtFe[mtFeRsp.MtId] = mtFeRsp
 		}
 	}
 }
@@ -610,7 +643,8 @@ func (sm *SyncupManager) setCnInfo(controllerNode *pbds.ControllerNode,
 		for _, snapFe := range cntlrFe.SnapFeList {
 			snapFeRsp, ok := idToRes.idToSnapFe[snapFe.SnapId]
 			if ok {
-				if setCnErrInfo(snapFeRsp.SnapFeInfo.ErrInfo, snapFe.SnapFeInfo.ErrInfo) {
+				if setCnErrInfo(snapFeRsp.SnapFeInfo.ErrInfo,
+					snapFe.SnapFeInfo.ErrInfo) {
 					isErr = true
 				}
 			} else {
@@ -622,11 +656,33 @@ func (sm *SyncupManager) setCnInfo(controllerNode *pbds.ControllerNode,
 		for _, expFe := range cntlrFe.ExpFeList {
 			expFeRsp, ok := idToRes.idToExpFe[expFe.ExpId]
 			if ok {
-				if setCnErrInfo(expFeRsp.ExpFeInfo.ErrInfo, expFe.ExpFeInfo.ErrInfo) {
+				if setCnErrInfo(expFeRsp.ExpFeInfo.ErrInfo,
+					expFe.ExpFeInfo.ErrInfo) {
 					isErr = true
 				}
 			} else {
 				if setCnErrInfo(nil, expFe.ExpFeInfo.ErrInfo) {
+					isErr = true
+				}
+			}
+		}
+		for _, mtFe := range cntlrFe.MtFeList {
+			mtFeRsp, ok := idToRes.idToMtFe[mtFe.MtId]
+			if  ok {
+				if setCnErrInfo(mtFeRsp.MtFeInfo.ErrInfo,
+					mtFe.MtFeInfo.ErrInfo) {
+					isErr = true
+				}
+				mtFe.MtFeInfo.Raid1Info = &pbds.Raid1Info{
+					Bdev0Online: mtFeRsp.MtFeInfo.Raid1Info.Bdev0Online,
+					Bdev1Online: mtFeRsp.MtFeInfo.Raid1Info.Bdev1Online,
+					TotalBit: mtFeRsp.MtFeInfo.Raid1Info.TotalBit,
+					SyncedBit: mtFeRsp.MtFeInfo.Raid1Info.SyncedBit,
+					ResyncIoCnt: mtFeRsp.MtFeInfo.Raid1Info.ResyncIoCnt,
+					Status: mtFeRsp.MtFeInfo.Raid1Info.Status,
+				}
+			} else {
+				if setCnErrInfo(nil, mtFe.MtFeInfo.ErrInfo) {
 					isErr = true
 				}
 			}
@@ -701,6 +757,7 @@ func (sm *SyncupManager) SyncupCn(sockAddr string, ctx context.Context) {
 		idToVdFe:    make(map[string]*pbcn.VdFeRsp),
 		idToSnapFe:  make(map[string]*pbcn.SnapFeRsp),
 		idToExpFe:   make(map[string]*pbcn.ExpFeRsp),
+		idToMtFe:    make(map[string]*pbcn.MtFeRsp),
 	}
 
 	reply, err := sm.syncupCn(sockAddr, ctx, req)
