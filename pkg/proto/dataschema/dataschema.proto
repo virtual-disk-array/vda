@@ -253,6 +253,7 @@ message MtFeConf {
   string src_vd_id = 4;
   NvmfListener dst_listener = 5;
   string dst_vd_id = 6;
+  Raid1Conf raid1_conf = 7;
 }
 
 message MtFeInfo {
@@ -387,6 +388,7 @@ message MovingTask {
   string dst_pd_name = 10;
   string dst_vd_id = 11;
   TaskDescriptor desc = 12;
+  Raid1Conf raid1_conf = 13;
 }
 
 message ImportingTask {

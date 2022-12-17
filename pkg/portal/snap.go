@@ -482,6 +482,7 @@ func (po *portalServer) ListSnap(ctx context.Context, req *pbpo.ListSnapRequest)
 			logger.Error("Unmarshal diskArray err: %s %v", daEntityKey, err)
 			return err
 		}
+		snapSummaryList = make([]*pbpo.SnapSummary, 0)
 		for _, snap := range diskArray.SnapList {
 			snapSummary := &pbpo.SnapSummary{
 				SnapName: snap.SnapName,

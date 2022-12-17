@@ -107,8 +107,8 @@ message Raid1Info {
 }
 
 message TaskDescriptor {
-  string start_time = 1;
-  string stop_time = 2;
+  uint64 start_time = 1;
+  uint64 stop_time = 2;
   uint64 keep_seconds = 3;
   string status = 4;
 }
@@ -710,10 +710,11 @@ message MovingTask {
   string src_vd_id = 8;
   string dst_sock_addr = 9;
   string dst_pd_name = 10;
-  TaskDescriptor desc = 11;
-  ErrInfo err_info = 12;
-  Raid1Conf raid1_conf = 13;
-  Raid1Info raid1_info = 14;
+  string dst_vd_id = 11;
+  TaskDescriptor desc = 12;
+  ErrInfo err_info = 13;
+  Raid1Conf raid1_conf = 14;
+  Raid1Info raid1_info = 15;
 }
 
 message MtSummary {
@@ -730,6 +731,7 @@ message CreateMtRequest {
   string dst_sock_addr = 6;
   string dst_pd_name = 7;
   uint64 keep_seconds = 8;
+  Raid1Conf raid1_conf = 9;
 }
 
 message CreateMtReply {
@@ -750,7 +752,7 @@ message ModifyMtRequest {
   string mt_name = 2;
   oneof attr {
     string description = 3;
-    string keep_seconds = 4;
+    uint64 keep_seconds = 4;
   }
 }
 

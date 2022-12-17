@@ -99,6 +99,9 @@ func (po *portalServer) applyMovingTask(ctx context.Context,
 				KeepSeconds: req.KeepSeconds,
 				Status: lib.TaskStatusProcessing,
 			},
+			Raid1Conf: &pbds.Raid1Conf{
+				BitSizeKb: req.Raid1Conf.BitSizeKb,
+			},
 		}
 		diskArray.MtList = append(diskArray.MtList, mt)
 		newDaEntityVal, err := proto.Marshal(diskArray)
@@ -402,6 +405,9 @@ func (po *portalServer) applyMovingTask(ctx context.Context,
 					TrSvcId: diskNode.DnConf.NvmfListener.TrSvcId,
 				},
 				DstVdId: dstVd.VdId,
+				Raid1Conf: &pbds.Raid1Conf{
+					BitSizeKb: req.Raid1Conf.BitSizeKb,
+				},
 			},
 			MtFeInfo: &pbds.MtFeInfo{
 				ErrInfo: &pbds.ErrInfo{
@@ -590,6 +596,14 @@ func (po *portalServer) CreateMt(ctx context.Context, req *pbpo.CreateMtRequest)
 
 	if req.KeepSeconds == 0 {
 		req.KeepSeconds = lib.DefaultKeepSeconds
+	}
+	if req.Raid1Conf == nil {
+		req.Raid1Conf = &pbpo.Raid1Conf{
+			BitSizeKb: lib.DefaultBitSizeKb,
+		}
+	}
+	if req.Raid1Conf.BitSizeKb == 0 {
+		req.Raid1Conf.BitSizeKb = lib.DefaultBitSizeKb
 	}
 
 	dnList, cnList, err := po.addNewLeg(ctx, req)
@@ -921,6 +935,424 @@ func (po *portalServer) CancelMt(ctx context.Context, req *pbpo.CancelMtRequest)
 				ReplyCode: lib.PortalSucceedCode,
 				ReplyMsg:  lib.PortalSucceedMsg,
 			},
+		}, nil
+	}
+}
+
+func (po *portalServer) modifyMtDescription(ctx context.Context, daName string,
+	mtName string, description string) (*pbpo.ModifyMtReply, error) {
+	daEntityKey := po.kf.DaEntityKey(daName)
+	diskArray := &pbds.DiskArray{}
+
+	apply := func(stm concurrency.STM) error {
+		daEntityVal := []byte(stm.Get(daEntityKey))
+		if len(daEntityVal) == 0 {
+			return &portalError{
+				lib.PortalUnknownResErrCode,
+				daEntityKey,
+			}
+		}
+		if err := proto.Unmarshal(daEntityVal, diskArray); err != nil {
+			logger.Error("Unmarshal diskArray err: %s %v",
+				daEntityKey, err)
+			return err
+		}
+		var targetMt *pbds.MovingTask
+		for _, mt := range diskArray.MtList {
+			if mt.MtName == mtName {
+				targetMt = mt
+				break
+			}
+		}
+		if targetMt == nil {
+			return &portalError{
+				lib.PortalUnknownResErrCode,
+				mtName,
+			}
+		}
+		targetMt.Description = description
+		newDaEntityVal, err := proto.Marshal(diskArray)
+		if err != nil {
+			logger.Error("Marshal diskArray err: %v %v", diskArray, err)
+			return err
+		}
+		stm.Put(daEntityKey, string(newDaEntityVal))
+		return nil
+	}
+
+	err := po.sw.RunStm(apply, ctx, "ModifyMt: "+daName+" "+mtName)
+	if err != nil {
+		if serr, ok := err.(*portalError); ok {
+			return &pbpo.ModifyMtReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: serr.code,
+					ReplyMsg:  serr.msg,
+				},
+			}, nil
+		} else {
+			return &pbpo.ModifyMtReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: lib.PortalInternalErrCode,
+					ReplyMsg:  err.Error(),
+				},
+			}, nil
+		}
+	}
+
+	return &pbpo.ModifyMtReply{
+		ReplyInfo: &pbpo.ReplyInfo{
+			ReqId:     lib.GetReqId(ctx),
+			ReplyCode: lib.PortalSucceedCode,
+			ReplyMsg:  lib.PortalSucceedMsg,
+		},
+	}, nil
+}
+
+func (po *portalServer) modifyMtKeepSeconds(ctx context.Context, daName string,
+	mtName string, keepSeconds uint64) (*pbpo.ModifyMtReply, error) {
+	daEntityKey := po.kf.DaEntityKey(daName)
+	diskArray := &pbds.DiskArray{}
+
+	apply := func(stm concurrency.STM) error {
+		daEntityVal := []byte(stm.Get(daEntityKey))
+		if len(daEntityVal) == 0 {
+			return &portalError{
+				lib.PortalUnknownResErrCode,
+				daEntityKey,
+			}
+		}
+		if err := proto.Unmarshal(daEntityVal, diskArray); err != nil {
+			logger.Error("Unmarshal diskArray err: %s %v",
+				daEntityKey, err)
+			return err
+		}
+		var targetMt *pbds.MovingTask
+		for _, mt := range diskArray.MtList {
+			if mt.MtName == mtName {
+				targetMt = mt
+				break
+			}
+		}
+		if targetMt == nil {
+			return &portalError{
+				lib.PortalUnknownResErrCode,
+				mtName,
+			}
+		}
+		targetMt.Desc.KeepSeconds = keepSeconds
+		newDaEntityVal, err := proto.Marshal(diskArray)
+		if err != nil {
+			logger.Error("Marshal diskArray err: %v %v", diskArray, err)
+			return err
+		}
+		stm.Put(daEntityKey, string(newDaEntityVal))
+		return nil
+	}
+
+	err := po.sw.RunStm(apply, ctx, "ModifyMt: "+daName+" "+mtName)
+	if err != nil {
+		if serr, ok := err.(*portalError); ok {
+			return &pbpo.ModifyMtReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: serr.code,
+					ReplyMsg:  serr.msg,
+				},
+			}, nil
+		} else {
+			return &pbpo.ModifyMtReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: lib.PortalInternalErrCode,
+					ReplyMsg:  err.Error(),
+				},
+			}, nil
+		}
+	}
+
+	return &pbpo.ModifyMtReply{
+		ReplyInfo: &pbpo.ReplyInfo{
+			ReqId:     lib.GetReqId(ctx),
+			ReplyCode: lib.PortalSucceedCode,
+			ReplyMsg:  lib.PortalSucceedMsg,
+		},
+	}, nil
+}
+
+func (po *portalServer) ModifyMt(ctx context.Context, req *pbpo.ModifyMtRequest) (
+	*pbpo.ModifyMtReply, error) {
+	invalidParamMsg := ""
+	if req.DaName == "" {
+		invalidParamMsg = "DaName is empty"
+	} else if req.MtName == "" {
+		invalidParamMsg = "MtName is empty"
+	}
+	if invalidParamMsg != "" {
+		return &pbpo.ModifyMtReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId: lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInvalidParamCode,
+				ReplyMsg: invalidParamMsg,
+			},
+		}, nil
+	}
+
+	switch x := req.Attr.(type) {
+	case *pbpo.ModifyMtRequest_Description:
+		return po.modifyMtDescription(
+			ctx, req.DaName, req.MtName, x.Description)
+	case *pbpo.ModifyMtRequest_KeepSeconds:
+		return po.modifyMtKeepSeconds(
+			ctx, req.DaName, req.MtName, x.KeepSeconds)
+	default:
+		logger.Error("Unknow attr: %v", x)
+		return &pbpo.ModifyMtReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInvalidParamCode,
+				ReplyMsg:  "Unknow attr",
+			},
+		}, nil
+	}
+}
+
+func (po *portalServer) ListMt(ctx context.Context, req *pbpo.ListMtRequest) (
+	*pbpo.ListMtReply, error) {
+	invalidParamMsg := ""
+	if req.DaName == "" {
+		invalidParamMsg = "DaName is empty"
+	}
+	if invalidParamMsg != "" {
+		return &pbpo.ListMtReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInvalidParamCode,
+				ReplyMsg:  invalidParamMsg,
+			},
+		}, nil
+	}
+
+	daEntityKey := po.kf.DaEntityKey(req.DaName)
+	diskArray := &pbds.DiskArray{}
+	mtSummaryList := make([]*pbpo.MtSummary, 0)
+	apply := func(stm concurrency.STM) error {
+		dnEntityVal := []byte(stm.Get(daEntityKey))
+		if len(dnEntityVal) == 0 {
+			return &portalError{
+				lib.PortalUnknownResErrCode,
+				daEntityKey,
+			}
+		}
+		if err := proto.Unmarshal(dnEntityVal, diskArray); err != nil {
+			logger.Error("Unmarshal diskArray err: %s %v",
+				daEntityKey, err)
+			return err
+		}
+		mtSummaryList = make([]*pbpo.MtSummary, 0)
+		for _, mt := range diskArray.MtList {
+			mtSummary := &pbpo.MtSummary{
+				MtName: mt.MtName,
+				Description: mt.Description,
+			}
+			mtSummaryList = append(mtSummaryList, mtSummary)
+		}
+		return nil
+	}
+
+	err := po.sw.RunStm(apply, ctx, "ListMt: "+req.DaName)
+	if err != nil {
+		if serr, ok := err.(*portalError); ok {
+			return &pbpo.ListMtReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: serr.code,
+					ReplyMsg:  serr.msg,
+				},
+			}, nil
+		} else {
+			return &pbpo.ListMtReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: lib.PortalInternalErrCode,
+					ReplyMsg:  err.Error(),
+				},
+			}, nil
+		}
+	} else {
+		return &pbpo.ListMtReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalSucceedCode,
+				ReplyMsg:  lib.PortalSucceedMsg,
+			},
+			MtSummaryList: mtSummaryList,
+		}, nil
+	}
+}
+
+func (po *portalServer) GetMt(ctx context.Context, req *pbpo.GetMtRequest) (
+	*pbpo.GetMtReply, error) {
+	invalidParamMsg := ""
+	if req.DaName == "" {
+		invalidParamMsg = "DaName is empty"
+	} else if req.MtName == "" {
+		invalidParamMsg = "MtName is empty"
+	}
+	if invalidParamMsg != "" {
+		return &pbpo.GetMtReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInvalidParamCode,
+				ReplyMsg:  invalidParamMsg,
+			},
+		}, nil
+	}
+
+	daEntityKey := po.kf.DaEntityKey(req.DaName)
+	diskArray := &pbds.DiskArray{}
+	var movingTask *pbpo.MovingTask
+
+	apply := func(stm concurrency.STM) error {
+		daEntityVal := []byte(stm.Get(daEntityKey))
+		if len(daEntityVal) == 0 {
+			return &portalError{
+				lib.PortalUnknownResErrCode,
+				daEntityKey,
+			}
+		}
+		if err := proto.Unmarshal(daEntityVal, diskArray); err != nil {
+			logger.Error("Unmarshal diskArray err: %s %v",
+				daEntityKey, err)
+			return err
+		}
+		var targetMt *pbds.MovingTask
+		for _, mt := range diskArray.MtList {
+			if mt.MtName == req.MtName {
+				targetMt = mt
+				break
+			}
+		}
+		if targetMt == nil {
+			return &portalError{
+				lib.PortalUnknownResErrCode,
+				req.MtName,
+			}
+		}
+
+		var targetCntlr *pbds.Controller
+		for _, cntlr := range diskArray.CntlrList {
+			if cntlr.IsPrimary {
+				targetCntlr = cntlr
+				break
+			}
+		}
+		if targetCntlr == nil {
+			logger.Error("Can not find primary cntlr: %v", diskArray)
+			return fmt.Errorf("Can not find primary cntlr: %s",
+				req.DaName)
+		}
+		controllerNode := &pbds.ControllerNode{}
+		cnEntityKey := po.kf.CnEntityKey(targetCntlr.CnSockAddr)
+		cnEntityVal := []byte(stm.Get(cnEntityKey))
+		if err := proto.Unmarshal(cnEntityVal, controllerNode); err != nil {
+			logger.Error("Unmarshal controllerNode err: %s %v",
+				cnEntityKey, err)
+			return err
+		}
+		var targetCntlrFe *pbds.CntlrFrontend
+		for _, cntlrFe := range controllerNode.CntlrFeList {
+			if cntlrFe.CntlrId == targetCntlr.CntlrId {
+				targetCntlrFe = cntlrFe
+				break
+			}
+		}
+		if targetCntlrFe == nil {
+			logger.Error("Can not find cntlr: %v %v",
+				targetCntlr, controllerNode)
+			return fmt.Errorf("Can not find cntlr")
+		}
+		var targetMtFe *pbds.MtFrontend
+		for _, mtFe := range targetCntlrFe.MtFeList {
+			if mtFe.MtId == targetMt.MtId {
+				targetMtFe = mtFe
+				break
+			}
+		}
+		if targetMtFe == nil {
+			logger.Error("Can not find mtFe: %v %v",
+				targetMt, controllerNode)
+			return fmt.Errorf("Can not find mtFe: %s %s",
+				targetMt.MtId, controllerNode.SockAddr)
+		}
+		movingTask = &pbpo.MovingTask{
+			MtId: targetMt.MtId,
+			MtName: targetMt.MtName,
+			Description: targetMt.Description,
+			GrpIdx: targetMt.GrpIdx,
+			VdIdx: targetMt.VdIdx,
+			SrcSockAddr: targetMt.SrcSockAddr,
+			SrcPdName: targetMt.SrcPdName,
+			SrcVdId: targetMt.SrcVdId,
+			DstSockAddr: targetMt.DstSockAddr,
+			DstPdName: targetMt.DstPdName,
+			DstVdId: targetMt.DstVdId,
+			Desc: &pbpo.TaskDescriptor{
+				StartTime: targetMt.Desc.StartTime,
+				StopTime: targetMt.Desc.StopTime,
+				KeepSeconds: targetMt.Desc.KeepSeconds,
+				Status: targetMt.Desc.Status,
+			},
+			ErrInfo: &pbpo.ErrInfo{
+				IsErr: targetMtFe.MtFeInfo.ErrInfo.IsErr,
+				ErrMsg: targetMtFe.MtFeInfo.ErrInfo.ErrMsg,
+				Timestamp: targetMtFe.MtFeInfo.ErrInfo.Timestamp,
+			},
+			Raid1Conf: &pbpo.Raid1Conf{
+				BitSizeKb: targetMtFe.MtFeConf.Raid1Conf.BitSizeKb,
+			},
+		}
+		if targetMtFe.MtFeInfo.Raid1Info != nil {
+			movingTask.Raid1Info = &pbpo.Raid1Info{
+				Bdev0Online: targetMtFe.MtFeInfo.Raid1Info.Bdev0Online,
+				Bdev1Online: targetMtFe.MtFeInfo.Raid1Info.Bdev1Online,
+				TotalBit: targetMtFe.MtFeInfo.Raid1Info.TotalBit,
+				SyncedBit: targetMtFe.MtFeInfo.Raid1Info.SyncedBit,
+				ResyncIoCnt: targetMtFe.MtFeInfo.Raid1Info.ResyncIoCnt,
+				Status: targetMtFe.MtFeInfo.Raid1Info.Status,
+			}
+		}
+		return nil
+	}
+
+	err := po.sw.RunStm(apply, ctx, "GetMt: "+req.DaName+" "+req.MtName)
+	if err != nil {
+		if serr, ok := err.(*portalError); ok {
+			return &pbpo.GetMtReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: serr.code,
+					ReplyMsg:  serr.msg,
+				},
+			}, nil
+		} else {
+			return &pbpo.GetMtReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: lib.PortalInternalErrCode,
+					ReplyMsg:  err.Error(),
+				},
+			}, nil
+		}
+	} else {
+		return &pbpo.GetMtReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalSucceedCode,
+				ReplyMsg:  lib.PortalSucceedMsg,
+			},
+			MovingTask: movingTask,
 		}, nil
 	}
 }

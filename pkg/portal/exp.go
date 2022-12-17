@@ -477,9 +477,11 @@ func (po *portalServer) ListExp(ctx context.Context, req *pbpo.ListExpRequest) (
 			}
 		}
 		if err := proto.Unmarshal(dnEntityVal, diskArray); err != nil {
-			logger.Error("Unmarshal diskArray err: %s %v", daEntityKey, err)
+			logger.Error("Unmarshal diskArray err: %s %v",
+				daEntityKey, err)
 			return err
 		}
+		expSummaryList = make([]*pbpo.ExpSummary, 0)
 		for _, exp := range diskArray.ExpList {
 			expSummary := &pbpo.ExpSummary{
 				ExpName:     exp.ExpName,

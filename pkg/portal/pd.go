@@ -539,6 +539,7 @@ func (po *portalServer) ListPd(ctx context.Context, req *pbpo.ListPdRequest) (
 			}
 		}
 
+		pdSummaryList = make([]*pbpo.PdSummary, 0)
 		for _, pd := range diskNode.PdList {
 			pdSummary := &pbpo.PdSummary{
 				PdName:      pd.PdName,
