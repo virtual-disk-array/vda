@@ -14,6 +14,10 @@ const (
 	daLvsType     = "005"
 	secNvmeType   = "006"
 	grpBdevType   = "007"
+	vdSusresType  = "008"
+	mtNullType    = "009"
+	mtConcatType  = "010"
+	mtRaid1Type   = "011"
 	raid0BdevType = "100"
 	raid1BdevType = "101"
 
@@ -203,6 +207,38 @@ func (nf *NameFmt) SecBdevName(expId string) string {
 
 func (nf *NameFmt) SecNvmeNameToBdevName(secNvmeName string) string {
 	return fmt.Sprintf("%sn1", secNvmeName)
+}
+
+func (nf *NameFmt) VdSusresPrefix() string {
+	return fmt.Sprintf("%s-%s", nf.vdaPrefix, vdSusresType)
+}
+
+func (nf *NameFmt) VdSusresName(daId string, grpIdx uint32, vdIdx uint32) string {
+	return fmt.Sprintf("%s-%s-%d-%d", nf.VdSusresPrefix(), daId, grpIdx, vdIdx)
+}
+
+func (nf *NameFmt) MtNullPrefix() string {
+	return fmt.Sprintf("%s-%s", nf.vdaPrefix, mtNullType)
+}
+
+func (nf *NameFmt) MtNullName(vdId string) string {
+	return fmt.Sprintf("%s-%s", nf.MtNullPrefix(), vdId)
+}
+
+func (nf *NameFmt) MtConcatPrefix() string {
+	return fmt.Sprintf("%s-%s", nf.vdaPrefix, mtConcatType)
+}
+
+func (nf *NameFmt) MtConcatName(vdId string) string {
+	return fmt.Sprintf("%s-%s", nf.MtConcatPrefix(), vdId)
+}
+
+func (nf *NameFmt) MtRaid1Prefix() string {
+	return fmt.Sprintf("%s-%s", nf.vdaPrefix, mtRaid1Type)
+}
+
+func (nf *NameFmt) MtRaid1Name(mtId string) string {
+	return fmt.Sprintf("%s-%s", nf.MtRaid1Prefix(), mtId)
 }
 
 func NewNameFmt(vdaPrefix, nqnPrefix string) *NameFmt {

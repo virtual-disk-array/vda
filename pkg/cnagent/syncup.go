@@ -32,6 +32,10 @@ type syncupHelper struct {
 	nf           *lib.NameFmt
 	oc           *lib.OperationClient
 	feNvmeMap    map[string]bool
+	vdSusresMap  map[string]bool
+	mtNullMap    map[string]bool
+	mtConcatMap  map[string]bool
+	mtRaid1Map   map[string]bool
 	aggBdevMap   map[string]bool
 	daLvsMap     map[string]bool
 	snapMap      map[string]bool
@@ -40,6 +44,9 @@ type syncupHelper struct {
 	raid0BdevMap map[string]bool
 	raid1BdevMap map[string]bool
 	secNvmeMap   map[string]bool
+	nullBdevMap  map[string]bool
+	idxToMt      map[string]*pbcn.MtFeReq
+	mtFeRspList  []*pbcn.MtFeRsp
 	reqId        string
 }
 
@@ -48,9 +55,12 @@ type bdevSeq struct {
 	Idx  uint32
 }
 
-func (sh *syncupHelper) syncupVdFe(cntlrFeReq *pbcn.CntlrFeReq,
+func mtKey(grpIdx uint32, vdIdx uint32) string {
+	return fmt.Sprintf("%d-%d", grpIdx, vdIdx)
+}
+
+func (sh *syncupHelper) syncupVdFeNormal(cntlrFeReq *pbcn.CntlrFeReq,
 	grpFeReq *pbcn.GrpFeReq, vdFeReq *pbcn.VdFeReq) *pbcn.VdFeRsp {
-	logger.Info("syncupVdFe: %v", vdFeReq)
 	var vdFeErr error
 	beNqnName := sh.nf.BeNqnName(vdFeReq.VdId)
 	feNvmeName := sh.nf.FeNvmeName(vdFeReq.VdId)
@@ -64,9 +74,17 @@ func (sh *syncupHelper) syncupVdFe(cntlrFeReq *pbcn.CntlrFeReq,
 	}
 
 	if vdFeErr == nil {
-		vdFeErr = sh.oc.CreateFeNvme(feNvmeName, beNqnName, feNqnName, lisConf)
+		vdFeErr = sh.oc.CreateFeNvme(
+			feNvmeName, beNqnName, feNqnName, lisConf)
 	}
 
+	feBdevName := sh.nf.FeBdevName(vdFeReq.VdId)
+	vdSusresName := sh.nf.VdSusresName(cntlrFeReq.CntlrFeConf.DaId,
+		grpFeReq.GrpFeConf.GrpIdx, vdFeReq.VdFeConf.VdIdx)
+	sh.vdSusresMap[vdSusresName] = true
+	if vdFeErr == nil {
+		vdFeErr = sh.oc.CreateNormalSusres(vdSusresName, feBdevName)
+	}
 	vdFeRsp := &pbcn.VdFeRsp{
 		VdId: vdFeReq.VdId,
 		VdFeInfo: &pbcn.VdFeInfo{
@@ -74,6 +92,106 @@ func (sh *syncupHelper) syncupVdFe(cntlrFeReq *pbcn.CntlrFeReq,
 		},
 	}
 	return vdFeRsp
+}
+
+func (sh *syncupHelper) syncupVdFeMt(cntlrFeReq *pbcn.CntlrFeReq,
+	mtFeReq *pbcn.MtFeReq) *pbcn.VdFeRsp {
+	var vdFeErr error
+	feNqnName := sh.nf.FeNqnName(cntlrFeReq.CntlrId)
+
+	srcBeNqnName := sh.nf.BeNqnName(mtFeReq.MtFeConf.SrcVdId)
+	srcFeNvmeName := sh.nf.FeNvmeName(mtFeReq.MtFeConf.SrcVdId)
+	sh.feNvmeMap[srcFeNvmeName] = true
+	srcLisConf := &lib.LisConf{
+		TrType:  mtFeReq.MtFeConf.SrcListener.TrType,
+		AdrFam:  mtFeReq.MtFeConf.SrcListener.AdrFam,
+		TrAddr:  mtFeReq.MtFeConf.SrcListener.TrAddr,
+		TrSvcId: mtFeReq.MtFeConf.SrcListener.TrSvcId,
+	}
+
+	if vdFeErr == nil {
+		vdFeErr = sh.oc.CreateFeNvme(
+			srcFeNvmeName, srcBeNqnName, feNqnName, srcLisConf)
+	}
+
+	vdFeRsp := &pbcn.VdFeRsp{
+		VdId: mtFeReq.MtFeConf.SrcVdId,
+		VdFeInfo: &pbcn.VdFeInfo{
+			ErrInfo: newErrInfo(vdFeErr),
+		},
+	}
+
+	dstBeNqnName := sh.nf.BeNqnName(mtFeReq.MtFeConf.DstVdId)
+	dstFeNvmeName := sh.nf.FeNvmeName(mtFeReq.MtFeConf.DstVdId)
+	sh.feNvmeMap[dstFeNvmeName] = true
+	dstLisConf := &lib.LisConf{
+		TrType:  mtFeReq.MtFeConf.DstListener.TrType,
+		AdrFam:  mtFeReq.MtFeConf.DstListener.AdrFam,
+		TrAddr:  mtFeReq.MtFeConf.DstListener.TrAddr,
+		TrSvcId: mtFeReq.MtFeConf.DstListener.TrSvcId,
+	}
+
+	if vdFeErr == nil {
+		vdFeErr = sh.oc.CreateFeNvme(
+			dstFeNvmeName, dstBeNqnName, feNqnName, dstLisConf)
+	}
+
+	srcFeBdevName := sh.nf.FeBdevName(mtFeReq.MtFeConf.SrcVdId)
+	dstFeBdevName := sh.nf.FeBdevName(mtFeReq.MtFeConf.DstVdId)
+	srcMtNullName := sh.nf.MtNullName(mtFeReq.MtFeConf.SrcVdId)
+	sh.mtNullMap[srcMtNullName] = true
+	dstMtNullName := sh.nf.MtNullName(mtFeReq.MtFeConf.DstVdId)
+	sh.mtNullMap[dstMtNullName] = true
+	srcMtConcatName := sh.nf.MtConcatName(mtFeReq.MtFeConf.SrcVdId)
+	sh.mtConcatMap[srcMtConcatName] = true
+	dstMtConcatName := sh.nf.MtConcatName(mtFeReq.MtFeConf.DstVdId)
+	sh.mtConcatMap[dstMtConcatName] = true
+	mtRaid1Name := sh.nf.MtRaid1Name(mtFeReq.MtId)
+	sh.mtRaid1Map[mtRaid1Name] = true
+	vdSusresName := sh.nf.VdSusresName(cntlrFeReq.CntlrFeConf.DaId,
+		mtFeReq.MtFeConf.GrpIdx, mtFeReq.MtFeConf.VdIdx)
+	sh.vdSusresMap[vdSusresName] = true
+	if vdFeErr == nil {
+		vdFeErr = sh.oc.CreateMtSusres(vdSusresName, mtRaid1Name,
+			srcMtConcatName, dstMtConcatName,
+			srcMtNullName, dstMtNullName,
+			srcFeBdevName, dstFeBdevName)
+	}
+
+	mtFeRsp := &pbcn.MtFeRsp{
+		MtId: mtFeReq.MtId,
+		MtFeInfo: &pbcn.MtFeInfo{
+			ErrInfo: newErrInfo(vdFeErr),
+		},
+	}
+	if vdFeErr == nil {
+		raid1Info, vdFeErr := sh.oc.GetRaid1Info(mtRaid1Name)
+		if vdFeErr == nil {
+			mtFeRsp.MtFeInfo.Raid1Info = &pbcn.Raid1Info{
+				Bdev0Online: raid1Info.Bdev0Online,
+				Bdev1Online: raid1Info.Bdev1Online,
+				TotalBit:    raid1Info.TotalBit,
+				SyncedBit:   raid1Info.SyncedBit,
+				ResyncIoCnt: raid1Info.ResyncIoCnt,
+				Status:      raid1Info.Status,
+			}
+		}
+	}
+	sh.mtFeRspList = append(sh.mtFeRspList, mtFeRsp)
+	return vdFeRsp
+}
+
+func (sh *syncupHelper) syncupVdFe(cntlrFeReq *pbcn.CntlrFeReq,
+	grpFeReq *pbcn.GrpFeReq, vdFeReq *pbcn.VdFeReq) *pbcn.VdFeRsp {
+	logger.Info("syncupVdFe: %v", vdFeReq)
+	key := mtKey(grpFeReq.GrpFeConf.GrpIdx, vdFeReq.VdFeConf.VdIdx)
+	mtFeReq, ok := sh.idxToMt[key]
+
+	if ok {
+		return sh.syncupVdFeMt(cntlrFeReq, mtFeReq)
+	} else {
+		return sh.syncupVdFeNormal(cntlrFeReq, grpFeReq, vdFeReq)
+	}
 }
 
 func (sh *syncupHelper) syncupGrpFe(cntlrFeReq *pbcn.CntlrFeReq,
@@ -85,10 +203,11 @@ func (sh *syncupHelper) syncupGrpFe(cntlrFeReq *pbcn.CntlrFeReq,
 	sort.Slice(vdFeReqList, func(i, j int) bool {
 		return vdFeReqList[i].VdFeConf.VdIdx > vdFeReqList[j].VdFeConf.VdIdx
 	})
-	feBdevList := make([]string, 0)
+	vdSusresList := make([]string, 0)
 	for _, vdFeReq := range vdFeReqList {
-		feBdevName := sh.nf.FeBdevName(vdFeReq.VdId)
-		feBdevList = append(feBdevList, feBdevName)
+		vdSusresName := sh.nf.VdSusresName(cntlrFeReq.CntlrFeConf.DaId,
+			grpFeReq.GrpFeConf.GrpIdx, vdFeReq.VdFeConf.VdIdx)
+		vdSusresList = append(vdSusresList, vdSusresName)
 		vdFeRsp := sh.syncupVdFe(cntlrFeReq, grpFeReq, vdFeReq)
 		vdFeRspList = append(vdFeRspList, vdFeRsp)
 		if vdFeRsp.VdFeInfo.ErrInfo.IsErr {
@@ -98,21 +217,23 @@ func (sh *syncupHelper) syncupGrpFe(cntlrFeReq *pbcn.CntlrFeReq,
 
 	raid0BdevList := make([]string, 0)
 	if cntlrFeReq.CntlrFeConf.Redundancy == nil {
-		for _, bdevName := range feBdevList {
+		for _, bdevName := range vdSusresList {
 			raid0BdevList = append(raid0BdevList, bdevName)
 		}
 	} else {
 		switch x := cntlrFeReq.CntlrFeConf.Redundancy.(type) {
 		case *pbcn.CntlrFeConf_Raid1Conf:
 			var leg0, leg1 string
-			for i, bdevName := range feBdevList {
+			for i, bdevName := range vdSusresList {
 				if i % 2 == 0 {
 					leg0 = bdevName
 				} else {
 					leg1 = bdevName
-					raid1BdevName := sh.nf.Raid1BdevName(leg0, leg1)
+					raid1BdevName := sh.nf.Raid1BdevName(
+						leg0, leg1)
 					sh.raid1BdevMap[raid1BdevName] = true
-					raid0BdevList = append(raid0BdevList, raid1BdevName)
+					raid0BdevList = append(
+						raid0BdevList, raid1BdevName)
 					if grpFeErr != nil {
 						grpFeErr = sh.oc.CreateRaid1Bdev(
 							raid1BdevName, leg0, leg1)
@@ -128,12 +249,15 @@ func (sh *syncupHelper) syncupGrpFe(cntlrFeReq *pbcn.CntlrFeReq,
 	raid0BdevName := sh.nf.Raid0BdevName(grpFeReq.GrpId)
 	sh.raid0BdevMap[raid0BdevName] = true
 	if grpFeErr == nil {
-		if cntlrFeReq.CntlrFeConf.Raid0Conf.BdevCnt != uint32(len(raid0BdevList)) {
+		if cntlrFeReq.CntlrFeConf.Raid0Conf.BdevCnt != uint32(
+			len(raid0BdevList)) {
 			grpFeErr = fmt.Errorf("Raid0LenMismatch: %v %v",
-				cntlrFeReq.CntlrFeConf.Raid0Conf.BdevCnt, len(raid0BdevList))
+				cntlrFeReq.CntlrFeConf.Raid0Conf.BdevCnt,
+				len(raid0BdevList))
 		} else {
 			grpFeErr = sh.oc.CreateRaid0Bdev(raid0BdevName,
-				cntlrFeReq.CntlrFeConf.Raid0Conf.StripSizeKb, raid0BdevList)
+				cntlrFeReq.CntlrFeConf.Raid0Conf.StripSizeKb,
+				raid0BdevList)
 		}
 		
 	}
@@ -232,6 +356,13 @@ func (sh *syncupHelper) syncupPrimary(cntlrFeReq *pbcn.CntlrFeReq,
 	snapFeRspList := make([]*pbcn.SnapFeRsp, 0)
 	expFeRspList := make([]*pbcn.ExpFeRsp, 0)
 
+	sh.idxToMt = make(map[string]*pbcn.MtFeReq)
+	for _, mtFeReq := range cntlrFeReq.MtFeReqList {
+		key := mtKey(mtFeReq.MtFeConf.GrpIdx, mtFeReq.MtFeConf.VdIdx)
+		sh.idxToMt[key] = mtFeReq
+	}
+	sh.mtFeRspList = make([]*pbcn.MtFeRsp, 0)
+
 	grpFeReqList := cntlrFeReq.GrpFeReqList
 	sort.Slice(grpFeReqList, func(i, j int) bool {
 		return grpFeReqList[i].GrpFeConf.GrpIdx > grpFeReqList[j].GrpFeConf.GrpIdx
@@ -296,6 +427,7 @@ func (sh *syncupHelper) syncupPrimary(cntlrFeReq *pbcn.CntlrFeReq,
 		GrpFeRspList:  grpFeRspList,
 		SnapFeRspList: snapFeRspList,
 		ExpFeRspList:  expFeRspList,
+		MtFeRspList:   sh.mtFeRspList,
 	}
 	return cntlrFeRsp
 }
@@ -362,6 +494,7 @@ func (sh *syncupHelper) syncupSecondary(cntlrFeReq *pbcn.CntlrFeReq,
 		GrpFeRspList:  make([]*pbcn.GrpFeRsp, 0),
 		SnapFeRspList: make([]*pbcn.SnapFeRsp, 0),
 		ExpFeRspList:  expFeRspList,
+		MtFeRspList:   make([]*pbcn.MtFeRsp, 0),
 	}
 	return cntlrFeRsp
 }
@@ -406,6 +539,7 @@ func (sh *syncupHelper) syncupCntlrFe(cntlrFeReq *pbcn.CntlrFeReq) *pbcn.CntlrFe
 			GrpFeRspList:  make([]*pbcn.GrpFeRsp, 0),
 			SnapFeRspList: make([]*pbcn.SnapFeRsp, 0),
 			ExpFeRspList:  make([]*pbcn.ExpFeRsp, 0),
+			MtFeRspList:   make([]*pbcn.MtFeRsp, 0),
 		}
 	}
 }
@@ -605,6 +739,10 @@ func newSyncupHelper(lisConf *lib.LisConf, nf *lib.NameFmt, sc *lib.SpdkClient) 
 		nf:           nf,
 		oc:           lib.NewOperationClient(sc),
 		feNvmeMap:    make(map[string]bool),
+		vdSusresMap:  make(map[string]bool),
+		mtNullMap:    make(map[string]bool),
+		mtConcatMap:  make(map[string]bool),
+		mtRaid1Map:   make(map[string]bool),
 		aggBdevMap:   make(map[string]bool),
 		daLvsMap:     make(map[string]bool),
 		snapMap:      make(map[string]bool),
@@ -626,7 +764,8 @@ func (cnAgent *cnAgentServer) SyncupCn(ctx context.Context, req *pbcn.SyncupCnRe
 		return &pbcn.SyncupCnReply{
 			ReplyInfo: &pbcn.ReplyInfo{
 				ReplyCode: lib.CnOldRevErrCode,
-				ReplyMsg: fmt.Sprintf("received rev: %d, current rev: %d",
+				ReplyMsg: fmt.Sprintf(
+					"received rev: %d, current rev: %d",
 					req.Version, currVersion),
 			},
 		}, nil

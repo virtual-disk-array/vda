@@ -22,6 +22,15 @@ type LisConf struct {
 	TrSvcId string `json:"trsvcid"`
 }
 
+type Raid1Info struct {
+	Bdev0Online bool
+	Bdev1Online bool
+	TotalBit    uint64
+	SyncedBit   uint64
+	ResyncIoCnt uint64
+	Status      string
+}
+
 type Iostat struct {
 	TickRate                uint64
 	BytesRead               uint64
@@ -1791,6 +1800,20 @@ func (oc *OperationClient) CreateFeNvme(feNvmeName, beNqnName, feNqnName string,
 			rsp.Error.Code, rsp.Error.Message)
 	}
 	return nil
+}
+
+func (oc *OperationClient) CreateNormalSusres(susresName, baseBdevName string) error {
+	return nil
+}
+
+func (oc *OperationClient) CreateMtSusres(susresName,
+	raid1Name, srcConcatName, dstConcatName, srcNullName, dstNullName,
+	srcFeBdevName, dstFeBdevName string) error {
+	return nil
+}
+
+func (oc *OperationClient) GetRaid1Info(raid1Name string) (*Raid1Info, error) {
+	return &Raid1Info{}, nil
 }
 
 func (oc *OperationClient) ExamineBdev(bdevName string) error {

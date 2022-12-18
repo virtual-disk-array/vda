@@ -66,4 +66,8 @@ const (
 	TaskStatusCanceled = "canceled"
 	TaskStatusCompleted = "completed"
 	TaskStatusFailed = "failed"
+
+	NullBdevBlockSize = uint64(4096)
+	NullBdevNumBlocks = uint64(16384)
+	Raid1MetaSize = NullBdevBlockSize * NullBdevNumBlocks
 )
