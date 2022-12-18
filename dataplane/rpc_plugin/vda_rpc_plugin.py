@@ -53,7 +53,8 @@ def bdev_susres_resume_func(client, base_bdev_name, name):
 
 def bdev_raid1_create_func(client, raid1_name, bdev0_name, bdev1_name,
                            bit_size_kb, write_delay, clean_ratio,
-                           max_delay, max_resync, synced):
+                           max_delay, max_resync, meta_size,
+                           synced, ignore_zero_block):
     params = {
         'raid1_name': raid1_name,
         'bdev0_name': bdev0_name,
@@ -69,8 +70,12 @@ def bdev_raid1_create_func(client, raid1_name, bdev0_name, bdev1_name,
         params['max_delay'] = max_delay
     if max_resync is not None:
         params['max_resync'] = max_resync
+    if meta_size is not None:
+        params['meta_size'] = meta_size
     if synced is not None:
         params['synced'] = synced
+    if ignore_zero_block is not None:
+        params['ignore_zero_block'] = ignore_zero_block
     return client.call('bdev_raid1_create', params)
 
 
@@ -137,7 +142,9 @@ def spdk_rpc_plugin_initialize(subparsers):
                                           clean_ratio=args.clean_ratio,
                                           max_delay=args.max_delay,
                                           max_resync=args.max_resync,
-                                          synced=args.synced))
+                                          meta_size=args.meta_size,
+                                          synced=args.synced,
+                                          ignore_zero_block=args.ignore_zero_block))
 
     p = subparsers.add_parser('bdev_raid1_create',
                               help='Create raid1 bdev')
@@ -157,8 +164,12 @@ def spdk_rpc_plugin_initialize(subparsers):
                    help="Max pending")
     p.add_argument('-r', '--max-resync', type=int,
                    help="Max resync")
+    p.add_argument('-m', '--meta-size', type=int,
+                   help="Set meta data size")
     p.add_argument('-y', '--synced', action='store_true',
                    help="Whether the underling bdevs are synched")
+    p.add_argument('-i', '--ignore-zero-block', action='store_true',
+                   help="Do not sync up from bdev0 to bdev1 if a block is all zero")
     p.set_defaults(func=bdev_raid1_create)
 
     def bdev_raid1_delete(args):

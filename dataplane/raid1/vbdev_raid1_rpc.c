@@ -48,7 +48,7 @@ static const struct spdk_json_object_decoder rpc_bdev_raid1_create_decoders[] = 
 	{"clean_ratio",  offsetof(struct rpc_bdev_raid1_create, clean_ratio), spdk_json_decode_uint64, true},
 	{"max_delay",  offsetof(struct rpc_bdev_raid1_create, max_delay), spdk_json_decode_uint64, true},
 	{"max_resync",  offsetof(struct rpc_bdev_raid1_create, max_resync), spdk_json_decode_uint64, true},
-	{"meat_size",  offsetof(struct rpc_bdev_raid1_create, meta_size), spdk_json_decode_uint64, true},
+	{"meta_size",  offsetof(struct rpc_bdev_raid1_create, meta_size), spdk_json_decode_uint64, true},
 	{"synced", offsetof(struct rpc_bdev_raid1_create, synced), spdk_json_decode_bool, true},
 	{"ignore_zero_block", offsetof(struct rpc_bdev_raid1_create, ignore_zero_block), spdk_json_decode_bool, true},
 };
