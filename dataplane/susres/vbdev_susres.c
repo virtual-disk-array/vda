@@ -482,7 +482,14 @@ vbdev_susres_io_type_supported(void *ctx, enum spdk_bdev_io_type io_type)
 {
 	struct vbdev_susres *pt_node = (struct vbdev_susres *)ctx;
 
-	return spdk_bdev_io_type_supported(pt_node->base_bdev, io_type);
+	if (pt_node->status == SUSRES_STATUS_RESUMED) {
+		return spdk_bdev_io_type_supported(pt_node->base_bdev, io_type);
+	} else {
+		/* Do not support any io type if we are not
+		 * in the resumed status.
+		 */
+		return false;
+	}
 }
 
 /* We supplied this as an entry point for upper layers who want to communicate to this

@@ -56,6 +56,13 @@ $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_raid_create --name ra
 $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_passthru_create --name grp1 --base-bdev-name raid0b
 
 $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock --plugin vda_rpc_plugin bdev_susres_suspend --name susres0
+
+status=$($BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_get_bdevs --name susres0 | jq -rM '.[0].driver_specific.susres.status')
+if  [ $status != "suspended" ]; then
+    echo "incorrect status: $status"
+    exit 1
+fi
+
 $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_raid_delete agg0
 $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_raid_create --name agg0 --raid-level concat --base-bdevs "grp0 grp1" --strip-size-kb 4
 $BIN_DIR/spdk/scripts/rpc.py -s $WORK_DIR/vda_dp.sock bdev_examine --name agg0
