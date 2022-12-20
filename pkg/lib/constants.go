@@ -63,11 +63,22 @@ const (
 	DefaultKeepSeconds = uint64(3600*24)
 
 	TaskStatusProcessing = "processing"
-	TaskStatusCanceled = "canceled"
-	TaskStatusCompleted = "completed"
-	TaskStatusFailed = "failed"
+	TaskStatusCanceled   = "canceled"
+	TaskStatusCompleted  = "completed"
+	TaskStatusFailed     = "failed"
+
+	SusresStatusResumed    = "resumed"
+	SusresStatusResuming   = "resuming"
+	SusresStatusSuspended  = "suspended"
+	SusresStatusSuspending = "suspending"
+
+	BdevProductRaid1  = "raid1"
+	BdevProductSusres = "susres"
 
 	NullBdevBlockSize = uint64(4096)
 	NullBdevNumBlocks = uint64(16384)
 	Raid1MetaSize = NullBdevBlockSize * NullBdevNumBlocks
+	ConcatStripSizeKb = uint32(4)
+
+	RaidLevelConcat = "concat"
 )

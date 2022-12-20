@@ -153,6 +153,7 @@ func (sh *syncupHelper) syncupVdFeMt(cntlrFeReq *pbcn.CntlrFeReq,
 	sh.vdSusresMap[vdSusresName] = true
 	if vdFeErr == nil {
 		vdFeErr = sh.oc.CreateMtSusres(vdSusresName, mtRaid1Name,
+			mtFeReq.MtFeConf.Raid1Conf.BitSizeKb,
 			srcMtConcatName, dstMtConcatName,
 			srcMtNullName, dstMtNullName,
 			srcFeBdevName, dstFeBdevName)
