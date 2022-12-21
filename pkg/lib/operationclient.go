@@ -2080,6 +2080,7 @@ type raidBdev struct {
 	DriverSpecific *struct{
 		Raid *struct{
 			RaidLevel string `json:"raid_level"`
+			BaseBdevList []string `json:"base_bdev_list"`
 		} `json:"raid"`
 	} `json:"driver_specific"`
 }
@@ -2104,13 +2105,13 @@ func (oc *OperationClient) getConcatBdev(name string) (*raidBdev, error) {
 		// no error
 		return nil, nil
 	} else {
-		raid := (*rsp.Result)[0]
-		if raid.DriverSpecific == nil ||
-			raid.DriverSpecific.Raid == nil ||
-			raid.DriverSpecific.Raid.RaidLevel != RaidLevelConcat {
+		concat := (*rsp.Result)[0]
+		if concat.DriverSpecific == nil ||
+			concat.DriverSpecific.Raid == nil ||
+			concat.DriverSpecific.Raid.RaidLevel != RaidLevelConcat {
 			return nil, fmt.Errorf("The bdev %s is not concat", name)
 		} else {
-			return raid, nil
+			return concat, nil
 		}
 	}
 }
@@ -2252,7 +2253,7 @@ func (oc *OperationClient) CreateNormalSusres(susresName, baseBdevName string) e
 		return err
 	}
 	if susres == nil {
-		// Normal path 1, first creation, just create the susres dev.
+		// Normal path 1, first creation, just create the susres bdev.
 		return oc.createSusresBdev(susresName, baseBdevName)
 	} else {
 		if susres.DriverSpecific.Susres.Status == SusresStatusSuspended {
@@ -2263,59 +2264,51 @@ func (oc *OperationClient) CreateNormalSusres(susresName, baseBdevName string) e
 			if err != nil {
 				return err
 			}
+			if currBaseBdev == nil {
+				return fmt.Errorf("baseBdev disappeared: %s",
+					currBaseBdevName)
+			}
 			baseBdev, err := oc.getGeneralBdev(baseBdevName)
 			if currBaseBdev.Uuid == baseBdev.Uuid {
 				// Normal path 2, the base bdev is desired,
 				// nothing to do.
 				return nil
 			}
-			if currBaseBdev == nil {
-				// Not sure whether it may happen,
-				// just try our best to recover
-				logger.Warning("currBaseBdev is nil: %s",
-					currBaseBdevName)
-				err = oc.suspendSusresBdev(susresName)
-				if err != nil {
-					return err
-				}
-				return oc.resumeSusresBdev(susresName, baseBdevName)
-			} else {
-				if currBaseBdev.ProductName != BdevProductRaid1 {
-					// It should never happen
-					logger.Warning("Unknow ProductName: %v",
-						currBaseBdev)
-					return fmt.Errorf("Unknow ProductName: %s",
-						currBaseBdev.ProductName)
-				}
-				// Normal path 3, change from raid1 to
-				// a single vd
-				err = oc.suspendSusresBdev(susresName)
-				if err != nil {
-					return err
-				}
-				raid1, err := oc.getRaid1Bdev(currBaseBdevName)
-				if err != nil {
-					return err
-				}
-				if raid1 == nil {
-					return fmt.Errorf("The mt raid1 disappeared")
-				}
-				bdev0Name := raid1.DriverSpecific.Raid1.Bdev0Name
-				bdev1Name := raid1.DriverSpecific.Raid1.Bdev1Name
-				err = oc.deleteRaid1Bdev(currBaseBdevName)
-				if err != nil {
-					return err
-				}
-				err = oc.deleteConcatBdev(bdev0Name)
-				if err != nil {
-					return err
-				}
-				err = oc.deleteConcatBdev(bdev1Name)
-				if err != nil {
-					return err
-				}
-				return oc.resumeSusresBdev(susresName, baseBdevName)
+			if currBaseBdev.ProductName != BdevProductRaid1 {
+				// It should never happen
+				logger.Warning("Unknow ProductName: %v",
+					currBaseBdev)
+				return fmt.Errorf("Unknow ProductName: %s",
+					currBaseBdev.ProductName)
 			}
+			// Normal path 3, change from raid1 to
+			// a single vd
+			err = oc.suspendSusresBdev(susresName)
+			if err != nil {
+				return err
+			}
+			raid1, err := oc.getRaid1Bdev(currBaseBdevName)
+			if err != nil {
+				return err
+			}
+			if raid1 == nil {
+				return fmt.Errorf("The mt raid1 disappeared")
+			}
+			bdev0Name := raid1.DriverSpecific.Raid1.Bdev0Name
+			bdev1Name := raid1.DriverSpecific.Raid1.Bdev1Name
+			err = oc.deleteRaid1Bdev(currBaseBdevName)
+			if err != nil {
+				return err
+			}
+			err = oc.deleteConcatBdev(bdev0Name)
+			if err != nil {
+				return err
+			}
+			err = oc.deleteConcatBdev(bdev1Name)
+			if err != nil {
+				return err
+			}
+			return oc.resumeSusresBdev(susresName, baseBdevName)
 		} else {
 			logger.Warning("The susres bdev in transit status: %s",
 				susres.DriverSpecific.Susres.Status)
@@ -2323,6 +2316,59 @@ func (oc *OperationClient) CreateNormalSusres(susresName, baseBdevName string) e
 				susres.DriverSpecific.Susres.Status)
 		}
 	}
+}
+
+func (oc *OperationClient) createMtRaid1(raid1Name string, bitSizeKb uint32,
+	srcConcatName, dstConcatName, srcNullName, dstNullName,
+	srcFeBdevName, dstFeBdevName string) error {
+	srcNull, err := oc.getNullBdev(srcNullName)
+	if err != nil {
+		return err
+	}
+	if srcNull == nil {
+		err = oc.createNullBdev(srcNullName,
+			NullBdevBlockSize, NullBdevNumBlocks)
+		if err != nil {
+			return err
+		}
+	}
+	dstNull, err := oc.getNullBdev(dstNullName)
+	if dstNull == nil {
+		err = oc.createNullBdev(dstNullName,
+			NullBdevBlockSize, NullBdevNumBlocks)
+		if err != nil {
+			return err
+		}
+	}
+	srcConcat, err := oc.getConcatBdev(srcConcatName)
+	if err != nil {
+		return err
+	}
+	if srcConcat == nil {
+		baseBdevs := []string{srcNullName, srcFeBdevName}
+		err = oc.createConcatBdev(srcConcatName, baseBdevs)
+		if err != nil {
+			return err
+		}
+	}
+	dstConcat, err := oc.getConcatBdev(dstConcatName)
+	if err != nil {
+		return err
+	}
+	if dstConcat == nil {
+		baseBdevs := []string{dstNullName, dstFeBdevName}
+		err = oc.createConcatBdev(dstConcatName, baseBdevs)
+	}
+	raid1, err := oc.getRaid1Bdev(raid1Name)
+	if raid1 == nil {
+		err = oc.createRaid1Bdev(raid1Name,
+			srcConcatName, dstConcatName,
+			bitSizeKb, Raid1MetaSize, false)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (oc *OperationClient) CreateMtSusres(susresName,
@@ -2337,56 +2383,67 @@ func (oc *OperationClient) CreateMtSusres(susresName,
 		return err
 	}
 	if susres == nil {
-		srcNull, err := oc.getNullBdev(srcNullName)
+		// Normal path 1, first creation, just create the susres bdev
+		err = oc.createMtRaid1(raid1Name, bitSizeKb,
+			srcConcatName, dstConcatName,
+			srcNullName, dstNullName,
+			srcFeBdevName, dstFeBdevName)
 		if err != nil {
 			return err
-		}
-		if srcNull == nil {
-			err = oc.createNullBdev(srcNullName,
-				NullBdevBlockSize, NullBdevNumBlocks)
-			if err != nil {
-				return err
-			}
-		}
-		dstNull, err := oc.getNullBdev(dstNullName)
-		if dstNull == nil {
-			err = oc.createNullBdev(dstNullName,
-				NullBdevBlockSize, NullBdevNumBlocks)
-			if err != nil {
-				return err
-			}
-		}
-		srcConcat, err := oc.getConcatBdev(srcConcatName)
-		if err != nil {
-			return err
-		}
-		if srcConcat == nil {
-			baseBdevs := []string{srcNullName, srcFeBdevName}
-			err = oc.createConcatBdev(srcConcatName, baseBdevs)
-			if err != nil {
-				return err
-			}
-		}
-		dstConcat, err := oc.getConcatBdev(dstConcatName)
-		if err != nil {
-			return err
-		}
-		if dstConcat == nil {
-			baseBdevs := []string{dstNullName, dstFeBdevName}
-			err = oc.createConcatBdev(dstConcatName, baseBdevs)
-		}
-		raid1, err := oc.getRaid1Bdev(raid1Name)
-		if raid1 == nil {
-			err = oc.createRaid1Bdev(raid1Name,
-				srcConcatName, dstConcatName,
-				bitSizeKb, Raid1MetaSize, false)
-			if err != nil {
-				return err
-			}
 		}
 		return oc.createSusresBdev(susresName, raid1Name)
 	} else {
-		return nil
+		if susres.DriverSpecific.Susres.Status == SusresStatusSuspended {
+			err = oc.createMtRaid1(raid1Name, bitSizeKb,
+				srcConcatName, dstConcatName,
+				srcNullName, dstNullName,
+				srcFeBdevName, dstFeBdevName)
+			return oc.resumeSusresBdev(susresName, raid1Name)
+		} else if susres.DriverSpecific.Susres.Status == SusresStatusResumed {
+			currBaseBdevName := susres.DriverSpecific.Susres.BaseBdevName
+			currBaseBdev, err := oc.getGeneralBdev(currBaseBdevName)
+			if err != nil {
+				return err
+			}
+			if currBaseBdev == nil {
+				return fmt.Errorf("baseBdev disappeared: %s",
+					currBaseBdevName)
+			}
+			raid1, err := oc.getGeneralBdev(raid1Name)
+			if err != nil {
+				return err
+			}
+			if raid1 != nil && currBaseBdev.Uuid == raid1.Uuid {
+				// Normal path 2, the base bdev is desired,
+				// nothing to do
+				return nil
+			}
+			// Normal path 3, change from either a single vd
+			// or another raid1
+			err = oc.suspendSusresBdev(susresName)
+			if err != nil {
+				return err
+			}
+			if currBaseBdev.ProductName == BdevProductRaid1 {
+				err = oc.deleteRaid1Bdev(currBaseBdevName)
+				if err != nil {
+					return err
+				}
+			}
+			err = oc.createMtRaid1(raid1Name, bitSizeKb,
+				srcConcatName, dstConcatName,
+				srcNullName, dstNullName,
+				srcFeBdevName, dstFeBdevName)
+			if err != nil {
+				return err
+			}
+			return oc.resumeSusresBdev(susresName, raid1Name)
+		} else {
+			logger.Warning("The susres bdev in transit status: %s",
+				susres.DriverSpecific.Susres.Status)
+			return fmt.Errorf("The susres bdev in transit status: %s",
+				susres.DriverSpecific.Susres.Status)
+		}
 	}
 }
 
