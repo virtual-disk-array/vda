@@ -710,6 +710,76 @@ func (sh *syncupHelper) syncupCn(cnReq *pbcn.CnReq) *pbcn.CnRsp {
 	}
 
 	if cnErr == nil {
+		vdSusresBdevPrefix := sh.nf.VdSusresPrefix()
+		vdSusresBdevList, cnErr := sh.oc.GetVdSusresBdevList(
+			vdSusresBdevPrefix)
+		if cnErr == nil {
+			for _, vdSusresBdevName := range vdSusresBdevList {
+				_, ok := sh.vdSusresMap[vdSusresBdevName]
+				if !ok {
+					cnErr = sh.oc.DeleteVdSusresBdev(
+						vdSusresBdevName)
+					if cnErr != nil {
+						break
+					}
+				}
+			}
+		}
+	}
+
+	if cnErr == nil {
+		mtRaid1BdevPrevix := sh.nf.MtRaid1Prefix()
+		mtRaid1BdevList, cnErr := sh.oc.GetMtRaid1BdevList(mtRaid1BdevPrevix)
+		if cnErr == nil {
+			for _, mtRaid1BdevName := range mtRaid1BdevList {
+				_, ok := sh.mtRaid1Map[mtRaid1BdevName]
+				if !ok {
+					cnErr = sh.oc.DeleteMtRaid1Bdev(
+						mtRaid1BdevName)
+					if cnErr != nil {
+						break
+					}
+				}
+			}
+		}
+	}
+
+	if cnErr == nil {
+		mtConcatBdevPrefix := sh.nf.MtConcatPrefix()
+		mtConcatBdevList, cnErr := sh.oc.GetMtConcatBdevList(
+			mtConcatBdevPrefix)
+		if cnErr == nil {
+			for _, mtConcatBdevName := range mtConcatBdevList {
+				_, ok := sh.mtConcatMap[mtConcatBdevName]
+				if !ok {
+					cnErr = sh.oc.DeleteMtConcatBdev(
+						mtConcatBdevName)
+					if cnErr != nil {
+						break
+					}
+				}
+			}
+		}
+	}
+
+	if cnErr == nil {
+		mtNullBdevPrefix := sh.nf.MtNullPrefix()
+		mtNullBdevList, cnErr := sh.oc.GetMtNullBdevList(mtNullBdevPrefix)
+		if cnErr == nil {
+			for _, mtNullBdevName := range mtNullBdevList {
+				_, ok := sh.mtNullMap[mtNullBdevName]
+				if !ok {
+					cnErr = sh.oc.DeleteMtNullBdev(
+						mtNullBdevName)
+					if cnErr != nil {
+						break
+					}
+				}
+			}
+		}
+	}
+
+	if cnErr == nil {
 		feNvmePrefix := sh.nf.FeNvmePrefix()
 		feNvmeList, cnErr := sh.oc.GetFeNvmeList(feNvmePrefix)
 		if cnErr == nil {

@@ -23,14 +23,14 @@ type LisConf struct {
 }
 
 type Raid1Info struct {
-	Bdev0Name   string `json:"bdev0_name"`
-	Bdev1Name   string `json:"bdev1_name"`
-	Bdev0Online bool   `json:"bdev0_online"`
-	Bdev1Online bool   `json:"bdev1_online"`
-	TotalBit    uint64 `json:"total_bit"`
-	SyncedBit   uint64 `json:"synced_bit"`
-	ResyncIoCnt uint64 `json:"resync_io_cnt"`
-	Status      string `json:"status"`
+	Bdev0Name   string
+	Bdev1Name   string
+	Bdev0Online bool
+	Bdev1Online bool
+	TotalBit    uint64
+	SyncedBit   uint64
+	ResyncIoCnt uint64
+	Status      string
 }
 
 type Iostat struct {
@@ -2448,38 +2448,63 @@ func (oc *OperationClient) CreateMtSusres(susresName,
 }
 
 func (oc *OperationClient) GetRaid1Info(raid1Name string) (*Raid1Info, error) {
-	params := &struct {
-		Name string `json:"name"`
-	}{
-		Name: raid1Name,
-	}
-	rsp := &struct {
-		Error *spdkErr `json:"error"`
-		Result *[]struct{
-			Name           string      `json:"name"`
-			Aliases        []string    `json:"aliases"`
-			ProductName    string      `json:"product_name"`
-			Uuid           string      `json:"uuid"`
-			DriverSpecific *struct{
-				Raid1 *Raid1Info `json:"raid1"`
-			} `json:"driver_specific"`
-		}  `json:"result"`
-	}{}
-	err := oc.sc.Invoke("bdev_get_bdevs", params, rsp)
+	raid1, err := oc.getRaid1Bdev(raid1Name)
 	if err != nil {
-		logger.Error("bdev_get_bdevs failed: %v", err)
 		return nil, err
 	}
-	if rsp.Error != nil {
-		logger.Warning("bdev_get_bdevs rsp er: %v",  *rsp.Error)
-		return nil, fmt.Errorf("bdev_get_bdevs rsp err: %d %s",
-			rsp.Error.Code, rsp.Error.Message)
+	if raid1 == nil {
+		return nil, fmt.Errorf("The raid1 bdev not found: %s", raid1Name)
 	}
-	if rsp.Result == nil || len(*rsp.Result) == 0 {
-		logger.Warning("bdev_get_bdevs empty result")
-		return nil, fmt.Errorf("bdev_get_bdevs empty result")
-	}
-	return (*rsp.Result)[0].DriverSpecific.Raid1, nil
+	return &Raid1Info{
+		Bdev0Name:   raid1.DriverSpecific.Raid1.Bdev0Name,
+		Bdev1Name:   raid1.DriverSpecific.Raid1.Bdev1Name,
+		Bdev0Online: raid1.DriverSpecific.Raid1.Bdev0Online,
+		Bdev1Online: raid1.DriverSpecific.Raid1.Bdev1Online,
+		TotalBit:    raid1.DriverSpecific.Raid1.TotalBit,
+		SyncedBit:   raid1.DriverSpecific.Raid1.SyncedBit,
+		ResyncIoCnt: raid1.DriverSpecific.Raid1.ResyncIoCnt,
+		Status:      raid1.DriverSpecific.Raid1.Status,
+	}, nil
+}
+
+func (oc *OperationClient) GetVdSusresBdevList(prefix string) ([]string, error) {
+	logger.Info("GetVdSusresBdevList %v", prefix)
+	return  oc.getBdevByPrefix(prefix)
+}
+
+func (oc *OperationClient) DeleteVdSusresBdev(bdevName string) error {
+	logger.Info("DeleteVdSusresBdev: %s", bdevName)
+	return oc.deleteSusresBdev(bdevName)
+}
+
+func (oc *OperationClient) GetMtRaid1BdevList(prefix string) ([]string, error) {
+	logger.Info("GetMtRaid1BdevList %v", prefix)
+	return  oc.getBdevByPrefix(prefix)
+}
+
+func (oc *OperationClient) DeleteMtRaid1Bdev(bdevName string) error {
+	logger.Info("DeleteMtRaid1Bdev: %s", bdevName)
+	return oc.deleteRaid1Bdev(bdevName)
+}
+
+func (oc *OperationClient) GetMtConcatBdevList(prefix string) ([]string, error) {
+	logger.Info("GetMtConcatBdevList %v", prefix)
+	return  oc.getBdevByPrefix(prefix)
+}
+
+func (oc *OperationClient) DeleteMtConcatBdev(bdevName string) error {
+	logger.Info("DeleteMtConcatBdev: %s", bdevName)
+	return oc.deleteConcatBdev(bdevName)
+}
+
+func (oc *OperationClient) GetMtNullBdevList(prefix string) ([]string, error) {
+	logger.Info("GetMtNullBdevList %v", prefix)
+	return  oc.getBdevByPrefix(prefix)
+}
+
+func (oc *OperationClient) DeleteMtNullBdev(bdevName string) error {
+	logger.Info("DeleteMtNullBdev: %s", bdevName)
+	return oc.deleteNullBdev(bdevName)
 }
 
 func (oc *OperationClient) ExamineBdev(bdevName string) error {
