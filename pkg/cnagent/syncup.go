@@ -237,7 +237,8 @@ func (sh *syncupHelper) syncupGrpFe(cntlrFeReq *pbcn.CntlrFeReq,
 						raid0BdevList, raid1BdevName)
 					if grpFeErr != nil {
 						grpFeErr = sh.oc.CreateRaid1Bdev(
-							raid1BdevName, leg0, leg1)
+							raid1BdevName, leg0, leg1,
+							x.Raid1Conf.BitSizeKb)
 					}
 				}
 			}

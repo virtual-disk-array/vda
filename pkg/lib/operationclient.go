@@ -1692,28 +1692,11 @@ func (oc *OperationClient) GetRaid1BdevList(prefix string) ([]string, error) {
 
 func (oc *OperationClient) DeleteRaid1Bdev(raid1Name string) error {
 	logger.Info("DeleteRaid1Bdev: raid1Name %s", raid1Name)
-	params := &struct {
-		Raid1Name string `json:"raid1_name"`
-	}{
-		Raid1Name: raid1Name,
-	}
-	rsp := &struct {
-		Error *spdkErr `json:"error"`
-	}{}
-	err := oc.sc.Invoke("bdev_raid1_delete", params, rsp)
-	if err != nil {
-		logger.Error("bdev_raid1_delete failed")
-		return err
-	}
-	if rsp.Error != nil {
-		logger.Error("bdev_raid1_delete rsp err: %v", *rsp.Error)
-		return fmt.Errorf("bdev_raid1_delete rsp err: %d %s",
-			rsp.Error.Code, rsp.Error.Message)
-	}
-	return nil
+	return oc.deleteRaid1Bdev(raid1Name)
 }
 
-func (oc *OperationClient) CreateRaid1Bdev(raid1Name, bdev0Name, bdev1Name string) error {
+func (oc *OperationClient) CreateRaid1Bdev(raid1Name, bdev0Name, bdev1Name string,
+	bitSizeKb uint32) error {
 	logger.Info("CreateRaid1Bdev: raid1Name %v bdev0Name %v bdev1Name %v",
 		raid1Name, bdev0Name, bdev1Name)
 	exist, err := oc.bdevExist(raid1Name)
@@ -1723,30 +1706,8 @@ func (oc *OperationClient) CreateRaid1Bdev(raid1Name, bdev0Name, bdev1Name strin
 	if exist {
 		return nil
 	}
-
-	params := &struct {
-		Raid1Name string `json:"raid1_name"`
-		Bdev0Name string `json:"bdev0_name"`
-		Bdev1Name string `json:"bdev1_name"`
-	}{
-		Raid1Name: raid1Name,
-		Bdev0Name: bdev0Name,
-		Bdev1Name: bdev1Name,
-	}
-	rsp := &struct {
-		Error *spdkErr `json:"error"`
-	}{}
-	err = oc.sc.Invoke("bdev_raid1_create", params, rsp)
-	if err != nil {
-		logger.Error("bdev_raid1_create failed: %v", err)
-		return err
-	}
-	if rsp.Error != nil {
-		logger.Error("bdev_raid1_create rsp err: %v", *rsp.Error)
-		return fmt.Errorf("bdev_raid1_create rsp err: %d %s",
-			rsp.Error.Code, rsp.Error.Message)
-	}
-	return nil
+	return oc.createRaid1Bdev(raid1Name, bdev0Name, bdev1Name,
+		bitSizeKb, 0, false)
 }
 
 func (oc *OperationClient) GetFeNvmeList(prefix string) ([]string, error) {
