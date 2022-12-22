@@ -1841,7 +1841,7 @@ func (oc *OperationClient) getSusresBdev(name string) (*susresBdev, error) {
 func (oc *OperationClient) createSusresBdev(name, baseBdevName string) error {
 	params := &struct{
 		Name         string `json:"name"`
-		BaseBdevName string `json:"name"`
+		BaseBdevName string `json:"base_bdev_name"`
 	}{
 		Name:         name,
 		BaseBdevName: baseBdevName,
