@@ -622,7 +622,9 @@ func (po *portalServer) createNewDa(ctx context.Context, req *pbpo.CreateDaReque
 			logger.Error("Exceed max retry cnt")
 			return dnList, cnList, err
 		}
-		dnPdCandList, err := po.alloc.AllocDnPd(ctx, vdCnt, vdSize, qos)
+		dnLocList := make([]string, 0)
+		dnPdCandList, err := po.alloc.AllocDnPd(
+			ctx, vdCnt, vdSize, qos, dnLocList)
 		if err != nil {
 			logger.Error("AllocateDnPd err: %v", err)
 			return dnList, cnList, err

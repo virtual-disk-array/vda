@@ -175,7 +175,7 @@ func (alloc *Allocator) allocDnPdByBoundary(dnPdCtx *dnPdContext,
 }
 
 func (alloc *Allocator) AllocDnPd(ctx context.Context, vdCnt uint32,
-	vdSize uint64, qos *BdevQos) ([]*DnPdCand, error) {
+	vdSize uint64, qos *BdevQos, dnLocList []string) ([]*DnPdCand, error) {
 	dnPdCtx := &dnPdContext{
 		ctx:      ctx,
 		vdSize:   vdSize,
@@ -183,6 +183,9 @@ func (alloc *Allocator) AllocDnPd(ctx context.Context, vdCnt uint32,
 		cnt:      vdCnt,
 		locMap:   make(map[string]bool),
 		candList: make([]*DnPdCand, 0),
+	}
+	for _, loc := range dnLocList {
+		dnPdCtx.locMap[loc] = true
 	}
 	lowBound := uint64(0)
 	for _, highBound := range alloc.boundList {

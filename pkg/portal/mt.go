@@ -15,7 +15,7 @@ import (
 )
 
 func (po *portalServer) applyMovingTask(ctx context.Context,
-	req *pbpo.CreateMtRequest) error {
+	req *pbpo.CreateMtRequest, check_status bool) error {
 	mtId := lib.NewHexStrUuid()
 	dstVdId := lib.NewHexStrUuid()
 	daEntityKey := po.kf.DaEntityKey(req.DaName)
@@ -125,20 +125,23 @@ func (po *portalServer) applyMovingTask(ctx context.Context,
 			return retriableError{msg}
 		}
 		if err := proto.Unmarshal(dnEntityVal, diskNode); err != nil {
-			logger.Warning("Unmarshal diskNode err: %v %v", req.DstSockAddr, err)
+			logger.Warning("Unmarshal diskNode err: %v %v",
+				dnEntityVal, err)
 			msg := fmt.Sprintf("Unmarshal diskNode err %s %v",
 				req.DstSockAddr, err)
 			return retriableError{msg}
 		}
-		if diskNode.DnInfo.ErrInfo.IsErr {
-			logger.Warning("diskNode IsErr: %v", diskNode)
-			msg := fmt.Sprintf("diskNode IsErr: %s", diskNode.SockAddr)
-			return retriableError{msg}
-		}
-		if diskNode.DnConf.IsOffline {
-			logger.Warning("diskNode IsOffline: %v", diskNode)
-			msg := fmt.Sprintf("diskNode IsOffline: %s", diskNode.SockAddr)
-			return retriableError{msg}
+		if check_status {
+			if diskNode.DnInfo.ErrInfo.IsErr {
+				logger.Warning("diskNode IsErr: %v", diskNode)
+				msg := fmt.Sprintf("diskNode IsErr: %s", diskNode.SockAddr)
+				return retriableError{msg}
+			}
+			if diskNode.DnConf.IsOffline {
+				logger.Warning("diskNode IsOffline: %v", diskNode)
+				msg := fmt.Sprintf("diskNode IsOffline: %s", diskNode.SockAddr)
+				return retriableError{msg}
+			}
 		}
 		dstVd := &pbds.VirtualDisk{
 			VdId: dstVdId,
@@ -165,17 +168,19 @@ func (po *portalServer) applyMovingTask(ctx context.Context,
 			msg := fmt.Sprintf("Can not find dstPd: %v %v", req.DstPdName, diskNode.SockAddr)
 			return retriableError{msg}
 		}
-		if dstPd.PdInfo.ErrInfo.IsErr {
-			logger.Warning("physicalDisk IsErr: %v %v", diskNode, dstPd)
-			msg := fmt.Sprintf("physicalDisk IsErr: %s %s",
-				diskNode.SockAddr, dstPd.PdName)
-			return retriableError{msg}
-		}
-		if dstPd.PdConf.IsOffline {
-			logger.Warning("physicalDisk IsOffline: %v %v", diskNode, dstPd)
-			msg := fmt.Sprintf("physicalDisk IsOffline: %s %s",
-				diskNode.SockAddr, dstPd.PdName)
-			return retriableError{msg}
+		if check_status {
+			if dstPd.PdInfo.ErrInfo.IsErr {
+				logger.Warning("physicalDisk IsErr: %v %v", diskNode, dstPd)
+				msg := fmt.Sprintf("physicalDisk IsErr: %s %s",
+					diskNode.SockAddr, dstPd.PdName)
+				return retriableError{msg}
+			}
+			if dstPd.PdConf.IsOffline {
+				logger.Warning("physicalDisk IsOffline: %v %v", diskNode, dstPd)
+				msg := fmt.Sprintf("physicalDisk IsOffline: %s %s",
+					diskNode.SockAddr, dstPd.PdName)
+				return retriableError{msg}
+			}
 		}
 
 		cap := dstPd.Capacity
@@ -545,16 +550,76 @@ func (po *portalServer) addNewLeg(ctx context.Context, req *pbpo.CreateMtRequest
 			return dnList, cnList, err
 		}
 
+		check_status := false
 		if req.DstSockAddr == "" {
-			dnPdCandList, err := po.alloc.AllocDnPd(ctx, 1, vdSize, qos)
+			dnLocList := make([]string, 0)
+			apply := func(stm concurrency.STM) error {
+				val := []byte(stm.Get(daEntityKey))
+				if len(val) == 0 {
+					return &portalError{
+						lib.PortalUnknownResErrCode,
+						daEntityKey,
+					}
+				}
+				if err := proto.Unmarshal(val, diskArray); err != nil {
+					logger.Error("Unmarshal diskArray err: %s %v", daEntityKey, err)
+					return err
+				}
+				var targetGrp *pbds.Group
+				for _, grp := range diskArray.GrpList {
+					if grp.GrpIdx == req.GrpIdx {
+						targetGrp = grp
+						break
+					}
+				}
+				if targetGrp == nil {
+					return &portalError{
+						lib.PortalUnknownResErrCode,
+						fmt.Sprintf("GrpIdx: %d", req.GrpIdx),
+					}
+				}
+				for _, vd := range targetGrp.VdList {
+					if vd.VdIdx == req.VdIdx {
+						continue
+					}
+					dnEntityKey := po.kf.DnEntityKey(vd.DnSockAddr)
+					dnEntityVal := []byte(stm.Get(dnEntityKey))
+					if len(dnEntityVal) == 0 {
+						logger.Warning("Can not find diskNode: %v",
+							vd.DnSockAddr)
+						return &portalError{
+							lib.PortalUnknownResErrCode,
+							fmt.Sprintf("Dn: %s", vd.DnSockAddr),
+						}
+					}
+					diskNode := &pbds.DiskNode{}
+					if err := proto.Unmarshal(dnEntityVal, diskNode); err != nil {
+						logger.Warning("Unmarshal diskNode err: %v %v",
+							dnEntityVal, err)
+						return fmt.Errorf("Unmarshal diskNode err: %s %v",
+							vd.DnSockAddr, err)
+					}
+					dnLocList = make([]string, 0)
+					dnLocList = append(dnLocList,
+						diskNode.DnConf.Location)
+				}
+				return nil
+			}
+			err := po.sw.RunStm(apply, ctx, "CreateMtGetLoc: "+req.DaName+" "+req.MtName)
+			if err != nil {
+				return dnList, cnList, err
+			}
+			dnPdCandList, err := po.alloc.AllocDnPd(
+				ctx, 1, vdSize, qos, dnLocList)
 			if err != nil {
 				logger.Error("AllocateDnPd err: %v", err)
 				return dnList, cnList, err
 			}
 			req.DstSockAddr = dnPdCandList[0].SockAddr
 			req.DstPdName = dnPdCandList[0].PdName
+			check_status = true
 		}
-		err = po.applyMovingTask(ctx, req)
+		err = po.applyMovingTask(ctx, req, check_status)
 		if err != nil {
 			if serr, ok := err.(*retriableError); ok {
 				logger.Warning("Retriable error: %v", serr)
