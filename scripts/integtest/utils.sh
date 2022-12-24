@@ -51,6 +51,7 @@ function force_cleanup() {
 }
 
 function cleanup_check() {
+    set +e
     minikube status > /dev/null && echo "minikube is still runing"
     ps -f -C vda_portal > /dev/null && echo "vda_portal is still running"
     ps -f -C vda_monitor > /dev/null && echo "vda_monitor is still running"
@@ -62,6 +63,7 @@ function cleanup_check() {
     sudo dmsetup status delay1 > /dev/null 2>&1 && echo "delay1 still exists"
     losetup /dev/loop240 > /dev/null 2>&1 && echo "loop240 still exist"
     losetup /dev/loop241 > /dev/null 2>&1 && echo "loop241 still exist"
+    set -e
 }
 
 function umount_dir() {

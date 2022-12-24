@@ -80,12 +80,10 @@ func launchMonitor(cmd *cobra.Command, args []string) {
 	total, current := coord.getTotalAndCurrent()
 	logger.Info("total=%d current=%d", total, current)
 
-	gc := lib.NewGrpcCache(lib.GrpcCacheTTL, lib.GrpcCacheStep, lib.GrpcCacheInterval)
-
 	managerList := make([]*manager, 0)
 
 	if monitorArgs.dnHeartbeatConcurrency > 0 && monitorArgs.dnHeartbeatInterval > 0 {
-		dhw := newDnHeartbeatWorker(etcdCli, kf, gc, 10, 10, 5)
+		dhw := newDnHeartbeatWorker(etcdCli, kf, 10, 10, 5)
 		man := newManager(coord, dhw, etcdCli,
 			monitorArgs.dnHeartbeatConcurrency, monitorArgs.dnHeartbeatInterval)
 		man.run()
@@ -95,7 +93,7 @@ func launchMonitor(cmd *cobra.Command, args []string) {
 	}
 
 	if monitorArgs.dnSyncupConcurrency > 0 && monitorArgs.dnSyncupInterval > 0 {
-		dsw := newDnSyncupWorker(etcdCli, kf, gc, 5)
+		dsw := newDnSyncupWorker(etcdCli, kf, 5)
 		man := newManager(coord, dsw, etcdCli,
 			monitorArgs.dnHeartbeatConcurrency, monitorArgs.dnHeartbeatInterval)
 		man.run()
@@ -105,7 +103,7 @@ func launchMonitor(cmd *cobra.Command, args []string) {
 	}
 
 	if monitorArgs.cnHeartbeatConcurrency > 0 && monitorArgs.cnHeartbeatInterval > 0 {
-		chw := newCnHeartbeatWorker(etcdCli, kf, gc, 10, 10, 5)
+		chw := newCnHeartbeatWorker(etcdCli, kf, 10, 10, 5)
 		man := newManager(coord, chw, etcdCli,
 			monitorArgs.cnHeartbeatConcurrency, monitorArgs.cnHeartbeatInterval)
 		man.run()
@@ -115,7 +113,7 @@ func launchMonitor(cmd *cobra.Command, args []string) {
 	}
 
 	if monitorArgs.cnSyncupConcurrency > 0 && monitorArgs.cnSyncupInterval > 0 {
-		csw := newCnSyncupWorker(etcdCli, kf, gc, 5)
+		csw := newCnSyncupWorker(etcdCli, kf, 5)
 		man := newManager(coord, csw, etcdCli,
 			monitorArgs.cnHeartbeatConcurrency, monitorArgs.cnHeartbeatInterval)
 		man.run()
@@ -134,7 +132,6 @@ func launchMonitor(cmd *cobra.Command, args []string) {
 			man.close()
 		}
 		coord.close()
-		gc.Close()
 	}
 	logger.Info("Monitor stop")
 }

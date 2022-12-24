@@ -1482,7 +1482,7 @@ func (oc *OperationClient) WaitForLvs(daLvsName string) error {
 		if exist {
 			return nil
 		}
-		time.Sleep(time.Second)
+		time.Sleep(100*time.Millisecond)
 	}
 	logger.Warning("Can not find lvs: %s", daLvsName)
 	return fmt.Errorf("Can not find lvs: %s", daLvsName)

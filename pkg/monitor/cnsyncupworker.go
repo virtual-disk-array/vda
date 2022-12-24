@@ -41,9 +41,9 @@ func (csw *cnSyncupWorker) processBacklog(ctx context.Context, key string) {
 }
 
 func newCnSyncupWorker(etcdCli *clientv3.Client, kf *lib.KeyFmt,
-	gc *lib.GrpcCache, cnTimeout int) *cnSyncupWorker {
+	cnTimeout int) *cnSyncupWorker {
 	sw := lib.NewStmWrapper(etcdCli)
-	sm := lib.NewSyncupManager(kf, sw, gc)
+	sm := lib.NewSyncupManager(kf, sw)
 	return &cnSyncupWorker{
 		name:      "CnSyncupWorker",
 		kf:        kf,

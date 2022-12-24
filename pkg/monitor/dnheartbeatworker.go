@@ -10,6 +10,7 @@ import (
 	"go.etcd.io/etcd/client/v3/concurrency"
 	"google.golang.org/protobuf/proto"
 	"github.com/google/uuid"
+	"google.golang.org/grpc"
 
 	"github.com/virtual-disk-array/vda/pkg/lib"
 	"github.com/virtual-disk-array/vda/pkg/logger"
@@ -21,7 +22,6 @@ type dnHeartbeatWorker struct {
 	name             string
 	etcdCli          *clientv3.Client
 	kf               *lib.KeyFmt
-	gc               *lib.GrpcCache
 	sw               *lib.StmWrapper
 	mu               sync.Mutex
 	errCounter       uint64
@@ -125,11 +125,12 @@ func (dhw *dnHeartbeatWorker) processBacklog(ctx context.Context, key string) {
 		logger.Error("DiskNode version is 0: %s %s", dhw.name, key)
 		return
 	}
-	conn, err := dhw.gc.Get(sockAddr)
+	conn, err := grpc.Dial(sockAddr, grpc.WithInsecure())
 	if err != nil {
 		logger.Error("get conn err: %s %s %v", dhw.name, sockAddr, err)
 		return
 	}
+	defer conn.Close()
 	c := pbdn.NewDnAgentClient(conn)
 	req := &pbdn.DnHeartbeatRequest{
 		ReqId:   uuid.New().String(),
@@ -151,13 +152,12 @@ func (dhw *dnHeartbeatWorker) processBacklog(ctx context.Context, key string) {
 }
 
 func newDnHeartbeatWorker(etcdCli *clientv3.Client, kf *lib.KeyFmt,
-	gc *lib.GrpcCache, errBurstLimit uint64, errBurstDuration int64,
+	errBurstLimit uint64, errBurstDuration int64,
 	dnTimeout int) *dnHeartbeatWorker {
 	return &dnHeartbeatWorker{
 		name:             "DnHeartbeatWorker",
 		etcdCli:          etcdCli,
 		kf:               kf,
-		gc:               gc,
 		sw:               lib.NewStmWrapper(etcdCli),
 		errCounter:       0,
 		errBurstLimit:    errBurstLimit,

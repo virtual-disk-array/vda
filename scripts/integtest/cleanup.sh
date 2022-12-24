@@ -22,3 +22,5 @@ force_cleanup
 sleep 1
 
 cleanup_check
+
+echo "done"

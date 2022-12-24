@@ -3,6 +3,8 @@
 set -x
 set -e
 
+trap 'echo -n $(date)' DEBUG
+
 CURR_DIR=$(readlink -f $(dirname $0))
 source $CURR_DIR/conf.sh
 source $CURR_DIR/utils.sh
@@ -329,7 +331,7 @@ if [ "$new_primary" == "localhost:9820" ]; then
                           --sock-path $WORK_DIR/cn1.sock --sock-timeout 10 \
                           --lis-conf '{"trtype":"tcp","traddr":"127.0.0.1","adrfam":"ipv4","trsvcid":"4431"}' \
                           --tr-conf '{"trtype":"TCP"}' \
-                          > $WORK_DIR/cn_agent_1.log 2>&1 &
+                          > $WORK_DIR/cn_agent_1a.log 2>&1 &
 else
     sudo bash -c "$BIN_DIR/vda_dataplane --config $BIN_DIR/dataplane_config.json --rpc-socket $WORK_DIR/cn0.sock > $WORK_DIR/cn0.log 2>&1 &"
     sleep 5
@@ -338,7 +340,7 @@ else
                           --sock-path $WORK_DIR/cn0.sock --sock-timeout 10 \
                           --lis-conf '{"trtype":"tcp","traddr":"127.0.0.1","adrfam":"ipv4","trsvcid":"4430"}' \
                           --tr-conf '{"trtype":"TCP"}' \
-                          > $WORK_DIR/cn_agent_0.log 2>&1 &
+                          > $WORK_DIR/cn_agent_0a.log 2>&1 &
 fi
 
 echo "waiting for da3 recover"
