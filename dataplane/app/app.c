@@ -7,7 +7,7 @@
 static void
 vda_dataplane_started(void *arg1)
 {
-	printf("vda_dataplane is running\n");
+	SPDK_NOTICELOG("vda_dataplane is running\n");
 }
 
 int
