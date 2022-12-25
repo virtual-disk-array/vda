@@ -1125,6 +1125,75 @@ func (po *portalServer) modifyDaDescription(ctx context.Context, daName string,
 	}
 }
 
+func (po *portalServer) modifyPrimaryIdx(ctx context.Context, daName string,
+	primaryIdx uint32) (*pbpo.ModifyDaReply, error) {
+	if primaryIdx > lib.AutoChoosePrimaryIdx {
+		return &pbpo.ModifyDaReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInvalidParamCode,
+				ReplyMsg:  fmt.Sprintf("primaryIdx can not larger than %d",
+					lib.AutoChoosePrimaryIdx),
+			},
+		}, nil
+	}
+	
+	apply := func(stm concurrency.STM) error {
+		return lib.ChangePrimary(stm, daName, primaryIdx, po.kf)
+	}
+
+	err := po.sw.RunStm(apply, ctx, "ModifyPrimaryIdx: " + daName)
+	if err != nil {
+		if serr, ok := err.(*portalError); ok {
+			return &pbpo.ModifyDaReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: serr.code,
+					ReplyMsg:  serr.msg,
+				},
+			}, nil
+		} else {
+			return &pbpo.ModifyDaReply{
+				ReplyInfo: &pbpo.ReplyInfo{
+					ReqId:     lib.GetReqId(ctx),
+					ReplyCode: lib.PortalInternalErrCode,
+					ReplyMsg:  err.Error(),
+				},
+			}, nil
+		}
+	} else {
+		return &pbpo.ModifyDaReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalSucceedCode,
+				ReplyMsg:  lib.PortalSucceedMsg,
+			},
+		}, nil
+	}
+}
+
+func (po *portalServer) addCntlr(ctx context.Context, daName string,
+	sockAddr string) (*pbpo.ModifyDaReply, error) {
+	return &pbpo.ModifyDaReply{
+		ReplyInfo: &pbpo.ReplyInfo{
+			ReqId:     lib.GetReqId(ctx),
+			ReplyCode: lib.PortalSucceedCode,
+			ReplyMsg:  lib.PortalSucceedMsg,
+		},
+	}, nil
+}
+
+func (po *portalServer) delCntlr(ctx context.Context, daName string,
+	cntlrIdx uint32) (*pbpo.ModifyDaReply, error) {
+	return &pbpo.ModifyDaReply{
+		ReplyInfo: &pbpo.ReplyInfo{
+			ReqId:     lib.GetReqId(ctx),
+			ReplyCode: lib.PortalSucceedCode,
+			ReplyMsg:  lib.PortalSucceedMsg,
+		},
+	}, nil
+}
+
 func (po *portalServer) ModifyDa(ctx context.Context, req *pbpo.ModifyDaRequest) (
 	*pbpo.ModifyDaReply, error) {
 	invalidParamMsg := ""
@@ -1144,6 +1213,12 @@ func (po *portalServer) ModifyDa(ctx context.Context, req *pbpo.ModifyDaRequest)
 	switch x := req.Attr.(type) {
 	case *pbpo.ModifyDaRequest_Description:
 		return po.modifyDaDescription(ctx, req.DaName, x.Description)
+	case *pbpo.ModifyDaRequest_PrimaryIdx:
+		return po.modifyPrimaryIdx(ctx, req.DaName, x.PrimaryIdx)
+	case *pbpo.ModifyDaRequest_AddCntlrSockAddr:
+		return po.addCntlr(ctx, req.DaName, x.AddCntlrSockAddr)
+	case *pbpo.ModifyDaRequest_DelCntlrIdx:
+		return po.delCntlr(ctx, req.DaName, x.DelCntlrIdx)
 	default:
 		logger.Error("Unknow attr: %v", x)
 		return &pbpo.ModifyDaReply{

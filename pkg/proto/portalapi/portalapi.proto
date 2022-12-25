@@ -568,6 +568,9 @@ message ModifyDaRequest {
   string da_name = 1;
   oneof attr {
     string description = 2;
+    uint32 primary_idx = 3;
+    string add_cntlr_sock_addr = 4;
+    uint32 del_cntlr_idx = 5;
   }
 }
 
