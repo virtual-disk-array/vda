@@ -1125,21 +1125,21 @@ func (po *portalServer) modifyDaDescription(ctx context.Context, daName string,
 	}
 }
 
-func (po *portalServer) modifyPrimaryIdx(ctx context.Context, daName string,
-	primaryIdx uint32) (*pbpo.ModifyDaReply, error) {
-	if primaryIdx > lib.AutoChoosePrimaryIdx {
+func (po *portalServer) changePrimary(ctx context.Context, daName string,
+	oldPrimaryId, newPrimaryId string) (*pbpo.ModifyDaReply, error) {
+	if oldPrimaryId == "" {
 		return &pbpo.ModifyDaReply{
 			ReplyInfo: &pbpo.ReplyInfo{
 				ReqId:     lib.GetReqId(ctx),
 				ReplyCode: lib.PortalInvalidParamCode,
-				ReplyMsg:  fmt.Sprintf("primaryIdx can not larger than %d",
-					lib.AutoChoosePrimaryIdx),
+				ReplyMsg:  fmt.Sprintf("No oldPrimaryId"),
 			},
 		}, nil
 	}
 	
 	apply := func(stm concurrency.STM) error {
-		return lib.ChangePrimary(stm, daName, primaryIdx, po.kf)
+		return lib.ChangePrimary(stm, daName,
+			oldPrimaryId, newPrimaryId, po.kf)
 	}
 
 	err := po.sw.RunStm(apply, ctx, "ModifyPrimaryIdx: " + daName)
@@ -1213,8 +1213,9 @@ func (po *portalServer) ModifyDa(ctx context.Context, req *pbpo.ModifyDaRequest)
 	switch x := req.Attr.(type) {
 	case *pbpo.ModifyDaRequest_Description:
 		return po.modifyDaDescription(ctx, req.DaName, x.Description)
-	case *pbpo.ModifyDaRequest_PrimaryIdx:
-		return po.modifyPrimaryIdx(ctx, req.DaName, x.PrimaryIdx)
+	case *pbpo.ModifyDaRequest_ChangePrimary:
+		return po.changePrimary(ctx, req.DaName,
+			x.ChangePrimary.OldPrimaryId, x.ChangePrimary.NewPrimaryId)
 	case *pbpo.ModifyDaRequest_AddCntlrSockAddr:
 		return po.addCntlr(ctx, req.DaName, x.AddCntlrSockAddr)
 	case *pbpo.ModifyDaRequest_DelCntlrIdx:

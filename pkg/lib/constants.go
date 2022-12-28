@@ -81,6 +81,4 @@ const (
 	ConcatStripSizeKb = uint32(4)
 
 	RaidLevelConcat = "concat"
-
-	AutoChoosePrimaryIdx = 255
 )

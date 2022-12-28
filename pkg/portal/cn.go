@@ -870,6 +870,7 @@ func (po *portalServer) GetCn(ctx context.Context, req *pbpo.GetCnRequest) (
 			ControllerNode: &pbpo.ControllerNode{
 				CnId:        controllerNode.CnId,
 				SockAddr:    controllerNode.SockAddr,
+				Version:     controllerNode.Version,
 				Description: controllerNode.CnConf.Description,
 				NvmfListener: &pbpo.NvmfListener{
 					TrType:  controllerNode.CnConf.NvmfListener.TrType,

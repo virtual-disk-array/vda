@@ -11,7 +11,12 @@ import (
 )
 
 func ChangePrimary(stm concurrency.STM, daName string,
-	primaryIdx uint32, kf *KeyFmt) error {
+	oldPrimaryId, newPrimaryId string, kf *KeyFmt) error {
+	logger.Info("ChangePrimary daName: %s oldPrimaryId: %s\n newPrimaryId: %s",
+		daName, oldPrimaryId, newPrimaryId)
+	if oldPrimaryId == newPrimaryId {
+		return fmt.Errorf("The old and new primary id can not be the same")
+	}
 	daEntityKey := kf.DaEntityKey(daName)
 	diskArray := &pbds.DiskArray{}
 	daEntityVal := []byte(stm.Get(daEntityKey))
@@ -35,10 +40,10 @@ func ChangePrimary(stm concurrency.STM, daName string,
 	if oldPrimaryCntlr == nil {
 		return fmt.Errorf("Can not find primary: %s", daName)
 	}
-	if oldPrimaryCntlr.CntlrIdx == primaryIdx {
-		return nil
+	if oldPrimaryCntlr.CntlrId != oldPrimaryId {
+		return fmt.Errorf("oldPrimary has been changed")
 	}
-	if primaryIdx == AutoChoosePrimaryIdx {
+	if newPrimaryId == "" {
 		for _, cntlr := range diskArray.CntlrList {
 			if cntlr.IsPrimary {
 				continue
@@ -66,18 +71,20 @@ func ChangePrimary(stm concurrency.STM, daName string,
 		}
 	} else {
 		for _, cntlr := range diskArray.CntlrList {
-			if cntlr.CntlrIdx == primaryIdx {
+			if cntlr.CntlrId == newPrimaryId {
 				newPrimaryCntlr = cntlr
 				break
 			}
 		}
 		if newPrimaryCntlr == nil {
-			return fmt.Errorf("Can not find new primary: %s %d",
-				daName, primaryIdx)
+			return fmt.Errorf("Can not find new primary: %s %s",
+				daName, newPrimaryId)
 		}
 	}
 	newPrimaryCntlr.IsPrimary = true
 	oldPrimaryCntlr.IsPrimary = false
+	logger.Info("newPrimaryCntlr: %v", newPrimaryCntlr)
+	logger.Info("oldPrimaryCntlr: %v", oldPrimaryCntlr)
 	newDaEntityVal, err := proto.Marshal(diskArray)
 	if err != nil {
 		logger.Error("Marshal diskArrary err: %v %v",
@@ -132,12 +139,26 @@ func ChangePrimary(stm concurrency.STM, daName string,
 	newCntlrFe.MtFeList = oldCntlrFe.MtFeList
 	newCntlrFe.ItFeList = oldCntlrFe.ItFeList
 	newCntlrFe.IsInited = oldCntlrFe.IsInited
+	for _, cntlr := range newCntlrFe.CntlrFeConf.CntlrList {
+		if cntlr.CntlrId == newPrimaryCntlr.CntlrId {
+			cntlr.IsPrimary = true
+		} else {
+			cntlr.IsPrimary = false
+		}
+	}
 
 	oldCntlrFe.GrpFeList = make([]*pbds.GrpFrontend, 0)
 	oldCntlrFe.SnapFeList = make([]*pbds.SnapFrontend, 0)
 	oldCntlrFe.MtFeList = make([]*pbds.MtFrontend, 0)
 	oldCntlrFe.ItFeList = make([]*pbds.ItFrontend, 0)
 	oldCntlrFe.IsInited = false
+	for _, cntlr := range oldCntlrFe.CntlrFeConf.CntlrList {
+		if cntlr.CntlrId == newPrimaryCntlr.CntlrId {
+			cntlr.IsPrimary = true
+		} else {
+			cntlr.IsPrimary = false
+		}
+	}
 
 	oldCn.Version++
 	oldCnEntityVal, err = proto.Marshal(oldCn)

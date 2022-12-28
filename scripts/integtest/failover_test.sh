@@ -68,7 +68,10 @@ $BIN_DIR/vda_portal --portal-address '127.0.0.1:9520' --portal-network tcp \
              > $WORK_DIR/portal_0.log 2>&1 &
 
 $BIN_DIR/vda_monitor --etcd-endpoints localhost:$ETCD_PORT \
-              > $WORK_DIR/monitor_0.log 2>&1 &
+                     --dn-heartbeat--concurrency 0 --dn-heartbeat-interval 0 \
+                     --dn-syncup-concurrency 0 --dn-syncup-interval 0 \
+                     --cn-syncup-concurrency 0 --cn-syncup-interval 0 \
+                     > $WORK_DIR/monitor_0.log 2>&1 &
 
 
 echo "prepare pd file"
@@ -88,7 +91,7 @@ $BIN_DIR/vda_cli pd create --sock-addr localhost:9721 --pd-name pd1 \
 echo "create cn localhost:9820"
 $BIN_DIR/vda_cli cn create --sock-addr localhost:9820 --tr-svc-id 4430
 echo "create cn localhost:9821"
-$BIN_DIR/vda_cli cn create --sock-addr localhost:9821 --tr-svc-id 4431 --description aaa
+$BIN_DIR/vda_cli cn create --sock-addr localhost:9821 --tr-svc-id 4431
 
 echo "create da0"
 $BIN_DIR/vda_cli da create --da-name da0 --size-mb 64 --init-grp-size-mb 64 \
@@ -343,6 +346,9 @@ else
                           > $WORK_DIR/cn_agent_0a.log 2>&1 &
 fi
 
+echo "exit"
+exit 0
+
 echo "waiting for da3 recover"
 max_retry=120
 retry_cnt=0
@@ -379,7 +385,7 @@ while true; do
     ((retry_cnt=retry_cnt+1))
 done
 
-sleep 40
+sleep 20
 
 echo "da3 recovered"
 
