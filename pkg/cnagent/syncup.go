@@ -828,7 +828,14 @@ func newSyncupHelper(lisConf *lib.LisConf, nf *lib.NameFmt, sc *lib.SpdkClient) 
 
 func (cnAgent *cnAgentServer) SyncupCn(ctx context.Context, req *pbcn.SyncupCnRequest) (
 	*pbcn.SyncupCnReply, error) {
-	cnMutex.Lock()
+	if !cnMutex.TryLock() {
+		return &pbcn.SyncupCnReply{
+			ReplyInfo: &pbcn.ReplyInfo{
+				ReplyCode: lib.CnLockErrCode,
+				ReplyMsg: "Can not get lock",
+			},
+		}, nil
+	}
 	defer cnMutex.Unlock()
 	logger.Debug("SyncupCn get lock")
 	currVersion := atomic.LoadUint64(&lastVersion)

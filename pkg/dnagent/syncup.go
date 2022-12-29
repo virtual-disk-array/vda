@@ -245,7 +245,14 @@ func newSyncupHelper(lisConf *lib.LisConf, nf *lib.NameFmt, sc *lib.SpdkClient) 
 
 func (dnAgent *dnAgentServer) SyncupDn(ctx context.Context, req *pbdn.SyncupDnRequest) (
 	*pbdn.SyncupDnReply, error) {
-	dnMutex.Lock()
+	if !dnMutex.TryLock() {
+		return &pbdn.SyncupDnReply{
+			ReplyInfo: &pbdn.ReplyInfo{
+				ReplyCode: lib.DnLockErrCode,
+				ReplyMsg: "Can not get lock",
+			},
+		}, nil
+	}
 	defer dnMutex.Unlock()
 	logger.Debug("SyncupDn get lock")
 	currVersion := atomic.LoadUint64(&lastVersion)

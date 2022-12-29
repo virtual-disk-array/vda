@@ -344,7 +344,7 @@ else
 fi
 
 echo "waiting for da3 recover"
-max_retry=120
+max_retry=24
 retry_cnt=0
 while true; do
     cntlr_cnt=$($BIN_DIR/vda_cli da get --da-name $da_name | jq ".disk_array.cntlr_list | length")
@@ -372,6 +372,7 @@ while true; do
         break
     fi
     if [ $retry_cnt -ge $max_retry ]; then
+        killall vda_monitor
         echo "da3 recover timeout"
         exit 1
     fi
@@ -379,7 +380,7 @@ while true; do
     ((retry_cnt=retry_cnt+1))
 done
 
-sleep 40
+sleep 20
 
 echo "da3 recovered"
 

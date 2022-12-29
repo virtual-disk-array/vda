@@ -19,11 +19,13 @@ const (
 	DnSucceedMsg       = "succeed"
 	DnOldRevErrCode    = 2
 	DnOutOfSyncErrCode = 3
+	DnLockErrCode      = 4
 
 	CnSucceedCode      = 1
 	CnSucceedMsg       = "succeed"
 	CnOldRevErrCode    = 2
 	CnOutOfSyncErrCode = 3
+	CnLockErrCode      = 4
 
 	ResUninitMsg = "uninit"
 	ResNoInfoMsg = "no info"
