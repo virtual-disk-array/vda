@@ -407,6 +407,8 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 				return fmt.Errorf("Marshal dnSearchAttr err: %v", err)
 			}
 			stm.Put(newDnCapKey, string(newDnCapVal))
+			logger.Debug("Dn capacity change 2, old: %s new %s",
+				oldDnCapKey, newDnCapKey)
 
 			vd := vdList[i]
 			vdBe := &pbds.VdBackend{
@@ -982,6 +984,8 @@ func (po *portalServer) DeleteDa(ctx context.Context, req *pbpo.DeleteDaRequest)
 				}
 				stm.Del(oldDnCapKey)
 				stm.Put(newDnCapKey, string(dnCapVal))
+				logger.Debug("Dn capacity change 3, old: %s new %s",
+					oldDnCapKey, newDnCapKey)
 				diskNode.Version++
 				newDnEntityVal, err := proto.Marshal(diskNode)
 				if err != nil {

@@ -134,6 +134,12 @@ func ChangePrimary(stm concurrency.STM, daName string,
 			newPrimaryCntlr)
 	}
 
+	newCntlrFe.CntlrFeInfo.ErrInfo = &pbds.ErrInfo{
+		IsErr: true,
+		ErrMsg: FailoverMsg,
+		Timestamp: ResTimestamp(),
+	}
+
 	newCntlrFe.GrpFeList = oldCntlrFe.GrpFeList
 	newCntlrFe.SnapFeList = oldCntlrFe.SnapFeList
 	newCntlrFe.MtFeList = oldCntlrFe.MtFeList

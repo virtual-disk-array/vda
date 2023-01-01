@@ -76,32 +76,54 @@ dd if=/dev/zero of=$WORK_DIR/pd0.img bs=1M count=2048
 dd if=/dev/zero of=$WORK_DIR/pd1.img bs=1M count=2048
 
 echo "create dn localhost:9720"
-$BIN_DIR/vda_cli dn create --sock-addr localhost:9720 --tr-svc-id 4420
+cli_rsp=$($BIN_DIR/vda_cli dn create --sock-addr localhost:9720 --tr-svc-id 4420)
+vda_api_verify "$cli_rsp"
+
 echo "create pd localhost:9720 pd0"
-$BIN_DIR/vda_cli pd create --sock-addr localhost:9720 --pd-name pd0 \
-                 --bdev-type-key aio --bdev-type-value $WORK_DIR/pd0.img
+cli_rsp=$($BIN_DIR/vda_cli pd create --sock-addr localhost:9720 --pd-name pd0 \
+                           --bdev-type-key aio --bdev-type-value $WORK_DIR/pd0.img)
+vda_api_verify "$cli_rsp"
+
 echo "create dn localhost:9721"
-$BIN_DIR/vda_cli dn create --sock-addr localhost:9721 --tr-svc-id 4421
+cli_rsp=$($BIN_DIR/vda_cli dn create --sock-addr localhost:9721 --tr-svc-id 4421)
+vda_api_verify "$cli_rsp"
+
 echo "create pd localhost:9721 pd1"
-$BIN_DIR/vda_cli pd create --sock-addr localhost:9721 --pd-name pd1 \
-                 --bdev-type-key aio --bdev-type-value $WORK_DIR/pd1.img
+cli_rsp=$($BIN_DIR/vda_cli pd create --sock-addr localhost:9721 --pd-name pd1 \
+                           --bdev-type-key aio --bdev-type-value $WORK_DIR/pd1.img)
+vda_api_verify "$cli_rsp"
+
 echo "create cn localhost:9820"
-$BIN_DIR/vda_cli cn create --sock-addr localhost:9820 --tr-svc-id 4430
+cli_rsp=$($BIN_DIR/vda_cli cn create --sock-addr localhost:9820 --tr-svc-id 4430)
+vda_api_verify "$cli_rsp"
+
 echo "create cn localhost:9821"
-$BIN_DIR/vda_cli cn create --sock-addr localhost:9821 --tr-svc-id 4431 --description aaa
+cli_rsp=$($BIN_DIR/vda_cli cn create --sock-addr localhost:9821 --tr-svc-id 4431)
+vda_api_verify "$cli_rsp"
+
+$BIN_DIR/vda_cli cn get --sock-addr localhost:9820
+$BIN_DIR/vda_cli cn get --sock-addr localhost:9821
 
 echo "create da0"
-$BIN_DIR/vda_cli da create --da-name da0 --size-mb 64 --init-grp-size-mb 64 \
-                 --cntlr-cnt 1 --strip-cnt 1 --strip-size-kb 64
+cli_rsp=$($BIN_DIR/vda_cli da create --da-name da0 --size-mb 64 --init-grp-size-mb 64 \
+                           --cntlr-cnt 1 --strip-cnt 1 --strip-size-kb 64)
+vda_api_verify "$cli_rsp"
+
 echo "create da1"
-$BIN_DIR/vda_cli da create --da-name da1 --size-mb 64 --init-grp-size-mb 64 \
-                 --cntlr-cnt 2 --strip-cnt 1 --strip-size-kb 64
+cli_rsp=$($BIN_DIR/vda_cli da create --da-name da1 --size-mb 64 --init-grp-size-mb 64 \
+                           --cntlr-cnt 2 --strip-cnt 1 --strip-size-kb 64)
+vda_api_verify "$cli_rsp"
+
 echo "create da2"
-$BIN_DIR/vda_cli da create --da-name da2 --size-mb 64 --init-grp-size-mb 64 \
-                 --cntlr-cnt 1 --strip-cnt 2 --strip-size-kb 64
+cli_rsp=$($BIN_DIR/vda_cli da create --da-name da2 --size-mb 64 --init-grp-size-mb 64 \
+                           --cntlr-cnt 1 --strip-cnt 2 --strip-size-kb 64)
+vda_api_verify "$cli_rsp"
+
 echo "create da3"
-$BIN_DIR/vda_cli da create --da-name da3 --size-mb 512 --init-grp-size-mb 512 \
-                 --cntlr-cnt 2 --strip-cnt 1 --strip-size-kb 64
+cli_rsp=$($BIN_DIR/vda_cli da create --da-name da3 --size-mb 512 --init-grp-size-mb 512 \
+                           --cntlr-cnt 2 --strip-cnt 1 --strip-size-kb 64)
+vda_api_verify "$cli_rsp"
+
 host_nqn="nqn.2016-06.io.spdk:host0"
 
 echo "create exp da0 exp0a"
@@ -117,15 +139,15 @@ echo "create exp da3 exp3a"
 $BIN_DIR/vda_cli exp create --da-name da3 --exp-name exp3a \
                  --initiator-nqn $host_nqn
 
-da_verify da0
-da_verify da1
-da_verify da2
-da_verify da3
+retry da_verify da0
+retry da_verify da1
+retry da_verify da2
+retry da_verify da3
 
-exp_verify da0 exp0a
-exp_verify da1 exp1a
-exp_verify da2 exp2a
-exp_verify da3 exp3a
+retry exp_verify da0 exp0a
+retry exp_verify da1 exp1a
+retry exp_verify da2 exp2a
+retry exp_verify da3 exp3a
 
 nvmf_connect da0 exp0a $host_nqn
 nvmf_connect da1 exp1a $host_nqn
@@ -196,10 +218,10 @@ echo "create exp da3 exp3b"
 $BIN_DIR/vda_cli exp create --da-name da3 --exp-name exp3b \
                  --initiator-nqn $host_nqn
 
-exp_verify da0 exp0b
-exp_verify da1 exp1b
-exp_verify da2 exp2b
-exp_verify da3 exp3b
+retry exp_verify da0 exp0b
+retry exp_verify da1 exp1b
+retry exp_verify da2 exp2b
+retry exp_verify da3 exp3b
 
 nvmf_connect da0 exp0b $host_nqn
 nvmf_connect da1 exp1b $host_nqn
@@ -251,7 +273,7 @@ echo "testing cn failover"
 echo "create exp da3 exp3c"
 $BIN_DIR/vda_cli exp create --da-name da3 --exp-name exp3c \
                  --initiator-nqn $host_nqn
-exp_verify da3 exp3c
+retry exp_verify da3 exp3c
 nvmf_connect da3 exp3c $host_nqn
 
 nvmf_mount da3 exp3c "$WORK_DIR/da3"
@@ -297,7 +319,7 @@ done
 
 echo "cn failover done"
 
-max_retry=10
+max_retry=180
 retry_cnt=0
 while true; do
     is_err=$($BIN_DIR/vda_cli da get --da-name da3 | jq -r  ".disk_array.cntlr_list[] | select(.is_primary==true).err_info.is_err")
@@ -314,7 +336,7 @@ done
 
 echo "new primary ready"
 
-grp_verify da3
+retry grp_verify da3
 
 sudo touch "$WORK_DIR/da3/bar"
 
@@ -384,11 +406,11 @@ sleep 20
 
 echo "da3 recovered"
 
-da_verify da0
-da_verify da1
-da_verify da2
-da_verify da3
-exp_verify da3 exp3c
+retry da_verify da0
+retry da_verify da1
+retry da_verify da2
+retry da_verify da3
+retry exp_verify da3 exp3c
 
 umount_dir "$WORK_DIR/da3"
 

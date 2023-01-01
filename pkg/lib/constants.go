@@ -18,17 +18,16 @@ const (
 	DnSucceedCode      = 1
 	DnSucceedMsg       = "succeed"
 	DnOldRevErrCode    = 2
-	DnOutOfSyncErrCode = 3
-	DnLockErrCode      = 4
+	DnTryLockErrCode   = 3
 
 	CnSucceedCode      = 1
 	CnSucceedMsg       = "succeed"
 	CnOldRevErrCode    = 2
-	CnOutOfSyncErrCode = 3
-	CnLockErrCode      = 4
+	CnTryLockErrCode   = 3
 
 	ResUninitMsg = "uninit"
 	ResNoInfoMsg = "no info"
+	FailoverMsg  = "failover"
 
 	DefaultVdaPrefix = "vda"
 	DefaultNqnPrefix = "nqn.2016-06.io.vda"

@@ -225,6 +225,7 @@ func (alloc *Allocator) allocCn(cnCtx *cnContext) error {
 		}
 		for _, item := range gr.Kvs[startIdx:] {
 			key := string(item.Key)
+			logger.Debug("allocCn key: %s", key)
 			lastKey = key
 			startIdx = 1
 			val := item.Value
@@ -246,6 +247,7 @@ func (alloc *Allocator) allocCn(cnCtx *cnContext) error {
 			if attr.Location != "" {
 				_, ok := cnCtx.locMap[attr.Location]
 				if ok {
+					logger.Debug("allocCn ignore due to location conflict")
 					continue
 				}
 			}
@@ -265,14 +267,18 @@ func (alloc *Allocator) allocCn(cnCtx *cnContext) error {
 				continue
 			}
 			if controllerNode.CnConf.IsOffline {
+				logger.Debug("allocCn ignore due to offline")
 				continue
 			}
 			if controllerNode.CnInfo.ErrInfo.IsErr {
+				logger.Debug("allocCn ignore due to err: %v",
+					controllerNode.CnInfo.ErrInfo)
 				continue
 			}
 			cand := &CnCand{
 				SockAddr: sockAddr,
 			}
+			logger.Debug("alloCn add cand: %v", cand)
 			cnCtx.candList = append(cnCtx.candList, cand)
 			if attr.Location != "" {
 				cnCtx.locMap[attr.Location] = true

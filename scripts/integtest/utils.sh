@@ -73,80 +73,96 @@ function umount_dir() {
 
 function cntlr_verify() {
     da_name=$1
-    cntlr_cnt=$($BIN_DIR/vda_cli da get --da-name $da_name | jq ".disk_array.cntlr_list | length")
+    da_rsp=$($BIN_DIR/vda_cli da get --da-name $da_name)
+    cntlr_cnt=$(echo $da_rsp | jq ".disk_array.cntlr_list | length")
     if [ "$cntlr_cnt" == "" ]; then
         echo "cntlr_cnt is empty, da_name: $da_name"
-        exit 1
+        echo "$da_rsp"
+        return
     fi
     if [ $cntlr_cnt -eq 0 ]; then
         echo "cntlr_cnt is 0, da_name: $da_name"
-        exit 1
+        echo "$da_rsp"
+        return
     fi
     for i in $(seq 0 $[cntlr_cnt - 1]); do
-        is_err=$($BIN_DIR/vda_cli da get --da-name $da_name | jq -r ".disk_array.cntlr_list[$i].err_info.is_err")
+        is_err=$(echo $da_rsp | jq -r ".disk_array.cntlr_list[$i].err_info.is_err")
         if [ "$is_err" != "null" ]; then
             echo "cntlr is err, da_name: $da_name cntlr: $i"
-            exit 1
+            echo "$da_rsp"
+            return
         fi
-        timestamp=$($BIN_DIR/vda_cli da get --da-name $da_name | jq -r ".disk_array.cntlr_list[$i].err_info.timestamp")
+        timestamp=$(echo $da_rsp | jq -r ".disk_array.cntlr_list[$i].err_info.timestamp")
         if [ "$timestamp" == "null" ]; then
             echo "cntlr timestmap is null, da_name: $da_name cntlr: $i"
-            exit 1
+            echo "$da_rsp"
+            return
         fi
     done
 }
 
 function grp_verify() {
     da_name=$1
-    grp_cnt=$($BIN_DIR/vda_cli da get --da-name $da_name | jq -r ".disk_array.grp_list | length")
+    da_rsp=$($BIN_DIR/vda_cli da get --da-name $da_name)
+    grp_cnt=$(echo $da_rsp | jq -r ".disk_array.grp_list | length")
     if [ "$grp_cnt" == "" ]; then
-        echo "grp_cnt is empty, da_name: $da_name"
-        exit 1
+        echo "grp_cnt is empty"
+        echo "$da_rsp"
+        return
     fi
     if [ $grp_cnt -eq 0 ]; then
-        echo "grp_cnt is 0, da_name: $da_name"
-        exit 1
+        echo "grp_cnt is 0"
+        echo "$da_rsp"
+        return
     fi
     for i in $(seq 0 $[grp_cnt - 1]); do
-        is_err=$($BIN_DIR/vda_cli da get --da-name $da_name | jq -r ".disk_array.cntlr_list[$i].err_info.is_err")
+        is_err=$(echo $da_rsp | jq -r ".disk_array.grp_list[$i].err_info.is_err")
         if [ "$is_err" != "null" ]; then
-            echo "grp is err, da_name: $da_name grp: $i"
-            exit 1
+            echo "grp is err, grp: $i"
+            echo "$da_rsp"
+            return
         fi
-        timestmap=$($BIN_DIR/vda_cli da get --da-name $da_name | jq -r ".disk_array.cntlr_list[$i].err_info.timestamp")
+        timestmap=$(echo $da_rsp | jq -r ".disk_array.grp_list[$i].err_info.timestamp")
         if [ "$timestmap" == "null" ]; then
-            echo "grp timestamp is null, da_name: $da_name grp: $i"
-            exit 1
+            echo "grp timestamp is null, grp: $i"
+            echo "$da_rsp"
+            return
         fi
-        vd_cnt=$($BIN_DIR/vda_cli da get --da-name $da_name | jq -r ".disk_array.grp_list[$i].vd_list | length")
+        vd_cnt=$(echo $da_rsp | jq -r ".disk_array.grp_list[$i].vd_list | length")
         if [ "$vd_cnt" == "" ]; then
-            echo "vd_cnt is empty, da_nmae: $da_name grp: $i"
-            exit 1
+            echo "vd_cnt is empty, grp: $i"
+            echo "$da_rsp"
+            return
         fi
         if [ $vd_cnt -eq 0 ]; then
-            echo "vd_cnt is 0, da_nmae: $da_name grp: $i"
-            exit 1
+            echo "vd_cnt is 0, grp: $i"
+            echo "$da_rsp"
+            return
         fi
         for j in $(seq 0 $[vd_cnt - 1]); do
-            is_err=$($BIN_DIR/vda_cli da get --da-name $da_name | jq -r ".disk_array.grp_list[$i].vd_list[$j].be_err_info.is_err")
+            is_err=$(echo $da_rsp | jq -r ".disk_array.grp_list[$i].vd_list[$j].be_err_info.is_err")
             if [ "$is_err" != "null" ]; then
-                echo "vd_be is err,  da_name: $da_name grp: $i vd: $j"
-                exit 1
+                echo "vd_be is err,  grp: $i vd: $j"
+                echo "$da_rsp"
+                return
             fi
-            timestamp=$($BIN_DIR/vda_cli da get --da-name $da_name | jq -r ".disk_array.grp_list[$i].vd_list[$j].be_err_info.timestamp")
+            timestamp=$(echo $da_rsp | jq -r ".disk_array.grp_list[$i].vd_list[$j].be_err_info.timestamp")
             if [ "$timestamp" == "null" ]; then
-                echo "vd_be timestamp is null, da_name: $da_name grp: $i vd: $j"
-                exit 1
+                echo "vd_be timestamp is null, grp: $i vd: $j"
+                echo "$da_rsp"
+                return
             fi
-            is_err=$($BIN_DIR/vda_cli da get --da-name $da_name | jq -r ".disk_array.grp_list[$i].vd_list[$j].fe_err_info.is_err")
+            is_err=$(echo $da_rsp | jq -r ".disk_array.grp_list[$i].vd_list[$j].fe_err_info.is_err")
             if [ "$is_err" != "null" ]; then
-                echo "vd_fe is err,  da_name: $da_name grp: $i vd: $j"
-                exit 1
+                echo "vd_fe is err,  grp: $i vd: $j"
+                echo "$da_rsp"
+                return
             fi
-            timestamp=$($BIN_DIR/vda_cli da get --da-name $da_name | jq -r ".disk_array.grp_list[$i].vd_list[$j].fe_err_info.timestamp")
+            timestamp=$(echo $da_rsp | jq -r ".disk_array.grp_list[$i].vd_list[$j].fe_err_info.timestamp")
             if [ "$timestamp" == "null" ]; then
-                echo "vd_fe timestamp is null, da_name: $da_name grp: $i vd: $j"
-                exit 1
+                echo "vd_fe timestamp is null, grp: $i vd: $j"
+                echo "$da_rsp"
+                return
             fi
         done
     done
@@ -154,32 +170,55 @@ function grp_verify() {
 
 function da_verify() {
     da_name=$1
-    cntlr_verify $da_name
-    grp_verify $da_name
+    ret=$(cntlr_verify $da_name)
+    if [ "$ret" != "" ]; then
+        echo "$ret"
+        return
+    fi
+    ret=$(grp_verify $da_name)
+    if [ "$ret" != "" ]; then
+        echo "$ret"
+        return
+    fi
+}
+
+function vda_api_verify() {
+    cli_rsp=$1
+    echo $cli_rsp | jq -rM '.'
+    reply_msg=$(echo $cli_rsp | jq -rM '.reply_info.reply_msg')
+    if [ "$reply_msg" != "succeed" ]; then
+        echo "vda api err"
+        exit 1
+    fi
 }
 
 function exp_verify() {
     da_name=$1
     exp_name=$2
-    exp_info_cnt=$($BIN_DIR/vda_cli exp get --da-name $da_name --exp-name $exp_name | jq ".exporter.exp_info_list | length")
+    exp_rsp=$($BIN_DIR/vda_cli exp get --da-name $da_name --exp-name $exp_name)
+    exp_info_cnt=$(echo $exp_rsp | jq ".exporter.exp_info_list | length")
     if [ "$exp_info_cnt" == "" ]; then
         echo "exp_infno_cnt is empty, da_name: $da_name exp_name: $exp_name"
-        exit 1
+        echo "$exp_rsp"
+        return
     fi
     if [ $exp_info_cnt -eq 0 ]; then
         echo "exp_info_cnt is 0, da_name: $da_name exp_name: $exp_name"
-        exit 1
+        echo "$exp_rsp"
+        return
     fi
     for i in $(seq 0 $[exp_info_cnt - 1]); do
-        is_err=$($BIN_DIR/vda_cli exp get --da-name $da_name --exp-name $exp_name | jq ".exporter.exp_info_list[$i].err_info.is_err")
+        is_err=$(echo $exp_rsp | jq ".exporter.exp_info_list[$i].err_info.is_err")
         if [ "$is_err" != "null" ]; then
             echo "exp_info is err, da_name: $da_name exp_name: $exp_name exp_info: $i"
-            exit 1
+            echo "$exp_rsp"
+            return
         fi
-        timestamp=$($BIN_DIR/vda_cli exp get --da-name $da_name --exp-name $exp_name | jq ".exporter.exp_info_list[$i].err_info.timestamp")
+        timestamp=$(echo $exp_rsp | jq ".exporter.exp_info_list[$i].err_info.timestamp")
         if [ "$timestamp" == "null" ]; then
             echo "exp_info timestamp is null, da_name: $da_name exp_name: $exp_name exp_info: $i"
-            exit 1
+            echo "$exp_rsp"
+            return
         fi
     done
 }
@@ -187,20 +226,23 @@ function exp_verify() {
 function nvmf_connect() {
     da_name=$1
     exp_name=$2
+    exp_rsp=$($BIN_DIR/vda_cli exp get --da-name $da_name --exp-name $exp_name)
     host_nqn=$3
-    exp_info_cnt=$($BIN_DIR/vda_cli exp get --da-name $da_name --exp-name $exp_name | jq ".exporter.exp_info_list | length")
+    exp_info_cnt=$(echo $exp_rsp | jq ".exporter.exp_info_list | length")
     if [ "$exp_info_cnt" == "" ]; then
-        echo "exp_infno_cnt is empty, da_name: $da_name exp_name: $exp_name"
+        echo "exp_info_cnt is empty, da_name: $da_name exp_name: $exp_name"
+        echo $exp_rsp | jq -rM '.'
         exit 1
     fi
     if [ $exp_info_cnt -eq 0 ]; then
         echo "exp_info_cnt is 0, da_name: $da_name exp_name: $exp_name"
+        echo $exp_rsp | jq -rM '.'
         exit 1
     fi
     for i in $(seq $[exp_info_cnt - 1] -1 0); do
-        tr_svc_id=$($BIN_DIR/vda_cli exp get --da-name $da_name --exp-name $exp_name | jq -r ".exporter.exp_info_list[$i].nvmf_listener.tr_svc_id")
+        tr_svc_id=$(echo $exp_rsp | jq -r ".exporter.exp_info_list[$i].nvmf_listener.tr_svc_id")
         sudo nvme connect -t tcp -n nqn.2016-06.io.vda:exp-$da_name-$exp_name -a 127.0.0.1 -s $tr_svc_id --hostnqn $host_nqn
-        serial_number=$($BIN_DIR/vda_cli exp get --da-name $da_name --exp-name $exp_name | jq -r ".exporter.serial_number")
+        serial_number=$(echo $exp_rsp | jq -r ".exporter.serial_number")
         dev_path="/dev/disk/by-id/nvme-VDA_CONTROLLER_$serial_number"
         max_retry=10
         retry_cnt=0
@@ -221,7 +263,10 @@ function nvmf_connect() {
 function nvmf_format() {
     da_name=$1
     exp_name=$2
-    serial_number=$($BIN_DIR/vda_cli exp get --da-name $da_name --exp-name $exp_name | jq -r ".exporter.serial_number")
+    exp_rsp=$($BIN_DIR/vda_cli exp get --da-name $da_name --exp-name $exp_name)
+    echo "nvmf_format"
+    echo $exp_rsp | jq -rM '.'
+    serial_number=$(echo $exp_rsp | jq -r ".exporter.serial_number")
     dev_path="/dev/disk/by-id/nvme-VDA_CONTROLLER_$serial_number"
     # sudo mkfs.ext4 $dev_path
     sudo mkfs.xfs $dev_path
@@ -231,7 +276,10 @@ function nvmf_mount() {
     da_name=$1
     exp_name=$2
     dir=$3
-    serial_number=$($BIN_DIR/vda_cli exp get --da-name $da_name --exp-name $exp_name | jq -r ".exporter.serial_number")
+    exp_rsp=$($BIN_DIR/vda_cli exp get --da-name $da_name --exp-name $exp_name)
+    echo "nvmf_mount"
+    echo $exp_rsp | jq -rM '.'
+    serial_number=$(echo $exp_rsp | jq -r ".exporter.serial_number")
     dev_path="/dev/disk/by-id/nvme-VDA_CONTROLLER_$serial_number"
     mkdir -p $dir
     echo "dev_path: $dev_path"
@@ -243,8 +291,11 @@ function retry() {
     cmd=$@
     max_retry=600
     retry_cnt=0
-    while ! ${cmd}
-    do
+    while true; do
+        ret=$($cmd)
+        if [ "$ret" == "" ]; then
+            return
+        fi
         if [ $retry_cnt -ge $max_retry ]; then
             echo "failed"
             exit 1

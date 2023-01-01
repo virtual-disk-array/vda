@@ -168,12 +168,19 @@ func (sm *SyncupManager) buildSyncupDnRequest(
 }
 
 func (sm *SyncupManager) getDnRsp(reply *pbdn.SyncupDnReply, idToRes *dnIdToRes) {
+	if reply.DnRsp == nil {
+		return
+	}
 	dnRsp := reply.DnRsp
 	idToRes.idToDn[dnRsp.DnId] = dnRsp
-	for _, pdRsp := range dnRsp.PdRspList {
-		idToRes.idToPd[pdRsp.PdId] = pdRsp
-		for _, vdBeRsp := range pdRsp.VdBeRspList {
-			idToRes.idToVdBe[vdBeRsp.VdId] = vdBeRsp
+	if dnRsp.PdRspList != nil {
+		for _, pdRsp := range dnRsp.PdRspList {
+			idToRes.idToPd[pdRsp.PdId] = pdRsp
+			if pdRsp.VdBeRspList != nil {
+				for _, vdBeRsp := range pdRsp.VdBeRspList {
+					idToRes.idToVdBe[vdBeRsp.VdId] = vdBeRsp
+				}
+			}
 		}
 	}
 }
@@ -293,6 +300,8 @@ func (sm *SyncupManager) writeDnInfo(diskNode *pbds.DiskNode, capDiffList []*cap
 			stm.Del(dnErrKey)
 		}
 		for _, cd := range capDiffList {
+			logger.Debug("Dn capacity change 1, old: %s new: %s",
+				cd.old, cd.new)
 			stm.Del(cd.old)
 			stm.Put(cd.new, cd.val)
 		}
@@ -556,24 +565,39 @@ func (sm *SyncupManager) syncupCn(sockAddr string, ctx context.Context,
 }
 
 func (sm *SyncupManager) getCnRsp(reply *pbcn.SyncupCnReply, idToRes *cnIdToRes) {
+	if reply.CnRsp == nil {
+		return
+	}
 	cnRsp := reply.CnRsp
 	idToRes.idToCn[cnRsp.CnId] = cnRsp
-	for _, cntlrFeRsp := range cnRsp.CntlrFeRspList {
-		idToRes.idToCntlrFe[cntlrFeRsp.CntlrId] = cntlrFeRsp
-		for _, grpFeRsp := range cntlrFeRsp.GrpFeRspList {
-			idToRes.idToGrpFe[grpFeRsp.GrpId] = grpFeRsp
-			for _, vdFeRsp := range grpFeRsp.VdFeRspList {
-				idToRes.idToVdFe[vdFeRsp.VdId] = vdFeRsp
+	if cnRsp.CntlrFeRspList != nil {
+		for _, cntlrFeRsp := range cnRsp.CntlrFeRspList {
+			idToRes.idToCntlrFe[cntlrFeRsp.CntlrId] = cntlrFeRsp
+			if cntlrFeRsp.GrpFeRspList != nil {
+				for _, grpFeRsp := range cntlrFeRsp.GrpFeRspList {
+					idToRes.idToGrpFe[grpFeRsp.GrpId] = grpFeRsp
+					if grpFeRsp.VdFeRspList != nil {
+						for _, vdFeRsp := range grpFeRsp.VdFeRspList {
+							idToRes.idToVdFe[vdFeRsp.VdId] = vdFeRsp
+						}
+					}
+				}
 			}
-		}
-		for _, snapFeRsp := range cntlrFeRsp.SnapFeRspList {
-			idToRes.idToSnapFe[snapFeRsp.SnapId] = snapFeRsp
-		}
-		for _, expFeRsp := range cntlrFeRsp.ExpFeRspList {
-			idToRes.idToExpFe[expFeRsp.ExpId] = expFeRsp
-		}
-		for _, mtFeRsp := range cntlrFeRsp.MtFeRspList {
-			idToRes.idToMtFe[mtFeRsp.MtId] = mtFeRsp
+			if cntlrFeRsp.SnapFeRspList != nil {
+				for _, snapFeRsp := range cntlrFeRsp.SnapFeRspList {
+					idToRes.idToSnapFe[snapFeRsp.SnapId] = snapFeRsp
+				}
+			}
+			if cntlrFeRsp.ExpFeRspList != nil {
+				for _, expFeRsp := range cntlrFeRsp.ExpFeRspList {
+					idToRes.idToExpFe[expFeRsp.ExpId] = expFeRsp
+				}
+			}
+			if cntlrFeRsp.MtFeRspList != nil {
+				for _, mtFeRsp := range cntlrFeRsp.MtFeRspList {
+					idToRes.idToMtFe[mtFeRsp.MtId] = mtFeRsp
+				}
+			}
 		}
 	}
 }

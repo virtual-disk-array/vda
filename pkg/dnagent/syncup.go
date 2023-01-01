@@ -246,9 +246,10 @@ func newSyncupHelper(lisConf *lib.LisConf, nf *lib.NameFmt, sc *lib.SpdkClient) 
 func (dnAgent *dnAgentServer) SyncupDn(ctx context.Context, req *pbdn.SyncupDnRequest) (
 	*pbdn.SyncupDnReply, error) {
 	if !dnMutex.TryLock() {
+		logger.Warning("Can not get lock")
 		return &pbdn.SyncupDnReply{
 			ReplyInfo: &pbdn.ReplyInfo{
-				ReplyCode: lib.DnLockErrCode,
+				ReplyCode: lib.DnTryLockErrCode,
 				ReplyMsg: "Can not get lock",
 			},
 		}, nil
@@ -257,6 +258,8 @@ func (dnAgent *dnAgentServer) SyncupDn(ctx context.Context, req *pbdn.SyncupDnRe
 	logger.Debug("SyncupDn get lock")
 	currVersion := atomic.LoadUint64(&lastVersion)
 	if req.Version < currVersion {
+		logger.Warning("received rev: %d, current rev: %d",
+			req.Version, currVersion)
 		return &pbdn.SyncupDnReply{
 			ReplyInfo: &pbdn.ReplyInfo{
 				ReplyCode: lib.DnOldRevErrCode,
