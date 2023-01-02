@@ -281,6 +281,7 @@ _pt_complete_io(struct spdk_bdev_io *bdev_io, bool success, void *cb_arg)
 	/* Complete the original IO and then free the one that we created here
 	 * as a result of issuing an IO via submit_request.
 	 */
+	SPDK_DEBUGLOG(vbdev_susres, "complete_io: %p\n", bdev_io);
 	spdk_bdev_io_complete(orig_io, status);
 	susres_io_complete_hook(pt_node);
 	spdk_bdev_free_io(bdev_io);
@@ -356,11 +357,13 @@ pt_read_get_buf_cb(struct spdk_io_channel *ch, struct spdk_bdev_io *bdev_io, boo
 	}
 
 	if (bdev_io->u.bdev.md_buf == NULL) {
+		SPDK_DEBUGLOG(vbdev_susres, "readv_blocks: %p\n", bdev_io);
 		rc = spdk_bdev_readv_blocks(pt_node->base_desc, pt_ch->base_ch, bdev_io->u.bdev.iovs,
 					    bdev_io->u.bdev.iovcnt, bdev_io->u.bdev.offset_blocks,
 					    bdev_io->u.bdev.num_blocks, _pt_complete_io,
 					    bdev_io);
 	} else {
+		SPDK_DEBUGLOG(vbdev_susres, "readv_blocks_with_md: %p\n", bdev_io);
 		rc = spdk_bdev_readv_blocks_with_md(pt_node->base_desc, pt_ch->base_ch,
 						    bdev_io->u.bdev.iovs, bdev_io->u.bdev.iovcnt,
 						    bdev_io->u.bdev.md_buf,
@@ -395,12 +398,14 @@ vbdev_susres_submit_request(struct spdk_io_channel *ch, struct spdk_bdev_io *bde
 	int rc = 0;
 	struct susres_thread_ctx *thread_ctx = vbdev_susres_get_thread_ctx(pt_node);
 	if (thread_ctx->status != SUSRES_STATUS_RESUMED) {
+		SPDK_INFOLOG(vbdev_susres, "suspend io: %p\n", bdev_io);
 		TAILQ_INSERT_TAIL(&thread_ctx->io_queue, io_ctx, link);
 		return;
 	}
 
 	thread_ctx->inflight++;
 
+	SPDK_DEBUGLOG(vbdev_susres, "submit_request: %p %d\n", bdev_io, bdev_io->type);
 	switch (bdev_io->type) {
 	case SPDK_BDEV_IO_TYPE_READ:
 		spdk_bdev_io_get_buf(bdev_io, pt_read_get_buf_cb,
