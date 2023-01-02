@@ -300,7 +300,7 @@ if [ "$primary_pid" == "" ]; then
 fi
 kill $primary_pid
 spdk_pid=$(ps -ef | grep vda_dataplane | grep $cn_name | grep -v sudo | awk '{print $2}')
-sudo kill -9 $spdk_pid
+sudo kill $spdk_pid
 echo "waiting for cn failover"
 max_retry=10
 retry_cnt=0
@@ -319,7 +319,7 @@ done
 
 echo "cn failover done"
 
-max_retry=180
+max_retry=10
 retry_cnt=0
 while true; do
     is_err=$($BIN_DIR/vda_cli da get --da-name da3 | jq -r  ".disk_array.cntlr_list[] | select(.is_primary==true).err_info.is_err")
@@ -394,15 +394,12 @@ while true; do
         break
     fi
     if [ $retry_cnt -ge $max_retry ]; then
-        killall vda_monitor
         echo "da3 recover timeout"
         exit 1
     fi
     sleep 5
     ((retry_cnt=retry_cnt+1))
 done
-
-sleep 20
 
 echo "da3 recovered"
 
