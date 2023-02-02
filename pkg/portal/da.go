@@ -233,10 +233,13 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 		}
 		if req.DaConf.Redundancy != nil {
 			switch x := req.DaConf.Redundancy.(type) {
-			case *pbpo.DaConf_Raid1Conf:
-				diskArray.DaConf.Redundancy = &pbds.DaConf_Raid1Conf{
-					Raid1Conf: &pbds.Raid1Conf{
-						BitSizeKb: x.Raid1Conf.BitSizeKb,
+			case *pbpo.DaConf_RedunRaid1Conf:
+				diskArray.DaConf.Redundancy = &pbds.DaConf_RedunRaid1Conf{
+					RedunRaid1Conf: &pbds.RedunRaid1Conf{
+						Raid1Conf: &pbds.Raid1Conf{
+							BitSizeKb: x.RedunRaid1Conf.Raid1Conf.BitSizeKb,
+						},
+						SingleHealthy: lib.SingleHealthyValNone,
 					},
 				}
 			default:
@@ -530,10 +533,13 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 			}
 			if req.DaConf.Redundancy != nil {
 				switch x:= req.DaConf.Redundancy.(type) {
-				case *pbpo.DaConf_Raid1Conf:
-					cntlrFe.CntlrFeConf.Redundancy = &pbds.CntlrFeConf_Raid1Conf{
-						Raid1Conf: &pbds.Raid1Conf{
-							BitSizeKb: x.Raid1Conf.BitSizeKb,
+				case *pbpo.DaConf_RedunRaid1Conf:
+					cntlrFe.CntlrFeConf.Redundancy = &pbds.CntlrFeConf_RedunRaid1Conf{
+						RedunRaid1Conf: &pbds.RedunRaid1Conf{
+							Raid1Conf: &pbds.Raid1Conf{
+								BitSizeKb: x.RedunRaid1Conf.Raid1Conf.BitSizeKb,
+							},
+							SingleHealthy: lib.SingleHealthyValNone,
 						},
 					}
 				}
@@ -604,7 +610,7 @@ func (po *portalServer) createNewDa(ctx context.Context, req *pbpo.CreateDaReque
 	}
 	if req.DaConf.Redundancy != nil {
 		switch x:= req.DaConf.Redundancy.(type) {
-		case *pbpo.DaConf_Raid1Conf:
+		case *pbpo.DaConf_RedunRaid1Conf:
 			vdCnt = vdCnt * 2
 			qos.RwIosPerSec = qos.RwIosPerSec * 1
 			qos.RwMbytesPerSec = qos.RwMbytesPerSec * 1
@@ -737,9 +743,9 @@ func (po *portalServer) CreateDa(ctx context.Context, req *pbpo.CreateDaRequest)
 	}
 	if req.DaConf.Redundancy != nil {
 		switch x := req.DaConf.Redundancy.(type) {
-		case *pbpo.DaConf_Raid1Conf:
-			if x.Raid1Conf.BitSizeKb == 0 {
-				x.Raid1Conf.BitSizeKb = lib.DefaultBitSizeKb
+		case *pbpo.DaConf_RedunRaid1Conf:
+			if x.RedunRaid1Conf.Raid1Conf.BitSizeKb == 0 {
+				x.RedunRaid1Conf.Raid1Conf.BitSizeKb = lib.DefaultBitSizeKb
 			}
 		default:
 			logger.Warning("Unknow redundancy: %v", x)
@@ -1666,10 +1672,13 @@ func (po *portalServer) GetDa(ctx context.Context, req *pbpo.GetDaRequest) (
 			GrpList:   grpList,
 		}
 		switch x := diskArray.DaConf.Redundancy.(type) {
-		case *pbds.DaConf_Raid1Conf:
-			da.DaConf.Redundancy = &pbpo.DaConf_Raid1Conf{
-				Raid1Conf: &pbpo.Raid1Conf{
-					BitSizeKb: x.Raid1Conf.BitSizeKb,
+		case *pbds.DaConf_RedunRaid1Conf:
+			da.DaConf.Redundancy = &pbpo.DaConf_RedunRaid1Conf{
+				RedunRaid1Conf: &pbpo.RedunRaid1Conf{
+					Raid1Conf: &pbpo.Raid1Conf{
+						BitSizeKb: x.RedunRaid1Conf.Raid1Conf.BitSizeKb,
+					},
+					SingleHealthy: x.RedunRaid1Conf.SingleHealthy,
 				},
 			}
 		default:

@@ -106,6 +106,16 @@ message Raid1Info {
   string status =  6;
 }
 
+message RedunRaid1Conf {
+  Raid1Conf raid1_conf = 1;
+  string single_healthy = 2;
+}
+
+message RedunRaid1Info {
+  Raid1Info raid1_info = 1;
+  string single_healthy_action = 2;
+}
+
 message TaskDescriptor {
   uint64 start_time = 1;
   uint64 stop_time = 2;
@@ -353,14 +363,14 @@ message DaConf {
   LvsConf lvs_conf = 4;
   Raid0Conf raid0_conf = 5;
   oneof redundancy {
-    Raid1Conf raid1_conf = 6;
+    RedunRaid1Conf redun_raid1_conf = 6;
   }
 }
 
 message DaInfo {
   LvsInfo lvs_info = 1;
   oneof redundancy {
-    Raid1Info raid1_info = 2;
+    RedunRaid1Info redun_raid1_info = 2;
   }
 }
 

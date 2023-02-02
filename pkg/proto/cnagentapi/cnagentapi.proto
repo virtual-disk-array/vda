@@ -49,6 +49,16 @@ message Raid1Info {
   string status =  6;
 }
 
+message RedunRaid1Conf {
+  Raid1Conf raid1_conf = 1;
+  string single_healthy = 2;
+}
+
+message RedunRaid1Info {
+  Raid1Info raid1_info = 1;
+  string single_healthy_action = 2;
+}
+
 message NvmfListener {
   string tr_type = 1;
   string adr_fam = 2;
@@ -175,7 +185,7 @@ message CntlrFeConf {
   LvsConf lvs_conf = 4;
   Raid0Conf raid0_conf = 5;
   oneof redundancy {
-    Raid1Conf raid1_conf = 6;
+    RedunRaid1Conf redun_raid1_conf = 6;
   }
 }
 
@@ -183,7 +193,7 @@ message CntlrFeInfo {
   ErrInfo err_info = 1;
   LvsInfo lvs_info = 2;
   oneof redundancy {
-    Raid1Info raid1_info = 3;
+    RedunRaid1Info redun_raid1_info = 3;
   }
 }
 
@@ -241,7 +251,7 @@ message CnReq {
 message SyncupCnRequest {
   string req_id = 1;
   uint64 version = 2;
-  bool no_delete = 3;
+  bool check_only = 3;
   CnReq cn_req = 4;
 }
 

@@ -82,4 +82,12 @@ const (
 	ConcatStripSizeKb = uint32(4)
 
 	RaidLevelConcat = "concat"
+
+	SingleHealthyValNone = "None"
+	SingleHealhtyValLeg0 = "Leg0"
+	SingleHealhtyValLeg1 = "Leg1"
+	SingleHealhtyActNone = "SetNone"
+	SingleHealthyActLeg0 = "SetLeg0"
+	SingleHealthyActLeg1 = "SetLeg1"
+	SingleHealthyActNoChange = "NoChange"
 )

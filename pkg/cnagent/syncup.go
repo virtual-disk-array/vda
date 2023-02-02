@@ -223,7 +223,7 @@ func (sh *syncupHelper) syncupGrpFe(cntlrFeReq *pbcn.CntlrFeReq,
 		}
 	} else {
 		switch x := cntlrFeReq.CntlrFeConf.Redundancy.(type) {
-		case *pbcn.CntlrFeConf_Raid1Conf:
+		case *pbcn.CntlrFeConf_RedunRaid1Conf:
 			var leg0, leg1 string
 			for i, bdevName := range vdSusresList {
 				if i % 2 == 0 {
@@ -238,7 +238,7 @@ func (sh *syncupHelper) syncupGrpFe(cntlrFeReq *pbcn.CntlrFeReq,
 					if grpFeErr != nil {
 						grpFeErr = sh.oc.CreateRaid1Bdev(
 							raid1BdevName, leg0, leg1,
-							x.Raid1Conf.BitSizeKb)
+							x.RedunRaid1Conf.Raid1Conf.BitSizeKb)
 					}
 				}
 			}
