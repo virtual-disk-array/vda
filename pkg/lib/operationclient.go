@@ -3,7 +3,7 @@ package lib
 import (
 	"fmt"
 	"strings"
-	"time"
+	// "time"
 
 	"github.com/virtual-disk-array/vda/pkg/logger"
 )
@@ -1430,63 +1430,74 @@ func (oc *OperationClient) DeleteDaLvs(daLvsName string) error {
 	return oc.deleteLvs(daLvsName)
 }
 
+// fixme
 func (oc *OperationClient) CreateDaLvs(daLvsName, aggBdevName string,
-	clusterSize uint32, extendRatio uint32) error {
-	logger.Info("CreateDaLvs: daLvsName %v aggBdevName %v",
-		daLvsName, aggBdevName)
-	exist, err := oc.lvsExist(daLvsName)
-	if err != nil {
-		return err
-	}
-	if exist {
-		return nil
-	}
-
-	params := &struct {
-		LvsName                   string `json:"lvs_name"`
-		BdevName                  string `json:"bdev_name"`
-		ClearMethod               string `json:"clear_method"`
-		ClusterSz                 uint32 `json:"cluster_sz"`
-		NumMdPagesPerClusterRatio uint32 `json:"num_md_pages_per_cluster_ratio"`
-	}{
-		LvsName:                   daLvsName,
-		BdevName:                  aggBdevName,
-		ClearMethod:               "none",
-		ClusterSz:                 clusterSize,
-		NumMdPagesPerClusterRatio: extendRatio,
-	}
-	rsp := &struct {
-		Error *spdkErr `json:"error"`
-	}{}
-	err = oc.sc.Invoke("bdev_lvol_create_lvstore", params, rsp)
-	if err != nil {
-		logger.Error("bdev_lvol_create_lvstore failed: %v", err)
-		return err
-	}
-	if rsp.Error != nil {
-		logger.Error("bdev_lvol_create_lvstore rsp err: %v", *rsp.Error)
-		return fmt.Errorf("bdev_lvol_create_lvstore rsp err: %d %s",
-			rsp.Error.Code, rsp.Error.Message)
-	}
-	return nil
+	clusterSize uint32, extendRatio uint32) (*LvsInfo, error) {
+	return nil, nil
 }
 
-func (oc *OperationClient) WaitForLvs(daLvsName string) error {
-	logger.Info("WaitForLvs: daLvsName %s", daLvsName)
-
-	for i := 0; i < 10; i++ {
-		exist, err := oc.lvsExist(daLvsName)
-		if err != nil {
-			return err
-		}
-		if exist {
-			return nil
-		}
-		time.Sleep(100*time.Millisecond)
-	}
-	logger.Warning("Can not find lvs: %s", daLvsName)
-	return fmt.Errorf("Can not find lvs: %s", daLvsName)
+// fixme
+func (oc *OperationClient) WaitForLvs(daLvsName string) (*LvsInfo, error) {
+	return nil, nil
 }
+
+// func (oc *OperationClient) CreateDaLvs(daLvsName, aggBdevName string,
+// 	clusterSize uint32, extendRatio uint32) *LvsInfo, error {
+// 	logger.Info("CreateDaLvs: daLvsName %v aggBdevName %v",
+// 		daLvsName, aggBdevName)
+// 	exist, err := oc.lvsExist(daLvsName)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	if exist {
+// 		return nil, nil
+// 	}
+
+// 	params := &struct {
+// 		LvsName                   string `json:"lvs_name"`
+// 		BdevName                  string `json:"bdev_name"`
+// 		ClearMethod               string `json:"clear_method"`
+// 		ClusterSz                 uint32 `json:"cluster_sz"`
+// 		NumMdPagesPerClusterRatio uint32 `json:"num_md_pages_per_cluster_ratio"`
+// 	}{
+// 		LvsName:                   daLvsName,
+// 		BdevName:                  aggBdevName,
+// 		ClearMethod:               "none",
+// 		ClusterSz:                 clusterSize,
+// 		NumMdPagesPerClusterRatio: extendRatio,
+// 	}
+// 	rsp := &struct {
+// 		Error *spdkErr `json:"error"`
+// 	}{}
+// 	err = oc.sc.Invoke("bdev_lvol_create_lvstore", params, rsp)
+// 	if err != nil {
+// 		logger.Error("bdev_lvol_create_lvstore failed: %v", err)
+// 		return err
+// 	}
+// 	if rsp.Error != nil {
+// 		logger.Error("bdev_lvol_create_lvstore rsp err: %v", *rsp.Error)
+// 		return fmt.Errorf("bdev_lvol_create_lvstore rsp err: %d %s",
+// 			rsp.Error.Code, rsp.Error.Message)
+// 	}
+// 	return nil
+// }
+
+// func (oc *OperationClient) WaitForLvs(daLvsName string) error {
+// 	logger.Info("WaitForLvs: daLvsName %s", daLvsName)
+
+// 	for i := 0; i < 10; i++ {
+// 		exist, err := oc.lvsExist(daLvsName)
+// 		if err != nil {
+// 			return err
+// 		}
+// 		if exist {
+// 			return nil
+// 		}
+// 		time.Sleep(100*time.Millisecond)
+// 	}
+// 	logger.Warning("Can not find lvs: %s", daLvsName)
+// 	return fmt.Errorf("Can not find lvs: %s", daLvsName)
+// }
 
 func (oc *OperationClient) CreateMainLv(daLvsName string, size uint64) error {
 	logger.Info("CreateMainLv: daLvsName %v size %v", daLvsName, size)
@@ -1708,6 +1719,12 @@ func (oc *OperationClient) CreateRaid1Bdev(raid1Name, bdev0Name, bdev1Name strin
 	}
 	return oc.createRaid1Bdev(raid1Name, bdev0Name, bdev1Name,
 		bitSizeKb, 0, false)
+}
+
+// fixme
+func (oc *OperationClient) CreateRedunRaid1Bdev(raid1Name, bdev0Name, bdev1Name string,
+	bitSizeKb uint32, singleHealthyVal string) (*Raid1Info, string, error) {
+	return nil, "", nil
 }
 
 func (oc *OperationClient) GetFeNvmeList(prefix string) ([]string, error) {

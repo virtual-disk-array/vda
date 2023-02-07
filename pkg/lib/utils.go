@@ -67,3 +67,7 @@ func DivCeil(x, y uint64) uint64 {
 func RoundUp(x, y uint64) uint64 {
 	return DivCeil(x, y) * y
 }
+
+func PerRaid1Key(grpIdx uint32, raid1_idx uint32) string {
+	return fmt.Sprintf("%d-%d", grpIdx, raid1_idx)
+}

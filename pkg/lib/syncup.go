@@ -522,12 +522,21 @@ func (sm *SyncupManager) buildSyncupCnRequest(
 		if cntlrFe.CntlrFeConf.Redundancy != nil {
 			switch x := cntlrFe.CntlrFeConf.Redundancy.(type) {
 			case *pbds.CntlrFeConf_RedunRaid1Conf:
+				perRaid1ConfList := make([]*pbcn.PerRaid1Conf, 0)
+				for _, prc := range x.RedunRaid1Conf.PerRaid1ConfList {
+					perRaid1Conf := &pbcn.PerRaid1Conf{
+						GrpIdx: prc.GrpIdx,
+						Raid1Idx: prc.Raid1Idx,
+						SingleHealthyVal: prc.SingleHealthyVal,
+					}
+					perRaid1ConfList = append(perRaid1ConfList, perRaid1Conf)
+				}
 				cntlrFeReq.CntlrFeConf.Redundancy = &pbcn.CntlrFeConf_RedunRaid1Conf{
 					RedunRaid1Conf: &pbcn.RedunRaid1Conf{
 						Raid1Conf: &pbcn.Raid1Conf{
 							BitSizeKb: x.RedunRaid1Conf.Raid1Conf.BitSizeKb,
 						},
-						SingleHealthy: x.RedunRaid1Conf.SingleHealthy,
+						PerRaid1ConfList: perRaid1ConfList,
 					},
 				}
 			default:

@@ -43,6 +43,9 @@ type syncupHelper struct {
 	grpBdevMap   map[string]bool
 	raid0BdevMap map[string]bool
 	raid1BdevMap map[string]bool
+	perRaid1ConfMap map[string]*pbcn.PerRaid1Conf
+	perRaid1InfoList []*pbcn.PerRaid1Info
+	lvsInfo      *pbcn.LvsInfo
 	secNvmeMap   map[string]bool
 	nullBdevMap  map[string]bool
 	idxToMt      map[string]*pbcn.MtFeReq
@@ -232,19 +235,45 @@ func (sh *syncupHelper) syncupGrpFe(cntlrFeReq *pbcn.CntlrFeReq,
 					leg1 = bdevName
 					raid1BdevName := sh.nf.Raid1BdevName(
 						leg0, leg1)
+					raid1Idx := uint32(i / 2)
+					key := lib.PerRaid1Key(
+						grpFeReq.GrpFeConf.GrpIdx, raid1Idx)
+					perRaid1Conf, ok := sh.perRaid1ConfMap[key]
+					if !ok {
+						logger.Error("Can not find perRaid1Conf: %s", key)
+						panic("Can not find perRaid1Conf")
+					}
 					sh.raid1BdevMap[raid1BdevName] = true
 					raid0BdevList = append(
 						raid0BdevList, raid1BdevName)
 					if grpFeErr != nil {
-						grpFeErr = sh.oc.CreateRaid1Bdev(
+						raid1Info, act, grpFeErr := sh.oc.CreateRedunRaid1Bdev(
 							raid1BdevName, leg0, leg1,
-							x.RedunRaid1Conf.Raid1Conf.BitSizeKb)
+							x.RedunRaid1Conf.Raid1Conf.BitSizeKb,
+							perRaid1Conf.SingleHealthyVal)
+						if grpFeErr != nil {
+							perRaid1Info := &pbcn.PerRaid1Info{
+								GrpIdx: grpFeReq.GrpFeConf.GrpIdx,
+								Raid1Idx:  raid1Idx,
+								SingleHealthyAct: act,
+							}
+							if raid1Info != nil {
+								perRaid1Info.Raid1Info = &pbcn.Raid1Info{
+									Bdev0Online: raid1Info.Bdev0Online,
+									Bdev1Online: raid1Info.Bdev1Online,
+									TotalBit: raid1Info.TotalBit,
+									SyncedBit: raid1Info.SyncedBit,
+									ResyncIoCnt: raid1Info.ResyncIoCnt,
+									Status: raid1Info.Status,
+								}
+							}
+							sh.perRaid1InfoList = append(sh.perRaid1InfoList, perRaid1Info)
+						}
 					}
 				}
 			}
 		default:
-			logger.Warning("Unknow redundancy: %v", x)
-			grpFeErr = fmt.Errorf("UnknowRedundancyError")
+			panic("Unknow redundancy")
 		}
 	}
 
@@ -358,6 +387,22 @@ func (sh *syncupHelper) syncupPrimary(cntlrFeReq *pbcn.CntlrFeReq,
 	snapFeRspList := make([]*pbcn.SnapFeRsp, 0)
 	expFeRspList := make([]*pbcn.ExpFeRsp, 0)
 
+	if cntlrFeReq.CntlrFeConf.Redundancy != nil {
+		switch x := cntlrFeReq.CntlrFeConf.Redundancy.(type) {
+		case *pbcn.CntlrFeConf_RedunRaid1Conf:
+			sh.perRaid1ConfMap = make(map[string]*pbcn.PerRaid1Conf)
+			for _, perRaid1Conf := range x.RedunRaid1Conf.PerRaid1ConfList {
+				key := lib.PerRaid1Key(
+					perRaid1Conf.GrpIdx, perRaid1Conf.Raid1Idx)
+				sh.perRaid1ConfMap[key] = perRaid1Conf
+			}
+			sh.perRaid1InfoList = make([]*pbcn.PerRaid1Info, 0)
+		default:
+			logger.Warning("Unknow redundancy: %v", x)
+			panic("Unknow redundancy")
+		}
+	}
+	sh.lvsInfo = nil
 	sh.idxToMt = make(map[string]*pbcn.MtFeReq)
 	for _, mtFeReq := range cntlrFeReq.MtFeReqList {
 		key := mtKey(mtFeReq.MtFeConf.GrpIdx, mtFeReq.MtFeConf.VdIdx)
@@ -391,14 +436,19 @@ func (sh *syncupHelper) syncupPrimary(cntlrFeReq *pbcn.CntlrFeReq,
 	daLvsName := sh.nf.DaLvsName(cntlrFeReq.CntlrFeConf.DaId)
 	sh.daLvsMap[daLvsName] = true
 	if cntlrFeErr == nil {
+		var lvsInfo *lib.LvsInfo
 		if cntlrFeReq.IsInited {
-			cntlrFeErr = sh.oc.WaitForLvs(daLvsName)
+			lvsInfo, cntlrFeErr = sh.oc.WaitForLvs(daLvsName)
 		} else {
-			cntlrFeErr = sh.oc.CreateDaLvs(daLvsName, aggBdevName,
+			lvsInfo, cntlrFeErr = sh.oc.CreateDaLvs(daLvsName, aggBdevName,
 				cntlrFeReq.CntlrFeConf.LvsConf.ClusterSize,
 				cntlrFeReq.CntlrFeConf.LvsConf.ExtendRatio)
 		}
 		if cntlrFeErr == nil {
+			sh.lvsInfo = &pbcn.LvsInfo{
+				TotalDataClusters: lvsInfo.TotalDataClusters,
+				FreeClusters:  lvsInfo.FreeClusters,
+			}
 			sh.oc.CreateMainLv(daLvsName, cntlrFeReq.CntlrFeConf.Size)
 		}
 	}
@@ -425,11 +475,24 @@ func (sh *syncupHelper) syncupPrimary(cntlrFeReq *pbcn.CntlrFeReq,
 		CntlrId: cntlrFeReq.CntlrId,
 		CntlrFeInfo: &pbcn.CntlrFeInfo{
 			ErrInfo: newErrInfo(cntlrFeErr),
+			LvsInfo: sh.lvsInfo,
 		},
 		GrpFeRspList:  grpFeRspList,
 		SnapFeRspList: snapFeRspList,
 		ExpFeRspList:  expFeRspList,
 		MtFeRspList:   sh.mtFeRspList,
+	}
+	if cntlrFeReq.CntlrFeConf.Redundancy != nil {
+		switch cntlrFeReq.CntlrFeConf.Redundancy.(type) {
+		case *pbcn.CntlrFeConf_RedunRaid1Conf:
+			cntlrFeRsp.CntlrFeInfo.Redundancy = &pbcn.CntlrFeInfo_RedunRaid1Info{
+				RedunRaid1Info: &pbcn.RedunRaid1Info{
+					PerRaid1InfoList: sh.perRaid1InfoList,
+				},
+			}
+		default:
+			panic("Unknow redundancy")
+		}
 	}
 	return cntlrFeRsp
 }

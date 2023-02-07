@@ -234,16 +234,27 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 		if req.DaConf.Redundancy != nil {
 			switch x := req.DaConf.Redundancy.(type) {
 			case *pbpo.DaConf_RedunRaid1Conf:
+				perRaid1ConfList := make([]*pbds.PerRaid1Conf, 0)
+				for i := uint32(0); i < vdCnt/2; i++ {
+					perRaid1Conf := &pbds.PerRaid1Conf{
+						GrpIdx: 0,
+						Raid1Idx: i,
+						SingleHealthyVal: lib.SingleHealthyValNone,
+					}
+					perRaid1ConfList = append(perRaid1ConfList, perRaid1Conf)
+				}
 				diskArray.DaConf.Redundancy = &pbds.DaConf_RedunRaid1Conf{
 					RedunRaid1Conf: &pbds.RedunRaid1Conf{
 						Raid1Conf: &pbds.Raid1Conf{
 							BitSizeKb: x.RedunRaid1Conf.Raid1Conf.BitSizeKb,
 						},
-						SingleHealthy: lib.SingleHealthyValNone,
+						PerRaid1ConfList: perRaid1ConfList,
 					},
 				}
+				
 			default:
-				logger.Warning("Unknow redundancy: %v", x)
+				logger.Info("No redundancy or unknown redundancy: %v", x)
+				panic("Unknow redundancy")
 			}
 		}
 		daEntityKey := po.kf.DaEntityKey(diskArray.DaName)
@@ -523,6 +534,10 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 						ErrMsg:    lib.ResUninitMsg,
 						Timestamp: lib.ResTimestamp(),
 					},
+					LvsInfo: &pbds.LvsInfo{
+						TotalDataClusters: 0,
+						FreeClusters: 0,
+					},
 				},
 				IsInited:   false,
 				GrpFeList:  thisGrpFeList,
@@ -534,14 +549,37 @@ func (po *portalServer) applyAllocation(ctx context.Context, req *pbpo.CreateDaR
 			if req.DaConf.Redundancy != nil {
 				switch x:= req.DaConf.Redundancy.(type) {
 				case *pbpo.DaConf_RedunRaid1Conf:
+					perRaid1ConfList := make([]*pbds.PerRaid1Conf, 0)
+					perRaid1InfoList := make([]*pbds.PerRaid1Info, 0)
+					for i := uint32(0); i < vdCnt/2; i++ {
+						perRaid1Conf := &pbds.PerRaid1Conf{
+							GrpIdx: 0,
+							Raid1Idx: i,
+							SingleHealthyVal: lib.SingleHealthyValNone,
+						}
+						perRaid1ConfList = append(perRaid1ConfList, perRaid1Conf)
+						perRaid1Info := &pbds.PerRaid1Info{
+							GrpIdx: 0,
+							Raid1Idx: i,
+							SingleHealthyAct: lib.SingleHealthyActNoChange,
+						}
+						perRaid1InfoList = append(perRaid1InfoList, perRaid1Info)
+					}
 					cntlrFe.CntlrFeConf.Redundancy = &pbds.CntlrFeConf_RedunRaid1Conf{
 						RedunRaid1Conf: &pbds.RedunRaid1Conf{
 							Raid1Conf: &pbds.Raid1Conf{
 								BitSizeKb: x.RedunRaid1Conf.Raid1Conf.BitSizeKb,
 							},
-							SingleHealthy: lib.SingleHealthyValNone,
+							PerRaid1ConfList: perRaid1ConfList,
 						},
 					}
+					cntlrFe.CntlrFeInfo.Redundancy = &pbds.CntlrFeInfo_RedunRaid1Info{
+						RedunRaid1Info: &pbds.RedunRaid1Info{
+							PerRaid1InfoList: perRaid1InfoList,
+						},
+					}
+				default:
+					panic("Unknow redundancy")
 				}
 			}
 			controllerNode.CntlrFeList = append(controllerNode.CntlrFeList, cntlrFe)
@@ -609,7 +647,7 @@ func (po *portalServer) createNewDa(ctx context.Context, req *pbpo.CreateDaReque
 		WMbytesPerSec:  lib.DivCeil(req.DaConf.Qos.WMbytesPerSec, uint64(req.DaConf.Raid0Conf.BdevCnt)),
 	}
 	if req.DaConf.Redundancy != nil {
-		switch x:= req.DaConf.Redundancy.(type) {
+		switch req.DaConf.Redundancy.(type) {
 		case *pbpo.DaConf_RedunRaid1Conf:
 			vdCnt = vdCnt * 2
 			qos.RwIosPerSec = qos.RwIosPerSec * 1
@@ -617,7 +655,7 @@ func (po *portalServer) createNewDa(ctx context.Context, req *pbpo.CreateDaReque
 			qos.RMbytesPerSec = qos.RMbytesPerSec * 1
 			qos.WMbytesPerSec = qos.WMbytesPerSec * 1
 		default:
-			logger.Warning("Unknow redundancy: %v", x)
+			panic("Unknow redundancy")
 		}
 	}
 	vdSize := lib.DivCeil(grpSize, uint64(vdCnt))
@@ -674,15 +712,6 @@ func (po *portalServer) CreateDa(ctx context.Context, req *pbpo.CreateDaRequest)
 		invalidParamMsg = "DaConf is empty"
 	} else if req.DaConf.Size == 0 {
 		invalidParamMsg = "Size is zero"
-	}
-	if invalidParamMsg != "" {
-		return &pbpo.CreateDaReply{
-			ReplyInfo: &pbpo.ReplyInfo{
-				ReqId:     lib.GetReqId(ctx),
-				ReplyCode: lib.PortalInvalidParamCode,
-				ReplyMsg:  invalidParamMsg,
-			},
-		}, nil
 	}
 
 	if req.CntlrCnt == 0 {
@@ -749,8 +778,18 @@ func (po *portalServer) CreateDa(ctx context.Context, req *pbpo.CreateDaRequest)
 			}
 		default:
 			logger.Warning("Unknow redundancy: %v", x)
-			req.DaConf.Redundancy = nil
+			invalidParamMsg = "Unknow redundancy"
 		}
+	}
+
+	if invalidParamMsg != "" {
+		return &pbpo.CreateDaReply{
+			ReplyInfo: &pbpo.ReplyInfo{
+				ReqId:     lib.GetReqId(ctx),
+				ReplyCode: lib.PortalInvalidParamCode,
+				ReplyMsg:  invalidParamMsg,
+			},
+		}, nil
 	}
 
 	dnList, cnList, err := po.createNewDa(ctx, req)
@@ -1504,6 +1543,7 @@ func (po *portalServer) GetDa(ctx context.Context, req *pbpo.GetDaRequest) (
 		cntlrList := make([]*pbpo.Controller, 0)
 		idToGrpFeInfo := make(map[string]*pbds.GrpFeInfo)
 		idToVdFeInfo := make(map[string]*pbds.VdFeInfo)
+		var primaryCntlrFeInfo *pbds.CntlrFeInfo
 		for _, dsCntlr := range diskArray.CntlrList {
 			controllerNode, ok := addrToCn[dsCntlr.CnSockAddr]
 			if !ok {
@@ -1536,6 +1576,9 @@ func (po *portalServer) GetDa(ctx context.Context, req *pbpo.GetDaRequest) (
 						ReplyMsg:  "No cntlrInfo: " + dsCntlr.CntlrId,
 					},
 				}, nil
+			}
+			if dsCntlr.IsPrimary {
+				primaryCntlrFeInfo = dsCntlrFeInfo
 			}
 			poCntlr := &pbpo.Controller{
 				CntlrId:   dsCntlr.CntlrId,
@@ -1668,17 +1711,61 @@ func (po *portalServer) GetDa(ctx context.Context, req *pbpo.GetDaRequest) (
 					BdevCnt: diskArray.DaConf.Raid0Conf.BdevCnt,
 				},
 			},
+			DaInfo: &pbpo.DaInfo{
+				LvsInfo: &pbpo.LvsInfo{
+					TotalDataClusters: primaryCntlrFeInfo.LvsInfo.TotalDataClusters,
+					FreeClusters: primaryCntlrFeInfo.LvsInfo.FreeClusters,
+				},
+			},
 			CntlrList: cntlrList,
 			GrpList:   grpList,
 		}
 		switch x := diskArray.DaConf.Redundancy.(type) {
 		case *pbds.DaConf_RedunRaid1Conf:
+			perRaid1ConfList := make([]*pbpo.PerRaid1Conf, 0)
+			for _, prc := range x.RedunRaid1Conf.PerRaid1ConfList {
+				perRaid1Conf := &pbpo.PerRaid1Conf{
+					GrpIdx: prc.GrpIdx,
+					Raid1Idx: prc.Raid1Idx,
+					SingleHealthyVal: prc.SingleHealthyVal,
+				}
+				perRaid1ConfList = append(perRaid1ConfList, perRaid1Conf)
+			}
 			da.DaConf.Redundancy = &pbpo.DaConf_RedunRaid1Conf{
 				RedunRaid1Conf: &pbpo.RedunRaid1Conf{
 					Raid1Conf: &pbpo.Raid1Conf{
 						BitSizeKb: x.RedunRaid1Conf.Raid1Conf.BitSizeKb,
 					},
-					SingleHealthy: x.RedunRaid1Conf.SingleHealthy,
+					PerRaid1ConfList: perRaid1ConfList,
+				},
+			}
+		default:
+			logger.Warning("Unknow redundancy: %v", x)
+		}
+		switch x:= primaryCntlrFeInfo.Redundancy.(type) {
+		case *pbds.CntlrFeInfo_RedunRaid1Info:
+			perRaid1InfoList := make([]*pbpo.PerRaid1Info, 0)
+			for _, pri := range x.RedunRaid1Info.PerRaid1InfoList {
+				perRaid1Info :=  &pbpo.PerRaid1Info{
+					GrpIdx: pri.GrpIdx,
+					Raid1Idx: pri.Raid1Idx,
+					SingleHealthyAct: pri.SingleHealthyAct,
+				}
+				if pri.Raid1Info != nil {
+					perRaid1Info.Raid1Info = &pbpo.Raid1Info{
+						Bdev0Online: pri.Raid1Info.Bdev0Online,
+						Bdev1Online: pri.Raid1Info.Bdev1Online,
+						TotalBit: pri.Raid1Info.TotalBit,
+						SyncedBit: pri.Raid1Info.SyncedBit,
+						ResyncIoCnt: pri.Raid1Info.ResyncIoCnt,
+						Status: pri.Raid1Info.Status,
+					}
+				}
+				perRaid1InfoList = append(perRaid1InfoList, perRaid1Info)
+			}
+			da.DaInfo.Redundancy = &pbpo.DaInfo_RedunRaid1Info{
+				RedunRaid1Info: &pbpo.RedunRaid1Info{
+					PerRaid1InfoList: perRaid1InfoList,
 				},
 			}
 		default:
