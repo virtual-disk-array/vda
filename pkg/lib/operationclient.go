@@ -1433,12 +1433,12 @@ func (oc *OperationClient) DeleteDaLvs(daLvsName string) error {
 // fixme
 func (oc *OperationClient) CreateDaLvs(daLvsName, aggBdevName string,
 	clusterSize uint32, extendRatio uint32) (*LvsInfo, error) {
-	return nil, nil
+	return &LvsInfo{}, nil
 }
 
 // fixme
 func (oc *OperationClient) WaitForLvs(daLvsName string) (*LvsInfo, error) {
-	return nil, nil
+	return &LvsInfo{}, nil
 }
 
 // func (oc *OperationClient) CreateDaLvs(daLvsName, aggBdevName string,
@@ -1724,7 +1724,7 @@ func (oc *OperationClient) CreateRaid1Bdev(raid1Name, bdev0Name, bdev1Name strin
 // fixme
 func (oc *OperationClient) CreateRedunRaid1Bdev(raid1Name, bdev0Name, bdev1Name string,
 	bitSizeKb uint32, singleHealthyVal string) (*Raid1Info, string, error) {
-	return nil, "", nil
+	return &Raid1Info{}, "", nil
 }
 
 func (oc *OperationClient) GetFeNvmeList(prefix string) ([]string, error) {
