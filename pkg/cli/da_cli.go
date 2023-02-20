@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 
 	pbpo "github.com/virtual-disk-array/vda/pkg/proto/portalapi"
@@ -23,7 +25,7 @@ type daCreateArgsStruct struct {
 	maxGrpSizeMb   uint64
 	lowWaterMarkMb uint64
 	redundancy     string
-	BitSizeKb      uint32
+	bitSizeKb      uint32
 }
 
 type daDeleteArgsStruct struct {
@@ -121,7 +123,7 @@ func init() {
 		"the low water mark in MB")
 	daCreateCmd.Flags().StringVarP(&daCreateArgs.redundancy, "redundancy", "", "",
 		"redundancy type, current the only valid value is raid1")
-	daCreateCmd.Flags().Uint32VarP(&daCreateArgs.BitSizeKb, "bit-size-kb", "", 0,
+	daCreateCmd.Flags().Uint32VarP(&daCreateArgs.bitSizeKb, "bit-size-kb", "", 0,
 		"the bit size in kb of raid1")
 	daCmd.AddCommand(daCreateCmd)
 
@@ -180,6 +182,20 @@ func (cli *client) createDa(args *daCreateArgsStruct) string {
 				BdevCnt: args.stripCnt,
 			},
 		},
+	}
+	switch args.redundancy {
+	case "":
+		// do nothing
+	case "raid1":
+		req.DaConf.Redundancy = &pbpo.DaConf_RedunRaid1Conf{
+			RedunRaid1Conf: &pbpo.RedunRaid1Conf{
+				Raid1Conf: &pbpo.Raid1Conf{
+					BitSizeKb: args.bitSizeKb,
+				},
+			},
+		}
+	default:
+		return fmt.Sprintf("Unknow redundancy: %s", args.redundancy)
 	}
 	reply, err := cli.c.CreateDa(cli.ctx, req)
 	if err != nil {
