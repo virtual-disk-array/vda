@@ -1709,14 +1709,24 @@ func (oc *OperationClient) CreateRaid0Bdev(raid0BdevName string,
 	return nil
 }
 
-func (oc *OperationClient) GetRaid1BdevList(prefix string) ([]string, error) {
-	logger.Info("GetRaid1BdevList %v", prefix)
+func (oc *OperationClient) GetRedunSusresList(prefix string) ([]string, error) {
+	logger.Info("GetRedunSusresList %v", prefix)
 	return oc.getBdevByPrefix(prefix)
 }
 
-func (oc *OperationClient) DeleteRaid1Bdev(raid1Name string) error {
-	logger.Info("DeleteRaid1Bdev: raid1Name %s", raid1Name)
-	return oc.deleteRaid1Bdev(raid1Name)
+func (oc *OperationClient) DeleteRedunSusres(bdevName string) error {
+	logger.Info("DeleteRedunSusres: bdevName %s", bdevName)
+	return oc.deleteSusresBdev(bdevName)
+}
+
+func (oc *OperationClient) GetRedunRaid1List(prefix string) ([]string, error) {
+	logger.Info("GetRedunRaid1List %v", prefix)
+	return oc.getBdevByPrefix(prefix)
+}
+
+func (oc *OperationClient) DeleteRedunRaid1(bdevName string) error {
+	logger.Info("DeleteRedunRaid1: bdevName %s", bdevName)
+	return oc.deleteRaid1Bdev(bdevName)
 }
 
 func (oc *OperationClient) CreateRaid1Bdev(raid1Name, bdev0Name, bdev1Name string,
@@ -1735,7 +1745,7 @@ func (oc *OperationClient) CreateRaid1Bdev(raid1Name, bdev0Name, bdev1Name strin
 }
 
 // fixme
-func (oc *OperationClient) CreateRedunRaid1Bdev(raid1Name, bdev0Name, bdev1Name string,
+func (oc *OperationClient) CreateRedunRaid1Bdev(susresName, raid1Name, bdev0Name, bdev1Name string,
 	bitSizeKb uint32, singleHealthyVal string) (*Raid1Info, string, error) {
 	return &Raid1Info{}, "", nil
 }

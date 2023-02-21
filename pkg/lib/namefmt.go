@@ -1,7 +1,9 @@
 package lib
 
 import (
+	"crypto/md5"
 	"fmt"
+	"io"
 	"strings"
 )
 
@@ -19,7 +21,8 @@ const (
 	mtConcatType  = "010"
 	mtRaid1Type   = "011"
 	raid0BdevType = "100"
-	raid1BdevType = "101"
+	redunSusresType = "101"
+	redunRaid1Type = "102"
 
 	beNqnPrefix  = "be"
 	feNqnPrefix  = "fe"
@@ -80,8 +83,12 @@ func (nf *NameFmt) Raid0BdevPrefix() string {
 	return fmt.Sprintf("%s-%s", nf.vdaPrefix, raid0BdevType)
 }
 
-func (nf *NameFmt) Raid1BdevPrefix() string {
-	return fmt.Sprintf("%s-%s", nf.vdaPrefix, raid1BdevType)
+func (nf *NameFmt) RedunSusresPrefix() string {
+	return fmt.Sprintf("%s-%s", nf.vdaPrefix, redunSusresType)
+}
+
+func (nf *NameFmt) RedunRaid1Prefix() string {
+	return fmt.Sprintf("%s-%s", nf.vdaPrefix, redunRaid1Type)
 }
 
 func (nf *NameFmt) ExpNqnPrefix() string {
@@ -144,9 +151,20 @@ func (nf *NameFmt) Raid0BdevName(grpId string) string {
 	return fmt.Sprintf("%s-%s", nf.Raid0BdevPrefix(), grpId)
 }
 
-func (nf *NameFmt) Raid1BdevName(leg0, leg1 string) string {
-	return fmt.Sprintf("%s-%s%s", nf.Raid1BdevPrefix(),
-		leg0[0:len(leg0)/2], leg1[len(leg1)/2:len(leg1)])
+func legsSum(legs []string) string {
+	h := md5.New()
+	for _, leg := range legs {
+		io.WriteString(h, leg)
+	}
+	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
+func (nf *NameFmt) RedunSusresName(legs []string) string {
+	return fmt.Sprintf("%s-%s", nf.RedunSusresPrefix(), legsSum(legs))
+}
+
+func (nf *NameFmt) RedunRaid1Name(legs []string) string {
+	return fmt.Sprintf("%s-%s", nf.RedunRaid1Prefix(), legsSum(legs))
 }
 
 func (nf *NameFmt) GrpBdevName(grpId string) string {

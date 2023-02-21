@@ -42,7 +42,8 @@ type syncupHelper struct {
 	expNqnMap    map[string]bool
 	grpBdevMap   map[string]bool
 	raid0BdevMap map[string]bool
-	raid1BdevMap map[string]bool
+	redunSusresMap map[string]bool
+	redunRaid1Map map[string]bool
 	perRaid1ConfMap map[string]*pbcn.PerRaid1Conf
 	perRaid1InfoList []*pbcn.PerRaid1Info
 	lvsInfo      *pbcn.LvsInfo
@@ -233,8 +234,11 @@ func (sh *syncupHelper) syncupGrpFe(cntlrFeReq *pbcn.CntlrFeReq,
 					leg0 = bdevName
 				} else {
 					leg1 = bdevName
-					raid1BdevName := sh.nf.Raid1BdevName(
-						leg0, leg1)
+					legs := make([]string, 0)
+					legs = append(legs, leg0)
+					legs = append(legs, leg1)
+					redunSusresName := sh.nf.RedunSusresName(legs)
+					redunRaid1Name := sh.nf.RedunRaid1Name(legs)
 					raid1Idx := uint32(i / 2)
 					key := lib.PerRaid1Key(
 						grpFeReq.GrpFeConf.GrpIdx, raid1Idx)
@@ -243,12 +247,13 @@ func (sh *syncupHelper) syncupGrpFe(cntlrFeReq *pbcn.CntlrFeReq,
 						logger.Error("Can not find perRaid1Conf: %s", key)
 						panic("Can not find perRaid1Conf")
 					}
-					sh.raid1BdevMap[raid1BdevName] = true
+					sh.redunSusresMap[redunSusresName] = true
+					sh.redunRaid1Map[redunRaid1Name] = true
 					raid0BdevList = append(
-						raid0BdevList, raid1BdevName)
+						raid0BdevList, redunSusresName)
 					if grpFeErr != nil {
 						raid1Info, act, grpFeErr := sh.oc.CreateRedunRaid1Bdev(
-							raid1BdevName, leg0, leg1,
+							redunSusresName, redunRaid1Name, leg0, leg1,
 							x.RedunRaid1Conf.Raid1Conf.BitSizeKb,
 							perRaid1Conf.SingleHealthyVal)
 						if grpFeErr != nil {
@@ -758,13 +763,29 @@ func (sh *syncupHelper) syncupCn(cnReq *pbcn.CnReq) *pbcn.CnRsp {
 	}
 
 	if cnErr == nil {
-		raid1BdevPrefix := sh.nf.Raid1BdevPrefix()
-		raid1BdevList, cnErr := sh.oc.GetRaid1BdevList(raid1BdevPrefix)
+		redunSusresPrefix := sh.nf.RedunSusresPrefix()
+		redunSusresList, cnErr := sh.oc.GetRedunSusresList(redunSusresPrefix)
 		if cnErr == nil {
-			for _, raid1BdevName := range raid1BdevList {
-				_, ok := sh.raid1BdevMap[raid1BdevName]
+			for _, redunSusresName := range redunSusresList {
+				_, ok := sh.redunSusresMap[redunSusresName]
 				if !ok {
-					cnErr = sh.oc.DeleteRaid1Bdev(raid1BdevName)
+					cnErr = sh.oc.DeleteRedunSusres(redunSusresName)
+					if cnErr != nil {
+						break
+					}
+				}
+			}
+		}
+	}
+
+	if cnErr == nil {
+		redunRaid1Prefix := sh.nf.RedunRaid1Prefix()
+		redunRaid1List, cnErr := sh.oc.GetRedunRaid1List(redunRaid1Prefix)
+		if cnErr == nil {
+			for _, redunRaid1Name := range redunRaid1List {
+				_, ok := sh.redunRaid1Map[redunRaid1Name]
+				if !ok {
+					cnErr = sh.oc.DeleteRedunRaid1(redunRaid1Name)
 					if cnErr != nil {
 						break
 					}
@@ -885,7 +906,8 @@ func newSyncupHelper(lisConf *lib.LisConf, nf *lib.NameFmt, sc *lib.SpdkClient) 
 		secNvmeMap:   make(map[string]bool),
 		grpBdevMap:   make(map[string]bool),
 		raid0BdevMap: make(map[string]bool),
-		raid1BdevMap: make(map[string]bool),
+		redunSusresMap: make(map[string]bool),
+		redunRaid1Map: make(map[string]bool),
 	}
 }
 
