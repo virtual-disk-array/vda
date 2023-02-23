@@ -2005,7 +2005,7 @@ func (oc *OperationClient) getRaid1Bdev(name string) (*raid1Bdev, error) {
 		return nil, err
 	}
 	if rsp.Error != nil {
-		// We do not find the bdev, return a nil susresConf with
+		// We do not find the bdev, return a nil raid1Bdev with
 		// no error
 		return nil, nil
 	} else {
