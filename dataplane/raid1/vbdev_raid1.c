@@ -132,12 +132,14 @@ struct raid1_per_bdev {
 	size_t buf_align;
 	uint32_t block_size;
 	uint64_t num_blocks;
+	bool closed;
 };
 
 struct raid1_per_thread
 {
 	struct raid1_per_bdev *per_bdev;
 	struct spdk_io_channel *io_channel;
+	bool closed;
 };
 
 enum raid1_io_type {
@@ -219,20 +221,25 @@ raid1_per_bdev_open(const char *bdev_name, struct raid1_per_bdev *per_bdev)
 	per_bdev->buf_align = spdk_bdev_get_buf_align(per_bdev->bdev);
 	per_bdev->block_size = spdk_bdev_get_block_size(per_bdev->bdev);
 	per_bdev->num_blocks = spdk_bdev_get_num_blocks(per_bdev->bdev);
+	per_bdev->closed = false;
 
 	return 0;
 
 close_bdev:
 	spdk_bdev_close(per_bdev->desc);
 err_out:
+	per_bdev->closed = true;
 	return rc;
 }
 
 static void
 raid1_per_bdev_close(struct raid1_per_bdev *per_bdev)
 {
-	spdk_bdev_module_release_bdev(per_bdev->bdev);
-	spdk_bdev_close(per_bdev->desc);
+	if (!per_bdev->closed) {
+		spdk_bdev_module_release_bdev(per_bdev->bdev);
+		spdk_bdev_close(per_bdev->desc);
+		per_bdev->closed = true;
+	}
 }
 
 static int
@@ -240,9 +247,11 @@ raid1_per_thread_open(struct raid1_per_bdev *per_bdev, struct raid1_per_thread *
 {
 	per_thread->per_bdev = per_bdev;
 	per_thread->io_channel = spdk_bdev_get_io_channel(per_bdev->desc);
+	per_thread->closed = false;
 	if (per_thread->io_channel == NULL) {
 		SPDK_ERRLOG("Could not open io channel for bdev: %s\n",
 			per_bdev->bdev->name);
+		per_thread->closed = true;
 		return -EIO;
 	}
 	return 0;
@@ -251,8 +260,11 @@ raid1_per_thread_open(struct raid1_per_bdev *per_bdev, struct raid1_per_thread *
 static void
 raid1_per_thread_close(struct raid1_per_thread *per_thread)
 {
-	per_thread->per_bdev = NULL;
-	spdk_put_io_channel(per_thread->io_channel);
+	if (!per_thread->closed) {
+		per_thread->per_bdev = NULL;
+		spdk_put_io_channel(per_thread->io_channel);
+		per_thread->closed = true;
+	}
 }
 
 static inline void
@@ -811,6 +823,7 @@ struct raid1_bdev {
 	uint8_t health_idx;
 	bool online[2];
 	uint8_t read_idx;
+	uint32_t pending_close;
 	TAILQ_ENTRY(raid1_bdev) link;
 	TAILQ_HEAD(, raid1_region) set_queue;
 	TAILQ_HEAD(, raid1_region) clear_queue;
@@ -1072,7 +1085,7 @@ raid1_resync_handler(struct raid1_bdev *r1_bdev,
 	raid1_per_io_submit(per_io);
 }
 
-static inline void
+static void
 raid1_set_delete_flag(void *ctx)
 {
 	struct raid1_bdev *r1_bdev = ctx;
@@ -1210,6 +1223,35 @@ raid1_update_sb(struct raid1_bdev *r1_bdev)
 }
 
 static void
+raid1_close_bdev_done(void *ctx)
+{
+	struct raid1_bdev *r1_bdev = ctx;
+	assert(r1_bdev->pending_close > 0);
+	r1_bdev->pending_close--;
+}
+
+static void
+raid1_close_bdev(struct raid1_bdev *r1_bdev, uint8_t idx)
+{
+	raid1_per_bdev_close(&r1_bdev->per_bdev[idx]);
+	spdk_thread_send_msg(r1_bdev->r1_thread, raid1_close_bdev_done, r1_bdev);
+}
+
+static void
+raid1_close_bdev0(void *ctx)
+{
+	struct raid1_bdev *r1_bdev = ctx;
+	raid1_close_bdev(r1_bdev, 0);
+}
+
+static void
+raid1_close_bdev1(void *ctx)
+{
+	struct raid1_bdev *r1_bdev = ctx;
+	raid1_close_bdev(r1_bdev, 1);
+}
+
+static void
 raid1_update_status(struct raid1_bdev *r1_bdev)
 {
 	assert(!r1_bdev->online[0] || !r1_bdev->online[1]);
@@ -1219,7 +1261,7 @@ raid1_update_status(struct raid1_bdev *r1_bdev)
 		r1_bdev->status = RAID1_BDEV_FAILED;
 		r1_bdev->resync->stopped = true;
 		raid1_bdev_failed_hook(r1_bdev);
-		return;
+		goto close_per_thread;
 	}
 	if (!r1_bdev->online[0] && !r1_bdev->resync->stopped) {
 		SPDK_ERRLOG("Primary failed during sync: %s\n",
@@ -1229,7 +1271,7 @@ raid1_update_status(struct raid1_bdev *r1_bdev)
 		r1_bdev->status = RAID1_BDEV_FAILED;
 		r1_bdev->resync->stopped = true;
 		raid1_bdev_failed_hook(r1_bdev);
-		return;
+		goto close_per_thread;
 	}
 	if (r1_bdev->online[0]) {
 		r1_bdev->health_idx = 0;
@@ -1242,13 +1284,26 @@ raid1_update_status(struct raid1_bdev *r1_bdev)
 	r1_bdev->status = RAID1_BDEV_DEGRADED;
 	r1_bdev->resync->stopped = true;
 	raid1_update_sb(r1_bdev);
+close_per_thread:
+	/* if (!r1_bdev->online[0]) { */
+	/* 	raid1_per_thread_close(&r1_bdev->per_thread[0]); */
+	/* 	r1_bdev->pending_close++; */
+	/* 	spdk_thread_send_msg(r1_bdev->delete_ctx.orig_thread, */
+	/* 		raid1_close_bdev0, r1_bdev); */
+	/* } */
+	/* if (!r1_bdev->online[1]) { */
+	/* 	raid1_per_thread_close(&r1_bdev->per_thread[1]); */
+	/* 	r1_bdev->pending_close++; */
+	/* 	spdk_thread_send_msg(r1_bdev->delete_ctx.orig_thread, */
+	/* 		raid1_close_bdev1, r1_bdev); */
+	/* } */
 }
 
 static int
 raid1_bdev_destruct(void *ctx)
 {
 	struct raid1_bdev *r1_bdev = ctx;
-	r1_bdev->delete_ctx.orig_thread = spdk_get_thread();
+	assert(r1_bdev->delete_ctx.orig_thread == spdk_get_thread());
 	spdk_thread_send_msg(r1_bdev->r1_thread, raid1_set_delete_flag, r1_bdev);
 	return 1;
 }
@@ -1966,7 +2021,7 @@ raid1_deleting_poller(struct raid1_bdev *r1_bdev)
 			r1_bdev->sb_sync = true;
 		}
 	}
-	if (r1_bdev->sb_sync && !r1_bdev->sb_writing) {
+	if (r1_bdev->sb_sync && !r1_bdev->sb_writing && r1_bdev->pending_close == 0) {
 		SPDK_DEBUGLOG(bdev_raid1, "Release in thread for deleting: %s\n",
 			r1_bdev->raid1_name);
 		assert(r1_bdev->resync->num_inflight == 0);
@@ -2518,6 +2573,7 @@ raid1_bdev_init(struct raid1_create_ctx *create_ctx)
 	}
 
 	r1_bdev->read_idx = 0;
+	r1_bdev->pending_close = 0;
 
 	TAILQ_INIT(&r1_bdev->set_queue);
 	TAILQ_INIT(&r1_bdev->clear_queue);
@@ -2558,6 +2614,7 @@ raid1_bdev_init(struct raid1_create_ctx *create_ctx)
 	r1_bdev->bdev.module = &g_raid1_if;
 
 	r1_bdev->sb_sync = false;
+	r1_bdev->delete_ctx.orig_thread = spdk_get_thread();
 	r1_bdev->delete_ctx.deleted = false;
 
 	spdk_io_device_register(r1_bdev, raid1_bdev_ch_create_cb,
