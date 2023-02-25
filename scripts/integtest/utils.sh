@@ -291,9 +291,11 @@ function retry() {
     cmd=$@
     max_retry=600
     retry_cnt=0
+    set +e
     while true; do
-        ret=$($cmd)
+        ret=$($cmd 2>&1)
         if [ "$ret" == "" ]; then
+            set -e
             return
         fi
         if [ $retry_cnt -ge $max_retry ]; then
