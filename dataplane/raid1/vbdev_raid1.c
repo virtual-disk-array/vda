@@ -1108,8 +1108,8 @@ raid1_bdev_failed_hook(struct raid1_bdev *r1_bdev)
 		while (!TAILQ_EMPTY(&region->delay_queue)) {
 			raid1_io = TAILQ_FIRST(&region->delay_queue);
 			TAILQ_REMOVE(&region->delay_queue, raid1_io, link);
-			raid1_io_failed(raid1_io);
 			raid1_write_complete_hook(r1_bdev, raid1_io);
+			raid1_io_failed(raid1_io);
 		}
 	}
 }
@@ -1321,6 +1321,7 @@ raid1_init_pos(struct raid1_bdev *r1_bdev, struct spdk_bdev_io *bdev_io,
 {
 	uint64_t offset = bdev_io->u.bdev.offset_blocks * r1_bdev->bdev.blocklen;
 	raid1_io->bit_idx = offset / r1_bdev->bit_size;
+	assert(raid1_io->bit_idx < r1_bdev->bit_cnt);
 	raid1_io->region_idx = offset / r1_bdev->region_size;
 	raid1_io->bit_in_region = raid1_io->bit_idx % (RAID1_BYTESZ * PAGE_SIZE);
 	SPDK_DEBUGLOG(bdev_raid1, "raid1_init_pos %s %p %" PRIu64 " %" PRIu64 " %" PRIu64 "\n",
@@ -1578,12 +1579,13 @@ raid1_deliver_region_degraded_complete(void *ctx, int rc)
 			raid1_update_status(r1_bdev);
 		} else {
 			assert(r1_bdev->status == RAID1_BDEV_FAILED);
+			raid1_write_complete_hook(r1_bdev, raid1_io);
 			raid1_io_failed(raid1_io);
 		}
 	} else {
+		raid1_write_complete_hook(r1_bdev, raid1_io);
 		raid1_io_success(raid1_io);
 	}
-	raid1_write_complete_hook(r1_bdev, raid1_io);
 }
 
 static void
@@ -1628,20 +1630,22 @@ raid1_deliver_region_multi_complete(void *ctx, uint8_t err_mask)
 			raid1_update_status(r1_bdev);
 		} else {
 			if (r1_bdev->status == RAID1_BDEV_FAILED) {
+				raid1_write_complete_hook(r1_bdev, raid1_io);
 				raid1_io_failed(raid1_io);
 			} else {
 				assert(r1_bdev->status == RAID1_BDEV_DEGRADED);
 				if (r1_bdev->sb_writing) {
 					TAILQ_INSERT_TAIL(&r1_bdev->sb_io_queue, raid1_io, link);
 				} else {
+					raid1_write_complete_hook(r1_bdev, raid1_io);
 					raid1_io_success(raid1_io);
 				}
 			}
 		}
 	} else {
+		raid1_write_complete_hook(r1_bdev, raid1_io);
 		raid1_io_success(raid1_io);
 	}
-	raid1_write_complete_hook(r1_bdev, raid1_io);
 }
 
 static void
